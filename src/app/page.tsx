@@ -127,7 +127,7 @@ const LambdaChat: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [connectedServers, setConnectedServers] = useState<ConnectedServer[]>([]);
   const [temperaturePreset, setTemperaturePreset] = useState<TemperaturePreset>('normal');
-  const [maxTokens, setMaxTokens] = useState<number>(1024);
+  const [maxTokens, setMaxTokens] = useState<number>(4084);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -552,7 +552,8 @@ const LambdaChat: React.FC = () => {
                   </Select>
                 </div>
                 <div className={cn(chatMode !== ChatMode.DIRECT_GEMINI && 'opacity-50 cursor-not-allowed')}>
-                  <p className="mb-2 text-sm font-medium">Gemini Model</p>
+                  {/* Added Sparkles icon */}
+                  <p className="mb-2 text-sm font-medium"><Sparkles size={16} className="inline mr-1"/> Gemini Model</p>
                   <Select
                     value={selectedGeminiModelId}
                     onValueChange={setSelectedGeminiModelId}

@@ -9,99 +9,70 @@ body {
 
 @layer base {
   :root {
-    /* Light Mode Colors - Keeping existing ones for now */
-    --background: 220 14.3% 95.9%;
-    --foreground: 222.2 47.4% 11.2%;
-    --muted: 210 4% 98%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 47.4% 11.2%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --primary: 159 100% 29%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --secondary: 210 4% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --accent: 159 100% 29%;
-    --accent-foreground: 355.7 100% 97.3%;
-    --ring: 159 100% 29%;
+    /* Light Mode - Radix Slate */
+    --background: 240 20% 98%; /* slate-2 */
+    --foreground: 210 12.5% 12.5%; /* slate-12 */
+    --muted: 240 11.1% 94.7%; /* slate-3 */
+    --muted-foreground: 220 5.9% 40%; /* slate-11 */
+    --popover: 240 20% 99%; /* slate-1 */
+    --popover-foreground: 210 12.5% 12.5%; /* slate-12 */
+    --card: 240 20% 99%; /* slate-1 */
+    --card-foreground: 210 12.5% 12.5%; /* slate-12 */
+    --border: 240 10.1% 86.5%; /* slate-6 */
+    --input: 233 9.9% 82.2%; /* slate-7 */
+    --primary: 231 5.9% 57.1%; /* slate-9 */
+    --primary-foreground: 240 20% 99%; /* slate-1 - Adjusted for contrast */
+    --secondary: 240 11.1% 94.7%; /* slate-3 */
+    --secondary-foreground: 231 5.9% 57.1%; /* slate-9 */
+    --accent: 240 10.1% 86.5%; /* slate-6 */
+    --accent-foreground: 231 5.9% 57.1%; /* slate-9 */
+    --destructive: 0 84.2% 60.2%; /* Keeping original red */
+    --destructive-foreground: 0 0% 98%; /* Keeping original red */
+    --ring: 231 5.9% 57.1%; /* slate-9 */
     --radius: 0.5rem;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --sidebar-background: 220 13% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
 
-    /* Gradient definitions (can be reused in dark mode) */
-    --gradient-start: #43cea2; /* Example: Teal */
-    --gradient-end: #185a9d; /* Example: Blue */
-     /* You can define multiple gradients */
-    --gradient-2-start: #8a2387;
-    --gradient-2-end: #f27121;
+    /* Sidebar specific (can be adjusted further if needed) */
+    --sidebar-background: 240 20% 98%; /* slate-2 */
+    --sidebar-foreground: 220 5.9% 40%; /* slate-11 */
+    --sidebar-primary: 231 5.9% 57.1%; /* slate-9 */
+    --sidebar-primary-foreground: 240 20% 99%; /* slate-1 */
+    --sidebar-accent: 240 9.5% 91.8%; /* slate-4 */
+    --sidebar-accent-foreground: 231 5.9% 57.1%; /* slate-9 */
+    --sidebar-border: 240 10.1% 86.5%; /* slate-6 */
+    --sidebar-ring: 231 5.9% 57.1%; /* slate-9 */
   }
 
   .dark {
-    /* Dark Mode Gradient Theme */
-    --background-start: 260 50% 5%; /* Dark Purple */
-    --background-end: 220 40% 10%;   /* Dark Blue */
-    --background: linear-gradient(135deg, hsl(var(--background-start)), hsl(var(--background-end)));
-    --foreground: 210 20% 96%; /* Light Gray */
+    /* Dark Mode - Radix Slate */
+    --background: 240 5.6% 7.1%; /* slate-1 */
+    --foreground: 220 9.1% 93.5%; /* slate-12 */
+    --muted: 225 5.7% 13.7%; /* slate-3 */
+    --muted-foreground: 216 6.8% 71%; /* slate-11 */
+    --popover: 220 5.9% 10%; /* slate-2 */
+    --popover-foreground: 220 9.1% 93.5%; /* slate-12 */
+    --card: 220 5.9% 10%; /* slate-2 */
+    --card-foreground: 220 9.1% 93.5%; /* slate-12 */
+    --border: 213 7.7% 22.9%; /* slate-6 */
+    --input: 213 7.6% 28.4%; /* slate-7 */
+    --primary: 219 6.3% 43.9%; /* slate-9 */
+    --primary-foreground: 240 5.6% 7.1%; /* slate-1 - Adjusted for contrast */
+    --secondary: 225 5.7% 13.7%; /* slate-3 */
+    --secondary-foreground: 220 9.1% 93.5%; /* slate-12 */
+    --accent: 213 7.7% 22.9%; /* slate-6 */
+    --accent-foreground: 220 9.1% 93.5%; /* slate-12 */
+    --destructive: 0 70% 50%; /* Keeping original red */
+    --destructive-foreground: 0 0% 98%; /* Keeping original red */
+    --ring: 219 6.3% 43.9%; /* slate-9 */
 
-    --muted: 220 30% 15%;
-    --muted-foreground: 210 20% 70%;
-
-    --popover-start: 260 45% 8%;
-    --popover-end: 220 35% 12%;
-    --popover: linear-gradient(135deg, hsl(var(--popover-start)), hsl(var(--popover-end)));
-    --popover-foreground: 210 20% 96%;
-
-    --card-start: 250 40% 9%;
-    --card-end: 210 30% 14%;
-    --card: linear-gradient(135deg, hsl(var(--card-start)), hsl(var(--card-end)));
-    --card-foreground: 210 20% 96%;
-
-    --border: 210 20% 25%;
-    --input: 210 20% 25%;
-
-    /* Using a gradient for primary */
-    --primary-start: 150 70% 45%; /* Vibrant Green */
-    --primary-end: 170 80% 35%;   /* Cyanish Green */
-    --primary: linear-gradient(135deg, hsl(var(--primary-start)), hsl(var(--primary-end)));
-    --primary-foreground: 200 100% 98%; /* Very light blue/white */
-
-    --secondary-start: 280 40% 20%; /* Muted Purple */
-    --secondary-end: 300 35% 25%;   /* Muted Pinkish Purple */
-    --secondary: linear-gradient(135deg, hsl(var(--secondary-start)), hsl(var(--secondary-end)));
-    --secondary-foreground: 210 20% 90%;
-
-    /* Using a gradient for accent */
-    --accent-start: 45 90% 55%; /* Gold/Yellow */
-    --accent-end: 30 85% 60%;   /* Orange */
-    --accent: linear-gradient(135deg, hsl(var(--accent-start)), hsl(var(--accent-end)));
-    --accent-foreground: 210 40% 5%; /* Dark for contrast */
-
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 98%;
-
-    --ring: 160 80% 40%; /* Tealish ring */
-
-    --sidebar-background-start: 255 45% 10%;
-    --sidebar-background-end: 215 35% 15%;
-    --sidebar-background: linear-gradient(135deg, hsl(var(--sidebar-background-start)), hsl(var(--sidebar-background-end)));
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: linear-gradient(135deg, hsl(var(--primary-start)), hsl(var(--primary-end))); /* Use main primary gradient */
-    --sidebar-primary-foreground: var(--primary-foreground);
-    --sidebar-accent: linear-gradient(135deg, hsl(var(--accent-start)), hsl(var(--accent-end))); /* Use main accent gradient */
-    --sidebar-accent-foreground: var(--accent-foreground);
-    --sidebar-border: 210 20% 22%;
-    --sidebar-ring: var(--ring);
+    /* Sidebar specific (dark) */
+    --sidebar-background: 240 5.6% 7.1%; /* slate-1 */
+    --sidebar-foreground: 216 6.8% 71%; /* slate-11 */
+    --sidebar-primary: 219 6.3% 43.9%; /* slate-9 */
+    --sidebar-primary-foreground: 240 5.6% 7.1%; /* slate-1 */
+    --sidebar-accent: 210 7.1% 16.5%; /* slate-4 */
+    --sidebar-accent-foreground: 220 9.1% 93.5%; /* slate-12 */
+    --sidebar-border: 213 7.7% 22.9%; /* slate-6 */
+    --sidebar-ring: 219 6.3% 43.9%; /* slate-9 */
   }
 }
 
@@ -113,39 +84,16 @@ body {
   body {
     @apply bg-background text-foreground;
     /* Apply background gradient */
-     background: var(--background);
+     /* background: var(--background); Ensure solid color is applied */
+     background-color: hsl(var(--background));
   }
 
-  /* Apply gradient background to specific elements if needed */
-  .card-gradient {
-     background: var(--card);
-  }
-  .popover-gradient {
-     background: var(--popover);
-  }
-   /* Add more classes for other elements if you want specific gradients */
+  /* Gradient classes removed */
 
 }
 
-/* Apply gradients to Shadcn UI components (example for Button) */
+/* Remove gradient overrides */
 @layer components {
-  .dark .bg-primary {
-    background: var(--primary);
-  }
-  .dark .bg-secondary {
-    background: var(--secondary);
-  }
-   .dark .bg-accent {
-    background: var(--accent);
-  }
-  /* Add similar overrides for other components (Card, Popover, etc.) as needed */
-   .dark .bg-card {
-     background: var(--card);
-   }
-   .dark .bg-popover {
-     background: var(--popover);
-   }
-   .dark .bg-sidebar {
-      background: var(--sidebar-background);
-   }
+  /* Remove specific background overrides for dark mode gradients if they exist */
+  /* Tailwind will now use the CSS variables directly */
 }

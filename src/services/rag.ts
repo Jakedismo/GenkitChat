@@ -160,7 +160,7 @@ export async function processFileWithOfficeParser( // New name for clarity
 const INITIAL_RETRIEVAL_COUNT = 10;
 
 // Number of documents to use after reranking
-const FINAL_DOCUMENT_COUNT = 5;
+const FINAL_DOCUMENT_COUNT = 15;
 
 /**
  * Simple similarity score calculation between a query and document text
