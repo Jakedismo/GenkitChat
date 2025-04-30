@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';  // Add Switch import
 // Removed direct imports for server-side functions
 // Keep type imports if needed elsewhere, though RagEndpoint/BedrockModel might be removable now
 // import type { RagEndpoint } from '@/services/rag';
@@ -22,7 +23,7 @@ import { Separator } from '@/components/ui/separator';
 import { availableGeminiModels } from '@/ai/available-models';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { LucideIcon, Server, Settings, Bot, Code, BrainCircuit, Paperclip, X, FileText } from 'lucide-react';
+import { LucideIcon, Server, Settings, Bot, Code, BrainCircuit, Paperclip, X, FileText, Search, ExternalLink } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -38,6 +39,12 @@ import { basicChatFlow } from "@/lib/genkit-instance";
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"; // Add Tooltip imports
 import mermaid from 'mermaid';
 // Removed pdfjs-dist imports (static and dynamic)
 import dynamic from 'next/dynamic';
@@ -124,6 +131,9 @@ const LambdaChat: React.FC = () => {
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  // Add state for Tavily tools toggles
+  const [tavilySearchEnabled, setTavilySearchEnabled] = useState(false);
+  const [tavilyExtractEnabled, setTavilyExtractEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -254,6 +264,8 @@ const LambdaChat: React.FC = () => {
         temperaturePreset: temperaturePreset,
         maxTokens: maxTokens,
         sessionId: sessionIdToUse,
+        tavilySearchEnabled: tavilySearchEnabled, // Pass the state
+        tavilyExtractEnabled: tavilyExtractEnabled, // Pass the state
       };
 
       const response = await fetch(apiUrl, {
@@ -607,6 +619,9 @@ const LambdaChat: React.FC = () => {
                     step="16"
                   />
                 </div> {/* Closing div for max-tokens */}
+                
+                {/* TAVILY TOOL TOGGLES MOVED NEAR INPUT */}
+
               </div> {/* Closing div for p-2 space-y-4 */}
             </SidebarGroup>
             {/* Removed RAG Configuration SidebarGroup */}
@@ -793,6 +808,43 @@ const LambdaChat: React.FC = () => {
                 multiple // Allow multiple files
                 // accept=".pdf" // Allow any file type for now, refine later if needed
               />
+
+              {/* START: ADD TAVILY TOOL TOGGLES NEAR INPUT */}
+              <TooltipProvider delayDuration={100}>
+                <div className="flex items-center justify-end space-x-4 mb-2 pr-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setTavilySearchEnabled(!tavilySearchEnabled)}
+                        className="h-7 w-7" // Smaller button
+                      >
+                        <Search className={cn("h-4 w-4", tavilySearchEnabled ? "text-blue-500" : "text-muted-foreground")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{tavilySearchEnabled ? "Disable" : "Enable"} Tavily Web Search</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                       <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setTavilyExtractEnabled(!tavilyExtractEnabled)}
+                        className="h-7 w-7" // Smaller button
+                      >
+                        <ExternalLink className={cn("h-4 w-4", tavilyExtractEnabled ? "text-green-500" : "text-muted-foreground")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                       <p>{tavilyExtractEnabled ? "Disable" : "Enable"} Tavily Web Content Extraction</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+              {/* END: ADD TAVILY TOOL TOGGLES NEAR INPUT */}
 
               <div className="flex items-center space-x-2">
                 <div className="relative flex-1">

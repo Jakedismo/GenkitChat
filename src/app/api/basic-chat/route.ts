@@ -15,6 +15,8 @@ const InputSchema = z.object({
   temperaturePreset: z.enum(["precise", "normal", "creative"]),
   maxTokens: z.number().int().positive(),
   sessionId: z.string().optional(),
+  tavilySearchEnabled: z.boolean().optional().default(false),
+  tavilyExtractEnabled: z.boolean().optional().default(false),
 });
 
 // Helper to format Server-Sent Events (SSE)
