@@ -7,6 +7,15 @@ import {
 } from "@genkit-ai/googleai";
 import { mcpClient } from "genkitx-mcp";
 import { openAI } from "genkitx-openai";
+import { 
+  devLocalVectorstore, 
+  devLocalIndexerRef, 
+  devLocalRetrieverRef 
+} from "@genkit-ai/dev-local-vectorstore";
+import { 
+  vertexAI, 
+  textEmbedding005 
+} from "@genkit-ai/vertexai";
 import { z } from "zod"; // Import Zod here
 import {
   MessageData,
@@ -43,8 +52,23 @@ const context7Client = mcpClient({
 
 // Create and export the Genkit instance
 export const aiInstance = genkit({
-  plugins: [googleAI(), context7Client, openAI()],
+  plugins: [
+    googleAI(), 
+    context7Client, 
+    openAI(),
+    vertexAI(), // Add VertexAI for embeddings
+    devLocalVectorstore([
+      {
+        indexName: "ragIndex", // Name for our vector store
+        embedder: textEmbedding005, // Use the textEmbedding005 model
+      },
+    ])
+  ],
 });
+
+// Export the indexer and retriever references
+export const ragIndexerRef = devLocalIndexerRef("ragIndex");
+export const ragRetrieverRef = devLocalRetrieverRef("ragIndex");
 
 // Set log level
 logger.setLogLevel("debug");
@@ -150,15 +174,34 @@ export async function runBasicChatFlowStream(
     console.log(`New session created with ID: ${effectiveSessionId}`);
   }
 
+  // Determine model configuration based on provider and specific model constraints
+  let modelConfig: any = {}; // Start with an empty config
+
+  // Set token limit based on provider
+  if (modelId.startsWith("openai/")) {
+    modelConfig.max_completion_tokens = maxTokens;
+    console.log(`Using OpenAI specific config: max_completion_tokens=${maxTokens}`);
+  } else {
+    modelConfig.maxOutputTokens = maxTokens;
+    console.log(`Using standard Genkit config: maxOutputTokens=${maxTokens}`);
+  }
+
+  // Set temperature, but ONLY if the model is NOT openai/o4-mini
+  // Assuming 'openai/o4-mini' is the correct ID causing the issue.
+  if (modelId !== "openai/o4-mini") {
+    modelConfig.temperature = temperature;
+    console.log(`Setting temperature: ${temperature}`);
+  } else {
+    console.log(`Model ${modelId} does not support custom temperature. Using default.`);
+    // Do not set temperature for o4-mini, let the API use its default (1.0)
+  }
+
   // Get chat instance for this session
   const chat = session.chat({
     model: modelId,
     system: systemPrompt,
     tools: ["context7/resolve-library-id", "context7/get-library-docs"],
-    config: {
-      temperature: temperature,
-      maxOutputTokens: maxTokens,
-    },
+    config: modelConfig, // Use the dynamically determined config
   });
 
   // Send the user message using the session-specific chat

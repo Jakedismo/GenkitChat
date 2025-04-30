@@ -15,12 +15,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { RagEndpoint, getRagEndpoints } from '@/services/rag';
-import { BedrockModel, getBedrockModels } from '@/services/bedrock';
+// Removed direct imports for server-side functions
+// Keep type imports if needed elsewhere, though RagEndpoint/BedrockModel might be removable now
+// import type { RagEndpoint } from '@/services/rag';
+// import type { BedrockModel } from '@/services/bedrock';
 import { availableGeminiModels } from '@/ai/available-models';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { LucideIcon, Server, Settings, Bot, Code, BrainCircuit } from 'lucide-react';
+import { LucideIcon, Server, Settings, Bot, Code, BrainCircuit, Paperclip, X, FileText } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -31,12 +33,14 @@ import {
 import { ToolInvocation } from "@/lib/genkit-instance";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { basicChatFlow, ragAugmentedChatFlow } from "@/lib/genkit-instance";
+// Removed ragAugmentedChatFlow import as it's no longer used
+import { basicChatFlow } from "@/lib/genkit-instance";
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import mermaid from 'mermaid';
+// Removed pdfjs-dist imports (static and dynamic)
+import dynamic from 'next/dynamic';
 
 interface ChatMessage {
   id: string;
@@ -45,46 +49,24 @@ interface ChatMessage {
   toolInvocations?: ToolInvocation[];
 }
 
+// Remove RAG_BEDROCK mode
 enum ChatMode {
-  RAG_BEDROCK = 'rag_bedrock',
   DIRECT_GEMINI = 'direct_gemini',
   DIRECT_OPENAI = 'direct_openai'
 }
 
-interface ServiceSelectorProps {
-  label: string;
-  items: { id: string; name: string }[];
-  selectedId: string;
-  onSelect: (id: string) => void;
-  icon?: LucideIcon;
-  disabled?: boolean;
-}
+// ServiceSelector might be removable if Bedrock models/RAG endpoints are fully gone
+// Keeping for now in case it's reused, but it's unused in the current state.
+// interface ServiceSelectorProps {
+//   label: string;
+//   items: { id: string; name: string }[];
+//   selectedId: string;
+//   onSelect: (id: string) => void;
+//   icon?: LucideIcon;
+//   disabled?: boolean;
+// }
+// const ServiceSelector: React.FC<ServiceSelectorProps> = ({...}) => {...};
 
-const ServiceSelector: React.FC<ServiceSelectorProps> = ({
-  label,
-  items,
-  selectedId,
-  onSelect,
-  disabled = false,
-}) => {
-  return (
-    <div className={cn(disabled && 'opacity-50 cursor-not-allowed')}>
-      <p className="mb-2 text-sm font-medium">{label}</p>
-      <Select value={selectedId} onValueChange={onSelect} disabled={disabled}>
-        <SelectTrigger disabled={disabled}>
-          <SelectValue placeholder="Select..." />
-        </SelectTrigger>
-        <SelectContent>
-          {items.map((item) => (
-            <SelectItem key={item.id} value={item.id}>
-              {item.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-};
 
 // Define types for UI display
 interface DisplayTool {
@@ -112,14 +94,23 @@ type TemperaturePreset = 'precise' | 'normal' | 'creative';
 // Initialize Mermaid on client mount
 mermaid.initialize({ startOnLoad: false }); // Don't run automatically on load
 
+// Interface for uploaded files with additional metadata
+interface UploadedFile {
+  file: File;
+  id: string;
+  status: 'uploading' | 'success' | 'error';
+  error?: string;
+}
+
 const LambdaChat: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
-  const [ragEndpoints, setRagEndpoints] = useState<RagEndpoint[]>([]);
-  const [bedrockModels, setBedrockModels] = useState<BedrockModel[]>([]);
-  const [selectedRagEndpointId, setSelectedRagEndpointId] = useState('');
-  const [selectedLlmModelId, setSelectedLlmModelId] = useState('');
-  const [chatMode, setChatMode] = useState<ChatMode>(ChatMode.RAG_BEDROCK);
+  // Remove RAG/Bedrock state
+  // const [ragEndpoints, setRagEndpoints] = useState<RagEndpoint[]>([]);
+  // const [bedrockModels, setBedrockModels] = useState<BedrockModel[]>([]);
+  // const [selectedRagEndpointId, setSelectedRagEndpointId] = useState('');
+  // const [selectedLlmModelId, setSelectedLlmModelId] = useState('');
+  const [chatMode, setChatMode] = useState<ChatMode>(ChatMode.DIRECT_GEMINI); // Default to Gemini
   const [selectedGeminiModelId, setSelectedGeminiModelId] = useState<string>(
     availableGeminiModels.length > 0 ? availableGeminiModels[0].id : ''
   );
@@ -131,6 +122,9 @@ const LambdaChat: React.FC = () => {
   const [temperaturePreset, setTemperaturePreset] = useState<TemperaturePreset>('normal');
   const [maxTokens, setMaxTokens] = useState<number>(1024);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Ref for the scrollable message container
@@ -140,63 +134,34 @@ const LambdaChat: React.FC = () => {
   // Function to scroll to bottom
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    // Alternative using scrollAreaRef if direct child ref works better:
-    // scrollAreaRef.current?.parentElement?.scrollTo({ 
-    //   top: scrollAreaRef.current.parentElement.scrollHeight, 
-    //   behavior: 'smooth' 
-    // });
   };
 
   // Effect to scroll and re-render Mermaid diagrams when messages change
   useEffect(() => {
     scrollToBottom();
-    // Run mermaid.run() to render diagrams in updated content
-    // Use try/catch as it can throw errors if syntax is invalid
     try {
-      mermaid.run(); 
+      mermaid.run();
     } catch (e) {
       console.error("Mermaid rendering error:", e);
     }
   }, [messages]);
 
+  // Simplified useEffect - remove RAG/Bedrock fetching logic
+  // Effect for initial setup and fetching data
   useEffect(() => {
-     if (!selectedGeminiModelId && availableGeminiModels.length > 0) {
+    // Removed pdf.js worker setup logic
+    // Rest of the useEffect...
+    if (!selectedGeminiModelId && availableGeminiModels.length > 0) {
       setSelectedGeminiModelId(availableGeminiModels[0].id);
     }
-
-    const fetchServices = async () => {
-      // Fetch RAG/Bedrock only if RAG mode is selected or relevant state is missing
-      if(chatMode === ChatMode.RAG_BEDROCK && (ragEndpoints.length === 0 || bedrockModels.length === 0)) {
-         try {
-           const ragEndpointsData = await getRagEndpoints();
-           setRagEndpoints(ragEndpointsData);
-           if (ragEndpointsData.length > 0 && !selectedRagEndpointId) {
-             setSelectedRagEndpointId(ragEndpointsData[0].endpointId);
-           }
-
-           const bedrockModelsData = await getBedrockModels();
-           setBedrockModels(bedrockModelsData);
-           if (bedrockModelsData.length > 0 && !selectedLlmModelId) {
-             setSelectedLlmModelId(bedrockModelsData[0].modelId);
-           }
-         } catch (error: any) {
-            console.error('Failed to fetch RAG/Bedrock services:', error);
-            toast({
-              title: 'Error',
-              description: 'Failed to load RAG/Bedrock services. Ensure they are running.',
-              variant: 'destructive',
-            });
-         }
-      }
-    };
-
-    fetchServices();
+    if (!selectedOpenAIModelId && availableOpenAIModels.length > 0) {
+      setSelectedOpenAIModelId(availableOpenAIModels[0].id);
+    }
 
     // Fetch tools and update server status
     const fetchToolInfo = async () => {
-      // Since we configured 'context7', represent it in the UI
       const initialServers: ConnectedServer[] = [
-        { name: 'context7', status: 'Pending', tools: [] }
+        { name: 'context7', status: 'Pending', tools: [] } // Assuming context7 is still relevant
       ];
       setConnectedServers(initialServers);
 
@@ -206,12 +171,9 @@ const LambdaChat: React.FC = () => {
           throw new Error('Failed to fetch tools');
         }
         const fetchedTools: DisplayTool[] = await response.json();
-
-        // Update the context7 server entry with fetched tools (currently empty)
-        setConnectedServers(prev => prev.map(s => 
+        setConnectedServers(prev => prev.map(s =>
           s.name === 'context7' ? { ...s, status: 'Connected', tools: fetchedTools } : s
         ));
-
       } catch (error) {
         console.error('Failed to fetch tool info:', error);
         toast({
@@ -219,8 +181,7 @@ const LambdaChat: React.FC = () => {
           description: 'Could not fetch tool information from connected servers.',
           variant: 'destructive',
         });
-        // Update status to Error
-        setConnectedServers(prev => prev.map(s => 
+        setConnectedServers(prev => prev.map(s =>
           s.name === 'context7' ? { ...s, status: 'Error' } : s
         ));
       }
@@ -228,24 +189,17 @@ const LambdaChat: React.FC = () => {
 
     fetchToolInfo();
 
-  // Depend on chatMode to refetch RAG/Bedrock services if needed when switching modes
-  }, [chatMode, toast, selectedGeminiModelId, selectedLlmModelId, selectedRagEndpointId, ragEndpoints, bedrockModels]);
+  // Dependencies adjusted: remove RAG-related state and chatMode (as fetching doesn't depend on mode now)
+  }, [toast, selectedGeminiModelId, selectedOpenAIModelId]);
 
   const handleSendMessage = async () => {
     if (!userInput.trim() || isLoading) return;
 
     let modelIdToUse: string | null = null;
     let errorDescription: string | null = null;
-    let isRagMode = chatMode === ChatMode.RAG_BEDROCK;
 
-    // Determine model and check selection based on mode
-    if (chatMode === ChatMode.RAG_BEDROCK) {
-      if (!selectedRagEndpointId || !selectedLlmModelId) {
-        errorDescription = 'Please select a RAG endpoint and a Bedrock model.';
-      } else {
-        modelIdToUse = selectedLlmModelId; // Or construct ID if needed
-      }
-    } else if (chatMode === ChatMode.DIRECT_GEMINI) {
+    // Determine model and check selection based on mode (RAG logic removed)
+    if (chatMode === ChatMode.DIRECT_GEMINI) {
       if (!selectedGeminiModelId) {
         errorDescription = 'Please select a Gemini model.';
       } else {
@@ -259,110 +213,80 @@ const LambdaChat: React.FC = () => {
       }
     }
 
-    // Show toast and return if a model wasn't selected for the current mode
     if (errorDescription) {
-        toast({
-          title: 'Configuration Missing',
-          description: errorDescription,
-          variant: 'default',
-        });
+        toast({ title: 'Configuration Missing', description: errorDescription, variant: 'default' });
         return;
     }
     if (!modelIdToUse) {
-        // Should not happen if errorDescription logic is correct, but as a safeguard:
         console.error("Model ID to use is somehow null/undefined despite passing checks.");
         toast({ title: 'Error', description: 'Could not determine model to use.', variant: 'destructive' });
         return;
     }
 
     const userMessageText = userInput;
-    // Generate session ID only if it doesn't exist (first message)
     const sessionIdToUse = currentSessionId ?? crypto.randomUUID();
     if (!currentSessionId) {
         setCurrentSessionId(sessionIdToUse);
     }
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      sender: 'user',
-      text: userMessageText,
-    };
-
-    // Add user message and a *placeholder* bot message for streaming
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), sender: 'user', text: userMessageText };
     const botMessagePlaceholderId = crypto.randomUUID();
-    const botMessagePlaceholder: ChatMessage = {
-        id: botMessagePlaceholderId,
-        sender: 'bot',
-        text: '', // Start empty
-        toolInvocations: []
-    };
+    const botMessagePlaceholder: ChatMessage = { id: botMessagePlaceholderId, sender: 'bot', text: '', toolInvocations: [] };
+
     setMessages((prevMessages) => [...prevMessages, userMessage, botMessagePlaceholder]);
     setUserInput('');
-    setIsLoading(true); // Keep loading state for input disabling
+    console.log("Setting isLoading to TRUE"); // Log state change
+    setIsLoading(true);
 
     try {
-      let apiUrl: string;
-      let requestBody: any;
+      // Determine if RAG should be used based on uploaded files
+      const useRag = uploadedFiles.some(f => f.status === 'success');
+      console.log(`Sending message. Use RAG: ${useRag}`); // Add log to confirm RAG usage
 
-      // Determine API route and request body based on mode
-      if (chatMode === ChatMode.RAG_BEDROCK) {
-        apiUrl = '/api/rag-chat';
-        requestBody = {
-          ragEndpointId: selectedRagEndpointId,
-          llmModelId: modelIdToUse, 
-          query: userMessageText,
-          temperaturePreset: temperaturePreset,
-          maxTokens: maxTokens,
-          sessionId: sessionIdToUse,
-        };
-      } else { // DIRECT_GEMINI or DIRECT_OPENAI
-        apiUrl = '/api/basic-chat';
-        requestBody = {
-          userMessage: userMessageText,
-          modelId: modelIdToUse,
-          temperaturePreset: temperaturePreset,
-          maxTokens: maxTokens,
-          sessionId: sessionIdToUse,
-        };
-      }
+      // Set API URL based on whether RAG is needed
+      const apiUrl = useRag ? '/api/rag-chat' : '/api/basic-chat';
+      console.log(`Targeting API endpoint: ${apiUrl}`); // Log the target endpoint
 
-      // Revert to using fetch for streaming SSE
+      const requestBody = {
+        query: userMessageText, // Use 'query' for RAG endpoint, keep 'userMessage' maybe? Let's standardize on query for now.
+        userMessage: userMessageText, // Send both for compatibility? Or just query? Let's send both for now.
+        modelId: modelIdToUse,
+        temperaturePreset: temperaturePreset,
+        maxTokens: maxTokens,
+        sessionId: sessionIdToUse,
+      };
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
-      // Check response.ok AND response.body
-      if (!response.ok || !response.body) { 
-        const errorDetail = response.body 
-            ? (await response.json()).details // Try parsing JSON error if body exists
-            : `Request failed with status ${response.status}`; // Fallback if no body
-        throw new Error(errorDetail || `API request failed with status ${response.status}`);
+      if (!response.ok || !response.body) {
+        const errorDetail = response.body ? await response.json().catch(() => ({})) : {};
+        const message = errorDetail.details || errorDetail.error || `Request failed with status ${response.status}`;
+        throw new Error(message);
       }
 
-      // Process the stream using SSE logic
+      // Process the stream using SSE logic (remains largely the same)
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
       let buffer = '';
-      console.log("Starting SSE processing loop..."); // Log loop start
+      console.log("Starting SSE processing loop...");
 
       while (!done) {
           const { value, done: readerDone } = await reader.read();
           done = readerDone;
           const chunk = decoder.decode(value, { stream: !done });
-          console.log("SSE Raw Chunk:", chunk); // Log raw chunk
           buffer += chunk;
 
           let boundary = buffer.indexOf('\n\n');
           while (boundary !== -1) {
               const eventData = buffer.substring(0, boundary);
               buffer = buffer.substring(boundary + 2);
-              console.log("Processing SSE Event Data:", eventData); // Log event data block
-              
-              // Robust parsing for event and data lines
-              let eventType = 'message'; // Default event type
+
+              let eventType = 'message';
               let dataPayload = '';
               const lines = eventData.split('\n');
               for (const line of lines) {
@@ -372,57 +296,36 @@ const LambdaChat: React.FC = () => {
                       dataPayload = line.substring(5).trim();
                   }
               }
-              console.log(`Extracted Event Type: ${eventType}, Data Payload: ${dataPayload}`); // Log extracted parts
 
-              if (dataPayload) { // Check if data payload exists
+              if (dataPayload) {
                   try {
                       const jsonData = JSON.parse(dataPayload);
-                      console.log("Parsed JSON Data:", jsonData); // Log parsed data
-
                       setMessages((prevMessages) => {
-                          // Refined state update logic
                           const updatedMessages = prevMessages.map((msg) => {
-                              // console.log(`Comparing msg.id (${msg.id}) with placeholderId (${botMessagePlaceholderId})`);
                               if (msg.id === botMessagePlaceholderId) {
-                                  // console.log(`Attempting to update placeholder message ${botMessagePlaceholderId} for event: ${eventType}`);
                                   if (eventType === 'chunk') {
-                                      // console.log(`  > Current text: "${msg.text}"`);
-                                      // console.log(`  > Appending chunk: "${jsonData.text}"`);
-                                      const newText = msg.text + jsonData.text;
-                                      console.log(`  >> Updating msg ${msg.id} text to: "${newText}"`); // Log new text
-                                      return { ...msg, text: newText }; // Return new object
+                                      return { ...msg, text: msg.text + jsonData.text };
                                   } else if (eventType === 'tool_invocations') {
-                                      console.log("  >> Updating tool invocations:", jsonData);
                                       return { ...msg, toolInvocations: jsonData };
                                   } else if (eventType === 'error') {
                                       console.error("Streaming error from server event:", jsonData.error);
                                       toast({ title: 'Stream Error', description: jsonData.error, variant: 'destructive' });
-                                      const updatedMsg = { ...msg, text: msg.text + `\n\n[STREAM ERROR: ${jsonData.error}]` };
-                                      // console.log("  > New message object (with error):", updatedMsg);
-                                      return updatedMsg;
-                                  } else if (eventType === 'done') {
-                                      console.log("  >> Received 'done' event for placeholder.");
+                                      return { ...msg, text: msg.text + `\n\n[STREAM ERROR: ${jsonData.error}]` };
                                   } else if (eventType === 'final_response') {
-                                      console.log("Received final_response event:", jsonData);
-                                      // Update with final text (might be redundant if chunks were complete)
-                                      // and tool invocations. Also update session ID if needed.
                                       if(jsonData.sessionId && !currentSessionId) {
-                                          console.log("Setting session ID from server response:", jsonData.sessionId);
                                           setCurrentSessionId(jsonData.sessionId);
                                       }
                                       return {
-                                         ...msg, 
-                                         text: jsonData.response ?? msg.text, // Use final text if present
-                                         toolInvocations: jsonData.toolInvocations 
+                                         ...msg,
+                                         text: jsonData.response ?? msg.text,
+                                         toolInvocations: jsonData.toolInvocations
                                       };
                                   }
                               }
-                              return msg; // Essential: Return unmodified msg if ID doesn't match
+                              return msg;
                           });
-                          // console.log("prevMessages === updatedMessages:", prevMessages === updatedMessages);
-                          return updatedMessages; // Return the new array for React state update
+                          return updatedMessages;
                       });
-                      console.log(`<<< setMessages call completed for event: ${eventType}`); // Log after setMessages
                   } catch (parseError) {
                       console.error("SSE JSON Parse Error:", parseError, "Data was:", dataPayload);
                   }
@@ -430,21 +333,182 @@ const LambdaChat: React.FC = () => {
               boundary = buffer.indexOf('\n\n');
           }
       }
-      console.log("Finished SSE processing loop."); // Log loop end
-      // Stream finished
+      console.log("Finished SSE processing loop.");
 
     } catch (error: any) {
-      // ... error handling ...
+       console.error('Error sending message:', error);
+       toast({
+         title: 'Error',
+         description: error.message || 'Failed to get response from the server.',
+         variant: 'destructive',
+       });
+       // Remove placeholder on error or update it with error message
+       setMessages((prevMessages) => prevMessages.map(msg =>
+           msg.id === botMessagePlaceholderId
+           ? { ...msg, text: `[ERROR: ${error.message || 'Failed to fetch response'}]` }
+           : msg
+       ));
     } finally {
+      console.log("Setting isLoading to FALSE"); // Log state change
       setIsLoading(false);
     }
   };
 
-  // Add a way to clear the chat and session ID
+  // Handle file upload - Simplified for client-side simulation
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    // Removed RAG mode check
+
+    const sessionIdToUse = currentSessionId ?? crypto.randomUUID();
+    if (!currentSessionId) {
+      setCurrentSessionId(sessionIdToUse);
+    }
+
+    const totalExistingSize = uploadedFiles.reduce((sum, file) => sum + file.file.size, 0);
+    const newFilesTotalSize = Array.from(files).reduce((sum, file) => sum + file.size, 0);
+
+    if (totalExistingSize + newFilesTotalSize > 100 * 1024 * 1024) { // 100MB limit
+      toast({
+        title: 'File Size Limit Exceeded',
+        description: 'The total size of all uploaded files cannot exceed 100MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const newFiles: UploadedFile[] = Array.from(files).map(file => ({
+      file,
+      id: crypto.randomUUID(),
+      status: 'uploading',
+    }));
+
+    setUploadedFiles(prev => [...prev, ...newFiles]);
+    console.log("Setting isUploading to TRUE"); // Log state change
+    setIsUploading(true);
+
+    // Process files: Send raw file via FormData to backend
+    try {
+      const formData = new FormData();
+      newFiles.forEach(uploadFile => {
+        formData.append("files", uploadFile.file, uploadFile.file.name);
+      });
+      formData.append("sessionId", sessionIdToUse);
+
+      console.log(`Uploading ${newFiles.length} file(s) via FormData for session ${sessionIdToUse}`);
+
+      const response = await fetch('/api/rag-chat', {
+        method: 'POST',
+        body: formData, // Send FormData
+        // Browser sets Content-Type automatically
+      });
+
+      // Handle response after sending FormData
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+        console.error('File upload failed:', errorData);
+        const errorMessage = errorData.error || `Upload failed with status: ${response.status}`;
+        // Mark all new files as failed if the overall request fails
+        setUploadedFiles(prev =>
+          prev.map(file =>
+            newFiles.some(nf => nf.id === file.id)
+              ? { ...file, status: 'error', error: errorMessage }
+              : file
+          )
+        );
+        toast({
+          title: 'File Upload Failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      } else {
+        const result = await response.json();
+        console.log('File upload response:', result);
+
+        if (result.success) {
+          // Mark all successfully processed files (assuming backend processes all or none in this batch)
+          setUploadedFiles(prev =>
+            prev.map(file =>
+              newFiles.some(nf => nf.id === file.id)
+                ? { ...file, status: 'success' }
+                : file
+            )
+          );
+          toast({
+            title: 'Upload Successful',
+            description: result.message || `${newFiles.length} file(s) processed successfully.`,
+            variant: 'default',
+          });
+        } else {
+          // Handle specific file failures reported by the backend
+           const failedFilesMap = new Map(result.failedFiles?.map((f: any) => [f.file, f.error]) || []);
+           setUploadedFiles(prev =>
+             prev.map(file => {
+               if (newFiles.some(nf => nf.id === file.id)) {
+                 const backendError = failedFilesMap.get(file.file.name);
+                 const errorString: string | undefined = backendError
+                   ? (typeof backendError === 'string' ? backendError : JSON.stringify(backendError))
+                   : undefined;
+                 return {
+                   ...file,
+                   status: backendError ? 'error' : 'success', // Mark specific files
+                   error: errorString,
+                 };
+               }
+               return file;
+             })
+           );
+          toast({
+            title: 'Upload Partially Failed',
+            description: result.error || 'Some files could not be processed.',
+            variant: 'destructive',
+          });
+        }
+      }
+    } catch (error) { // Catch network or other unexpected errors during fetch
+      console.error('Error during FormData upload fetch:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Network error during upload';
+      // Mark all new files as failed
+      setUploadedFiles(prev =>
+        prev.map(file =>
+          newFiles.some(nf => nf.id === file.id && file.status === 'uploading') // Only mark those still uploading
+            ? { ...file, status: 'error', error: errorMessage } // Use correctly scoped errorMessage
+            : file
+        )
+      );
+      toast({
+        title: 'Upload Failed',
+        description: `An unexpected error occurred during upload: ${errorMessage}`, // Use correctly scoped errorMessage
+        variant: 'destructive',
+      });
+    } finally { // Ensure finally is correctly placed
+        console.log("Setting isUploading to FALSE"); // Log state change
+        setIsUploading(false);
+    }
+  }; // Ensure this closes handleFileUpload
+
+  // Trigger file input click (should be outside handleFileUpload)
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Remove a file from the list
+  const removeFile = (id: string) => {
+    setUploadedFiles(prev => prev.filter(file => file.id !== id));
+  };
+
+  // Clear chat and session ID
   const clearChat = () => {
     setMessages([]);
-    setCurrentSessionId(undefined); // Reset session ID for a new conversation
+    setUploadedFiles([]); // Clear uploaded files as well
+    setCurrentSessionId(undefined);
     toast({ title: "Chat Cleared", description: "Ready for a new conversation." });
+
+    // Remove server-side clearing if /api/rag-chat DELETE is irrelevant now
+    // if (currentSessionId) {
+    //   fetch(`/api/rag-chat?sessionId=${currentSessionId}`, { method: 'DELETE' })
+    //   ...
+    // }
   };
 
   return (
@@ -464,13 +528,13 @@ const LambdaChat: React.FC = () => {
                       <SelectValue placeholder="Select Chat Mode" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ChatMode.RAG_BEDROCK}>RAG (Bedrock)</SelectItem>
+                      {/* Removed RAG_BEDROCK */}
                       <SelectItem value={ChatMode.DIRECT_GEMINI}>Direct (Gemini)</SelectItem>
                       <SelectItem value={ChatMode.DIRECT_OPENAI}>Direct (OpenAI)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className={cn(chatMode !== ChatMode.DIRECT_GEMINI && 'opacity-50 cursor-not-allowed')}> 
+                <div className={cn(chatMode !== ChatMode.DIRECT_GEMINI && 'opacity-50 cursor-not-allowed')}>
                   <p className="mb-2 text-sm font-medium">Gemini Model</p>
                   <Select
                     value={selectedGeminiModelId}
@@ -489,7 +553,8 @@ const LambdaChat: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className={cn(chatMode !== ChatMode.DIRECT_OPENAI && 'hidden')}>
+                {/* Adjusted className to show OpenAI selector when its mode is active */}
+                <div className={cn(chatMode !== ChatMode.DIRECT_OPENAI && 'opacity-50 cursor-not-allowed')}>
                   <p className="mb-2 text-sm font-medium"> <BrainCircuit size={16} className="inline mr-1"/> OpenAI Model</p>
                   <Select
                     value={selectedOpenAIModelId}
@@ -510,8 +575,8 @@ const LambdaChat: React.FC = () => {
                 </div>
                 <div>
                   <Label htmlFor="temperature-preset">Creativity</Label>
-                  <Select 
-                    value={temperaturePreset} 
+                  <Select
+                    value={temperaturePreset}
                     onValueChange={(value) => setTemperaturePreset(value as TemperaturePreset)}
                     name="temperature-preset"
                    >
@@ -541,29 +606,10 @@ const LambdaChat: React.FC = () => {
                     max="8192" // Example max, adjust as needed
                     step="16"
                   />
-                </div>
-              </div>
+                </div> {/* Closing div for max-tokens */}
+              </div> {/* Closing div for p-2 space-y-4 */}
             </SidebarGroup>
-            <SidebarGroup className={cn(chatMode !== ChatMode.RAG_BEDROCK && 'hidden')}> 
-              <SidebarGroupLabel>RAG Configuration</SidebarGroupLabel>
-              <Separator />
-              <div className="p-2 space-y-4"> 
-                <ServiceSelector
-                  label="RAG Endpoint"
-                  items={ragEndpoints.map((ep) => ({ id: ep.endpointId, name: ep.endpointName }))}
-                  selectedId={selectedRagEndpointId}
-                  onSelect={setSelectedRagEndpointId}
-                  disabled={chatMode !== ChatMode.RAG_BEDROCK} 
-                />
-                <ServiceSelector
-                  label="Bedrock LLM Model"
-                  items={bedrockModels.map((model) => ({ id: model.modelId, name: model.modelName }))}
-                  selectedId={selectedLlmModelId}
-                  onSelect={setSelectedLlmModelId}
-                  disabled={chatMode !== ChatMode.RAG_BEDROCK}
-                />
-              </div>
-            </SidebarGroup>
+            {/* Removed RAG Configuration SidebarGroup */}
             <SidebarGroup>
               <SidebarGroupLabel>Connected Servers</SidebarGroupLabel>
               <Separator />
@@ -571,8 +617,8 @@ const LambdaChat: React.FC = () => {
                 {connectedServers.map(server => (
                   <div key={server.name} className="text-sm">
                     <div className="flex items-center space-x-2 mb-1">
-                       <Server size={16} /> 
-                       <span className="font-medium">{server.name}</span> 
+                       <Server size={16} />
+                       <span className="font-medium">{server.name}</span>
                        <span className={cn(
                          "text-xs px-1.5 py-0.5 rounded",
                          server.status === 'Connected' && 'bg-green-100 text-green-800',
@@ -632,6 +678,7 @@ const LambdaChat: React.FC = () => {
                       >
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeHighlight]} // Added rehypeHighlight
                           components={{
                             code({node, className, children, ...props}) {
                               const match = /language-(\w+)/.exec(className || '');
@@ -644,7 +691,8 @@ const LambdaChat: React.FC = () => {
                                     </pre>
                                 );
                               }
-                               
+
+                              // Apply highlight.js styling for other languages
                               return (
                                 <pre className={className || ''} style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
                                   <code className={className}>
@@ -697,24 +745,89 @@ const LambdaChat: React.FC = () => {
                 </div>
               </ScrollArea>
             </CardContent>
+            {/* Display uploaded files */}
+            {uploadedFiles.length > 0 && (
+              <div className="border-t p-2">
+                <div className="text-sm font-medium mb-2">Uploaded Files:</div>
+                <div className="space-y-1">
+                  {uploadedFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      className={cn(
+                        "flex items-center justify-between p-2 rounded text-sm",
+                        file.status === 'success' && "bg-green-50 text-green-700",
+                        file.status === 'error' && "bg-red-50 text-red-700",
+                        file.status === 'uploading' && "bg-yellow-50 text-yellow-700",
+                      )}
+                    >
+                      <div className="flex items-center space-x-2 overflow-hidden"> {/* Added overflow-hidden */}
+                        <FileText size={16} className="flex-shrink-0"/> {/* Added flex-shrink-0 */}
+                        <span className="truncate">{file.file.name}</span> {/* Removed max-w */}
+                        {file.status === 'uploading' && (
+                          <span className="animate-pulse ml-2 flex-shrink-0">Uploading...</span>
+                        )}
+                        {file.status === 'error' && (
+                          <span className="text-xs text-red-500 ml-2 flex-shrink-0">{file.error || 'Upload failed'}</span>
+                        )}
+                      </div>
+                      <button
+                        className="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" // Added margin and shrink
+                        onClick={() => removeFile(file.id)}
+                        title="Remove file"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="border-t p-4">
+              {/* Hidden file input */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={(e) => handleFileUpload(e.target.files)}
+                className="hidden"
+                multiple // Allow multiple files
+                // accept=".pdf" // Allow any file type for now, refine later if needed
+              />
+
               <div className="flex items-center space-x-2">
-                <Input
-                  type="text"
-                  placeholder="Enter your message..."
-                  value={userInput}
-                  onChange={(e) => setUserInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  disabled={isLoading}
-                />
-                <Button onClick={handleSendMessage} disabled={isLoading}>
+                <div className="relative flex-1">
+                  <Input
+                    type="text"
+                    placeholder="Enter your message..."
+                    value={userInput}
+                    onChange={(e) => setUserInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    disabled={isLoading}
+                    className="pr-10" // Add padding for the paperclip button
+                  />
+
+                  {/* Paperclip button - Enable when not loading/uploading */}
+                  <button
+                    className={cn(
+                      "absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600",
+                      (isLoading || isUploading) && "opacity-50 cursor-not-allowed"
+                    )}
+                    onClick={triggerFileUpload}
+                    disabled={isLoading || isUploading}
+                    title="Upload file(s)" // Updated title
+                  >
+                    <Paperclip size={16} />
+                  </button>
+                </div>
+
+                <Button onClick={handleSendMessage} disabled={isLoading || isUploading}>
                   {isLoading ? 'Sending...' : 'Send'}
-                 </Button>
+                </Button>
               </div>
             </div>
           </Card>

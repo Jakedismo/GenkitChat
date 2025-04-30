@@ -9,10 +9,11 @@ This project is a web-based chat interface built with Next.js and powered by Goo
 * **Multi-LLM Support:** Connects to and utilizes models from:
   * Google AI (Gemini family) via `@genkit-ai/googleai`
   * OpenAI (GPT-4o, GPT-4o Mini, etc.) via `genkitx-openai`
-  * Amazon Bedrock (UI configured, RAG backend logic is placeholder)
+  * Note: Amazon Bedrock models are listed in the UI but not currently configured in Genkit.
 * **Multiple Chat Modes:**
   * **Direct Chat:** Interact directly with selected Gemini or OpenAI models.
-  * **RAG Chat (Placeholder):** UI configured to select Bedrock models and RAG endpoints, but the backend retrieval logic is currently a placeholder.
+  * **RAG Chat:** Upload PDF documents and query their content using Retrieval-Augmented Generation. Features two-stage retrieval with simulated reranking.
+* **PDF Processing:** Uses `officeparser` on the backend to extract text from uploaded PDF files.
 * **Genkit Framework:** Core logic managed by Genkit flows defined in `src/lib/genkit-instance.ts`.
 * **Model Context Protocol (MCP) Integration:**
   * Uses `genkitx-mcp` plugin to connect to external MCP servers.
@@ -120,18 +121,18 @@ The application will start, initialize Genkit, load plugins (including starting 
 ## Project Structure
 
 * `src/app/`: Next.js App Router pages and API routes.
-  * `page.tsx`: The main chat UI component.
-  * `api/basic-chat/route.ts`: API endpoint for direct Gemini/OpenAI chat.
-  * `api/rag-chat/route.ts`: API endpoint for RAG chat mode.
+  * `page.tsx`: The main chat UI component, handles file uploads.
+  * `api/basic-chat/route.ts`: API endpoint for direct Gemini/OpenAI chat (streaming).
+  * `api/rag-chat/route.ts`: API endpoint handling both file uploads (for indexing via `officeparser`) and RAG queries (streaming).
   * `api/tools/route.ts`: API endpoint to list available tools (currently hardcoded).
-* `src/lib/genkit-instance.ts`: Central location for Genkit initialization, plugin configuration, and flow definitions.
+* `src/lib/genkit-instance.ts`: Central location for Genkit initialization, plugin configuration, and flow definitions (including RAG retriever/indexer setup).
 * `src/components/`: Reusable React UI components (shadcn/ui based).
-* `src/services/`: Contains placeholder functions for fetching RAG endpoints and Bedrock models.
+* `src/services/rag.ts`: Contains the core RAG logic, including text extraction via `officeparser`, chunking, indexing, retrieval, and reranking logic.
 * `src/ai/available-models.ts`: Static definitions of models available in the UI selectors.
 
 ## Notes & Future Work
 
-* **RAG Implementation:** The RAG chat mode UI is present, but the backend logic in `src/lib/genkit-instance.ts` (`ragTool`, `ragAugmentedChatFlow`) and `src/services/rag.ts` uses placeholder implementations. Actual RAG retrieval needs to be implemented.
+* **RAG Enhancement:** The current RAG implementation uses a simple keyword-based similarity score for reranking. This could be improved by integrating a more sophisticated reranker model (e.g., from Vertex AI or Cohere) if available through Genkit plugins or external APIs. Document processing currently focuses on PDFs via `officeparser`; support for other formats it handles (DOCX, PPTX, etc.) could be enabled.
 * **Tool Listing:** The `/api/tools` endpoint currently returns a hardcoded list for Context7 because dynamically listing tools registered via MCP client plugins proved difficult without relying on the `genkit start` Reflection API.
 * **Session Storage:** Conversation history currently uses Genkit's default in-memory store. For production or multi-user scenarios, a persistent store (like Firestore via `@genkit-ai/firebase`) should be configured.
 * **Error Handling:** Error handling in API routes and frontend fetch calls is basic and could be enhanced.
