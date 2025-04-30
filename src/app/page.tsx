@@ -23,7 +23,7 @@ import { Switch } from '@/components/ui/switch';  // Add Switch import
 import { availableGeminiModels } from '@/ai/available-models';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { LucideIcon, Server, Settings, Bot, Code, BrainCircuit, Paperclip, X, FileText, Search, ExternalLink } from 'lucide-react';
+import { LucideIcon, Server, Settings, Bot, Code, BrainCircuit, Paperclip, X, FileText, Search, ExternalLink, Sparkles } from 'lucide-react'; // Added Sparkles
 import {
   Select,
   SelectContent,
@@ -134,6 +134,9 @@ const LambdaChat: React.FC = () => {
   // Add state for Tavily tools toggles
   const [tavilySearchEnabled, setTavilySearchEnabled] = useState(false);
   const [tavilyExtractEnabled, setTavilyExtractEnabled] = useState(false);
+  // Add state for Perplexity tools toggles
+  const [perplexitySearchEnabled, setPerplexitySearchEnabled] = useState(false);
+  const [perplexityDeepResearchEnabled, setPerplexityDeepResearchEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -266,6 +269,8 @@ const LambdaChat: React.FC = () => {
         sessionId: sessionIdToUse,
         tavilySearchEnabled: tavilySearchEnabled, // Pass the state
         tavilyExtractEnabled: tavilyExtractEnabled, // Pass the state
+        perplexitySearchEnabled: perplexitySearchEnabled, // Pass the state
+        perplexityDeepResearchEnabled: perplexityDeepResearchEnabled, // Pass the state
       };
 
       const response = await fetch(apiUrl, {
@@ -842,6 +847,39 @@ const LambdaChat: React.FC = () => {
                        <p>{tavilyExtractEnabled ? "Disable" : "Enable"} Tavily Web Content Extraction</p>
                     </TooltipContent>
                   </Tooltip>
+                  {/* START: ADD PERPLEXITY TOOL TOGGLES */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setPerplexitySearchEnabled(!perplexitySearchEnabled)}
+                        className="h-7 w-7" // Smaller button
+                      >
+                        {/* Replaced Search with Sparkles icon */}
+                        <Sparkles className={cn("h-4 w-4", perplexitySearchEnabled ? "text-purple-500" : "text-muted-foreground")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{perplexitySearchEnabled ? "Disable" : "Enable"} Perplexity Web Search</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                       <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setPerplexityDeepResearchEnabled(!perplexityDeepResearchEnabled)}
+                        className="h-7 w-7" // Smaller button
+                      >
+                        <BrainCircuit className={cn("h-4 w-4", perplexityDeepResearchEnabled ? "text-orange-500" : "text-muted-foreground")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                       <p>{perplexityDeepResearchEnabled ? "Disable" : "Enable"} Perplexity Deep Research</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  {/* END: ADD PERPLEXITY TOOL TOGGLES */}
                 </div>
               </TooltipProvider>
               {/* END: ADD TAVILY TOOL TOGGLES NEAR INPUT */}

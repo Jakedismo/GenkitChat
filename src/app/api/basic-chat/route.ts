@@ -17,6 +17,8 @@ const InputSchema = z.object({
   sessionId: z.string().optional(),
   tavilySearchEnabled: z.boolean().optional().default(false),
   tavilyExtractEnabled: z.boolean().optional().default(false),
+  perplexitySearchEnabled: z.boolean().optional().default(false),     // Added
+  perplexityDeepResearchEnabled: z.boolean().optional().default(false), // Added
 });
 
 // Helper to format Server-Sent Events (SSE)

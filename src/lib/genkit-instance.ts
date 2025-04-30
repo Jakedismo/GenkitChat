@@ -96,6 +96,107 @@ const tavilyExtractTool = aiInstance.defineTool(
 console.log("[genkit-instance] Tavily tools defined directly.");
 // === END: Define Tavily Tools Directly on aiInstance ===
 
+
+// === START: Define Perplexity Tools Directly on aiInstance ===
+if (!process.env.PERPLEXITY_API_KEY) console.warn("[genkit-instance] PERPLEXITY_API_KEY environment variable not set.");
+
+const PERPLEXITY_API_ENDPOINT = "https://api.perplexity.ai/chat/completions";
+
+// Define Perplexity Search Tool (Online Model)
+const perplexitySearchTool = aiInstance.defineTool(
+  {
+    name: "perplexitySearch",
+    description: "Performs a search using Perplexity AI's online model (sonar) for up-to-date answers.",
+    inputSchema: z.object({
+      query: z.string().describe("The search query."),
+    }),
+    outputSchema: z.object({
+      response: z.string().describe("The answer from Perplexity AI."),
+    }),
+  },
+  async (input: { query: string }) => {
+    const apiKey = process.env.PERPLEXITY_API_KEY;
+    if (!apiKey) throw new Error("Perplexity API key missing (PERPLEXITY_API_KEY).");
+
+    try {
+      const response = await fetch(PERPLEXITY_API_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: "sonar",
+          messages: [{ role: "user", content: input.query }],
+          // Optional: add other parameters like max_tokens if needed
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Perplexity API error: ${response.status} ${response.statusText} - ${errorBody}`);
+      }
+
+      const data = await response.json();
+      // Extract content safely, assuming standard chat completion format
+      const content = data.choices?.[0]?.message?.content || "No response content found.";
+      return { response: content };
+    } catch (error: any) {
+      console.error("Error calling Perplexity API (Search):", error);
+      throw new Error(`Failed to execute Perplexity Search: ${error.message}`);
+    }
+  }
+);
+
+// Define Perplexity Deep Research Tool (Research Model)
+const perplexityDeepResearchTool = aiInstance.defineTool(
+  {
+    name: "perplexityDeepResearch",
+    description: "Performs deep research using Perplexity AI's research model (sonar-deep-research).",
+    inputSchema: z.object({
+      query: z.string().describe("The research query."),
+    }),
+    outputSchema: z.object({
+      response: z.string().describe("The research answer from Perplexity AI."),
+    }),
+  },
+  async (input: { query: string }) => {
+    const apiKey = process.env.PERPLEXITY_API_KEY;
+    if (!apiKey) throw new Error("Perplexity API key missing (PERPLEXITY_API_KEY).");
+
+     try {
+      const response = await fetch(PERPLEXITY_API_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: "sonar-deep-research", // Use the deep research model
+          messages: [{ role: "user", content: input.query }],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Perplexity API error: ${response.status} ${response.statusText} - ${errorBody}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || "No response content found.";
+      return { response: content };
+    } catch (error: any) {
+      console.error("Error calling Perplexity API (Deep Research):", error);
+      throw new Error(`Failed to execute Perplexity Deep Research: ${error.message}`);
+    }
+  }
+);
+console.log("[genkit-instance] Perplexity tools defined directly.");
+// === END: Define Perplexity Tools Directly on aiInstance ===
+
+
 // Export RAG refs
 export const ragIndexerRef = devLocalIndexerRef("ragIndex");
 export const ragRetrieverRef = devLocalRetrieverRef("ragIndex");
@@ -108,7 +209,15 @@ console.log("Genkit instance initialized with tools.");
 type TemperaturePreset = "precise" | "normal" | "creative";
 
 const BasicChatInputSchema = z.object({
-  userMessage: z.string(), modelId: z.string(), temperaturePreset: z.enum(["precise", "normal", "creative"]), maxTokens: z.number().int().positive(), sessionId: z.string().optional(), tavilySearchEnabled: z.boolean().optional().default(false), tavilyExtractEnabled: z.boolean().optional().default(false),
+  userMessage: z.string(),
+  modelId: z.string(),
+  temperaturePreset: z.enum(["precise", "normal", "creative"]),
+  maxTokens: z.number().int().positive(),
+  sessionId: z.string().optional(),
+  tavilySearchEnabled: z.boolean().optional().default(false),
+  tavilyExtractEnabled: z.boolean().optional().default(false),
+  perplexitySearchEnabled: z.boolean().optional().default(false),     // Added
+  perplexityDeepResearchEnabled: z.boolean().optional().default(false), // Added
 });
 type BasicChatInput = z.infer<typeof BasicChatInputSchema>;
 
@@ -133,7 +242,17 @@ class InMemorySessionStore implements SessionStore {
 const memoryStore = new InMemorySessionStore();
 
 export async function runBasicChatFlowStream(input: BasicChatInput): Promise<StreamAndResponse> {
-  const { userMessage, modelId, temperaturePreset, maxTokens, sessionId, tavilySearchEnabled, tavilyExtractEnabled } = input;
+  const {
+    userMessage,
+    modelId,
+    temperaturePreset,
+    maxTokens,
+    sessionId,
+    tavilySearchEnabled,
+    tavilyExtractEnabled,
+    perplexitySearchEnabled,     // Added
+    perplexityDeepResearchEnabled // Added
+  } = input;
   const temperature = presetTemperatures[temperaturePreset]; const systemPrompt = systemPrompts[temperaturePreset];
   let session: Session; let effectiveSessionId: string;
 
@@ -147,6 +266,8 @@ export async function runBasicChatFlowStream(input: BasicChatInput): Promise<Str
   const tools: string[] = ["context7/resolve-library-id", "context7/get-library-docs"];
   if (tavilySearchEnabled) tools.push("tavilySearch"); // Use string name
   if (tavilyExtractEnabled) tools.push("tavilyExtract"); // Use string name
+  if (perplexitySearchEnabled) tools.push("perplexitySearch");         // Added
+  if (perplexityDeepResearchEnabled) tools.push("perplexityDeepResearch"); // Added
   console.log("Tools passed to session.chat():", tools);
 
   const chat = session.chat({ model: modelId, system: systemPrompt, tools: tools, config: modelConfig });

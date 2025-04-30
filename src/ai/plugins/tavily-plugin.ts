@@ -1,4 +1,4 @@
-import { genkit, z } from 'genkit/beta';
+import { z } from 'genkit/beta';
 import { tavily } from '@tavily/core';
 import { Plugin } from '@genkit-ai/core'; // Import Plugin type from core
 import { Genkit } from 'genkit';
