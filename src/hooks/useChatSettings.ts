@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChatMode, TemperaturePreset, ModelInfo } from '@/types/chat';
+import { ChatMode, TemperaturePreset } from '@/types/chat';
 // Import model availability constants - adjust path if they live elsewhere
 import { availableGeminiModels, availableOpenAIModels } from '@/ai/available-models';
 

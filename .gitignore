@@ -48,3 +48,4 @@ memory/
 .env.*
 memory-bank/
 .roo
+.zed

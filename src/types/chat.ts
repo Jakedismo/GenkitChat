@@ -40,19 +40,29 @@ export interface DocumentData {
   // Optionally, add other metadata like 'score' if needed for display later
 }
 
+// Represents a tool invocation within a chat message
+export interface ToolInvocation {
+  toolName: string; // Use toolName to match useChatManager usage
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+}
+
 // Represents the structure of a single chat message in the UI
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'bot';
   text: string;
-  toolInvocations?: any[]; // Define more specific type if ToolInvocation is shared
+  toolInvocations?: ToolInvocation[]; // Use the specific type
   sources?: DocumentData[]; // For RAG: stores the source documents used for this bot message
 }
 
 // Represents the data needed for the citation preview sidebar
 export interface CitationPreviewData {
-  fileName: string;
-  content: string;
+  fileName: string; // Original filename
+  content?: string; // Original chunk text content (optional if PDF preview is shown)
+  pdfUrl: string; // URL to serve the PDF from
+  pageNumber: number; // 1-based page number for the citation
+  textToHighlight: string; // Specific text to highlight on the page
   documentId: string; // Original document ID
   chunkId: string;    // Specific chunk ID
 }

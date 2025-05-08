@@ -209,15 +209,20 @@ export const basicChatFlow = aiInstance.defineFlow(
             const toolResponsePart = part as ToolResponsePart;
             const reqRef = toolResponsePart.toolResponse?.ref;
             if (reqRef && toolRequests.has(reqRef)) {
-              const requestPart = toolRequests.get(reqRef)!;
+              const requestPart = toolRequests.get(reqRef);
+              if (!requestPart) return; // Ensure requestPart is defined
+
+              const unknownInput = requestPart.toolRequest.input as unknown;
+              const unknownOutput = toolResponsePart.toolResponse?.output as unknown;
+
               toolInvocations.push({
                 name: requestPart.toolRequest.name,
-                input: requestPart.toolRequest.input as
-                  | Record<string, unknown>
-                  | undefined,
-                output: toolResponsePart.toolResponse?.output as
-                  | Record<string, unknown>
-                  | undefined,
+                input: (typeof unknownInput === 'object' && unknownInput !== null) 
+                  ? unknownInput as Record<string, unknown> 
+                  : undefined,
+                output: (typeof unknownOutput === 'object' && unknownOutput !== null)
+                  ? unknownOutput as Record<string, unknown>
+                  : undefined,
               });
               toolRequests.delete(reqRef);
             }

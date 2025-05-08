@@ -5,7 +5,7 @@ import { Separator } from '@/components/ui/separator';
 // If not, you might need to replace them with appropriate JSX or ensure they are exported.
 import { SidebarGroup, SidebarGroupLabel } from '@/components/ui/sidebar/index'; // Explicitly point to index
 import { Server } from 'lucide-react';
-import { ConnectedServer, DisplayTool } from '@/types/chat'; // Import shared types
+import { ConnectedServer } from '@/types/chat'; // Import shared types
 
 // Local type definitions removed, using shared types now.
 

@@ -5,8 +5,9 @@ import { stat } from 'fs/promises';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { docIdParam: string } }
+  context: { params: Promise<{ docIdParam: string }> }
 ) {
+  const params = await context.params;
   const encodedDocIdParam = params.docIdParam;
 
   if (!encodedDocIdParam) {
@@ -57,8 +58,9 @@ export async function GET(
 
     return new NextResponse(fileBuffer, { status: 200, headers });
 
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
+  } catch (error: unknown) {
+    // Check if error is an object and has a 'code' property
+    if (typeof error === 'object' && error !== null && 'code' in error && (error as { code: string }).code === 'ENOENT') {
       console.error(`File not found: ${filePath}`);
       return NextResponse.json({ error: 'File not found.' }, { status: 404 });
     }

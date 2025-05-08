@@ -77,10 +77,10 @@ export function useFileUploads(
 
       // Check for network/server errors
       if (!response.ok) {
-        let errorData: any = {};
+        let errorData: { error?: string; message?: string } = {};
         try {
           errorData = await response.json();
-        } catch (e) { /* Ignore if response isn't JSON */ }
+        } catch { /* Ignore if response isn't JSON */ }
         const errorMessage = errorData?.error || errorData?.message || `Upload failed with status: ${response.status}`;
         console.error('File upload failed:', response.status, errorMessage);
         throw new Error(errorMessage);
@@ -106,7 +106,7 @@ export function useFileUploads(
         });
       } else {
         // Handle cases where backend reports failure, possibly partial
-        const failedFilesMap = new Map(result.failedFiles?.map((f: any) => [f.file, f.error]) || []);
+        const failedFilesMap = new Map(result.failedFiles?.map((f: { file: string; error: unknown }) => [f.file, f.error]) || []);
         setUploadedFiles((prev) =>
           prev.map((file) => {
             if (newFiles.some((nf) => nf.id === file.id)) {

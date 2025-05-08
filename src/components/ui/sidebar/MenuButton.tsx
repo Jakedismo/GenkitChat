@@ -11,4 +11,4 @@ const sidebarMenuButtonVariants = {}; // Empty object for now
 
 export { SidebarMenuButton, sidebarMenuButtonVariants };
 
-export type SidebarMenuButtonVariantProps = {}; // Empty type for now
+export type SidebarMenuButtonVariantProps = object; // Empty type for now

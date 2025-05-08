@@ -1,49 +1,23 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupLabel,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar/index"; // Explicitly point to index
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch"; // Add Switch import
 // Removed direct imports for server-side functions
 // Keep type imports if needed elsewhere, though RagEndpoint/BedrockModel might be removable now
 // import type { RagEndpoint } from '@/services/rag';
 // import type { BedrockModel } from '@/services/bedrock';
-import { availableGeminiModels } from "@/ai/available-models";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import {
-  LucideIcon,
-  Server,
-  Settings,
-  Bot,
-  Code,
-  BrainCircuit,
-  Paperclip,
-  X,
-  FileText,
-  Search,
-  ExternalLink,
-  Sparkles,
-} from "lucide-react"; // Added Sparkles
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Code } from "lucide-react";
 import { ToolInvocation } from "@/lib/genkit-instance";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -57,29 +31,16 @@ import { useChatSettings } from "@/hooks/useChatSettings"; // Added hook import
 import { useFileUploads } from "@/hooks/useFileUploads"; // Added hook import
 import { useChatManager } from "@/hooks/useChatManager"; // Added hook import
 import {
-  ChatMode,
-  TemperaturePreset,
   DocumentData,
-  ChatMessage,
   CitationPreviewData,
   ConnectedServer,
   DisplayTool,
-  UploadedFile,
 } from "@/types/chat"; // Import shared types
 // Removed ragAugmentedChatFlow import as it's no longer used
-import { basicChatFlow } from "@/lib/genkit-instance";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
-import { Label } from "@/components/ui/label";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"; // Add Tooltip imports
 import mermaid from "mermaid";
 // Removed pdfjs-dist imports (static and dynamic)
-import dynamic from "next/dynamic";
 
 // Represents the structure of a document chunk's metadata and content, (Moved to types/chat.ts)
 // interface DocumentData { ... }
@@ -159,11 +120,11 @@ const LambdaChat: React.FC = () => {
     resetUploadedFiles, // Function to clear the file list
   } = useFileUploads(() => currentSessionIdForUpload); // Pass getter for currentSessionId
 
-// Tool toggles state moved into useChatSettings hook
+  // Tool toggles state moved into useChatSettings hook
 
-// Core chat state and logic managed by custom hook
-const {
-  messages,
+  // Core chat state and logic managed by custom hook
+  const {
+    messages,
     // setMessages, // Setter exposed if needed externally
     userInput,
     setUserInput,
@@ -188,7 +149,6 @@ const {
     perplexitySearchEnabled,
     perplexityDeepResearchEnabled,
   });
-
 
   // Need to sync session ID used for uploads with the one from chat manager
   useEffect(() => {
@@ -268,12 +228,19 @@ const {
   ) => {
     const message = messages.find((m) => m.id === messageId);
     if (message && message.sources && message.sources[chunkIndexInSources]) {
-      const sourceChunk = message.sources[chunkIndexInSources] as DocumentData & { pageNumber?: number; textToHighlight?: string }; // Cast to include new optional fields
+      const sourceChunk = message.sources[
+        chunkIndexInSources
+      ] as DocumentData & { pageNumber?: number; textToHighlight?: string }; // Cast to include new optional fields
 
       // Ensure required fields for PDF preview are present
-      if (sourceChunk.originalFileName && sourceChunk.documentId && typeof sourceChunk.pageNumber === 'number' && sourceChunk.textToHighlight) {
+      if (
+        sourceChunk.originalFileName &&
+        sourceChunk.documentId &&
+        typeof sourceChunk.pageNumber === "number" &&
+        sourceChunk.textToHighlight
+      ) {
         setCitationPreview({
-          originalFileName: sourceChunk.originalFileName,
+          fileName: sourceChunk.originalFileName,
           pdfUrl: `/api/files/${encodeURIComponent(sourceChunk.documentId)}`, // Construct URL for PDF serving API
           pageNumber: sourceChunk.pageNumber,
           textToHighlight: sourceChunk.textToHighlight,
@@ -285,23 +252,28 @@ const {
         // Fallback for older data or if critical info is missing for PDF preview
         // This could show the raw content as before, or a specific error.
         console.warn(
-          `Source chunk for message ${messageId}, index ${chunkIndexInSources} is missing data for PDF preview. Got:`, sourceChunk
+          `Source chunk for message ${messageId}, index ${chunkIndexInSources} is missing data for PDF preview. Got:`,
+          sourceChunk,
         );
         // Displaying raw content as a fallback:
         setCitationPreview({
-          originalFileName: sourceChunk.originalFileName || "Unknown File",
-          // @ts-ignore - Deliberate fallback for content if pdfUrl/pageNumber/textToHighlight are missing
-          content: sourceChunk.content || sourceChunk.textToHighlight || "No content available for preview.", 
-                  pdfUrl: "", // Invalid URL to indicate no PDF preview
-                  pageNumber: 0, // Invalid page to indicate no PDF preview
-                  textToHighlight: sourceChunk.textToHighlight || sourceChunk.content || "",
+          fileName: sourceChunk.originalFileName || "Unknown File",
+          content:
+            sourceChunk.content ||
+            sourceChunk.textToHighlight ||
+            "No content available for preview.",
+          pdfUrl: "", // Invalid URL to indicate no PDF preview
+          pageNumber: 0, // Invalid page number
+          textToHighlight:
+            sourceChunk.textToHighlight || sourceChunk.content || "",
           documentId: sourceChunk.documentId,
           chunkId: sourceChunk.chunkId,
         });
         setIsCitationSidebarOpen(true);
         toast({
           title: "Citation Preview Issue",
-          description: "Could not fully load PDF preview data. Displaying available content.",
+          description:
+            "Could not fully load PDF preview data. Displaying available content.",
           variant: "default",
         });
       }
@@ -317,25 +289,21 @@ const {
     }
   };
 
-  // Custom component to handle paragraphs and prevent nesting <pre> inside <p>
-  const PComponent = (props: any) => {
-    const containsPre = props.node?.children?.some(
-      (child: any) => child.type === "element" && child.tagName === "pre",
-    );
-    if (containsPre) {
-      return <>{props.children}</>;
-    }
-    return <p>{props.children}</p>;
-  };
-
   // Shared components config for ReactMarkdown
   const markdownComponents = {
-    p: ({ node, children, ...props }: any) => {
+    // টাইপ PropsWithChildren<P> মানে হল যে কম্পোনেন্টটি children prop গ্রহণ করতে পারে।
+    // React.HTMLAttributes<HTMLParagraphElement> মানে হল যে কম্পোনেন্টটি <p> ট্যাগের সকল স্ট্যান্ডার্ড HTML অ্যাট্রিবিউট গ্রহণ করতে পারে।
+    p: ({
+      children,
+      ...props
+    }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
       // Check the React children being passed to this <p> component.
       // If any of them is a <pre> tag (which our custom code renderer produces for block code),
       // then we should not wrap these children with an actual <p> DOM element.
       const containsPreElement = React.Children.toArray(children).some(
-        (child: any) => child && child.type === 'pre'
+        // টাইপ গার্ড ব্যবহার করে child এলিমেন্টটি একটি ReactElement এবং তার 'type' প্রপার্টি আছে কিনা তা পরীক্ষা করা হচ্ছে।
+        (child): child is React.ReactElement =>
+          React.isValidElement(child) && child.type === "pre",
       );
 
       if (containsPreElement) {
@@ -346,7 +314,10 @@ const {
       // Otherwise, render as a normal paragraph.
       return <p {...props}>{children}</p>;
     },
-    code({ node, className, children, ...props }: any) {
+    code({
+      className,
+      children,
+    }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
       if (language === "mermaid") {
@@ -471,7 +442,7 @@ const {
                               ) => (
                                 <details key={index} className="mb-2 last:mb-0">
                                   <summary className="cursor-pointer hover:underline">
-                                    {inv.name}
+                                    {inv.toolName}
                                   </summary>
                                   <div className="mt-1 pl-4 space-y-1">
                                     <div>

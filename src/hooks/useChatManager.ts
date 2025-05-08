@@ -6,11 +6,12 @@ import {
   TemperaturePreset,
   UploadedFile,
   DocumentData, // Ensure DocumentData is imported
+  ToolInvocation, // Import ToolInvocation type
 } from "@/types/chat";
-import mermaid from "mermaid"; // Import mermaid
+// import mermaid from "mermaid"; // Import mermaid - Unused
 import { safeDestr } from "destr";
 import { v4 as uuidv4 } from "uuid"; // For generating session IDs
-import { unknown } from "zod";
+// import { unknown } from "zod"; // Unused zod import
 
 type ParsedJsonData = {
   sources?: Array<{
@@ -19,18 +20,20 @@ type ParsedJsonData = {
       chunkId?: string;
       originalFileName?: string;
       chunkIndex?: number;
-      [key: string]: any; // Allow other metadata properties
+      [key: string]: unknown; // Allow other metadata properties
     };
-    content?: Array<{ text?: string; [key: string]: any } | null | undefined>; // Elements of content can have other props
-    [key: string]: any; // Allow other properties on source elements
+    content?: Array<
+      { text?: string; [key: string]: unknown } | null | undefined
+    >; // Elements of content can have other props
+    [key: string]: unknown; // Allow other properties on source elements
   }>;
   text?: string;
   error?: string; // For error events
-  toolInvocations?: any; // For potential tool invocation data
+  toolInvocations?: unknown; // For potential tool invocation data
   sessionId?: string; // For session ID events
   response?: string; // For final response text
   // Allow any other top-level properties for general object logging and other event types
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 // Props expected by the hook
@@ -86,7 +89,7 @@ export function useChatManager({
     undefined,
   );
   const { toast } = useToast();
-  const prevIsLoadingRef = useRef<boolean>(false); // Track previous loading state
+  // const prevIsLoadingRef = useRef<boolean>(false); // Track previous loading state - Unused
 
   // Refs for scrolling
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -102,24 +105,9 @@ export function useChatManager({
         newSessionId,
       );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // This effect should run once to initialize the session.
-  }, []); // Intentionally empty dependency array
-
-  // Function to scroll to bottom
-  // Effect to initialize session ID on mount if not already set
-  useEffect(() => {
-    if (!currentSessionId) {
-      const newSessionId = uuidv4();
-      setCurrentSessionId(newSessionId);
-      console.log(
-        "[useChatManager] New chat session started on mount:",
-        newSessionId,
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // This effect should run once to initialize the session.
-  }, []); // Intentionally empty dependency array for one-time run if currentSessionId is initially undefined.
+    // This effect runs when currentSessionId changes or on mount.
+    // It ensures a session ID is initialized if it's not already set.
+  }, [currentSessionId]);
 
   // Function to scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -211,7 +199,7 @@ export function useChatManager({
 
     let modelIdToUse: string | null = null;
     let errorDescription: string | null = null;
-    let accumulatedJsonString = ""; // Moved accumulator here for early definition
+    const accumulatedJsonString = ""; // Moved accumulator here for early definition
 
     // Determine model based on props passed to the hook
     if (chatMode === ChatMode.DIRECT_GEMINI) {
@@ -425,17 +413,21 @@ export function useChatManager({
                         // Handle 'text' event type
                         if (
                           eventTypeToProcess === "text" &&
-                          typeof (jsonDataForThisEvent as any)?.text ===
+                          typeof (jsonDataForThisEvent as { text?: string })
+                            ?.text === // Type assertion
                             "string"
                         ) {
-                          updatedMsg.text += (jsonDataForThisEvent as any).text;
+                          updatedMsg.text += (
+                            jsonDataForThisEvent as { text: string }
+                          ).text; // Type assertion
                         }
                         // Handle 'sources' event type
                         else if (eventTypeToProcess === "sources") {
                           const mappedSources: DocumentData[] = (
                             (jsonDataForThisEvent as ParsedJsonData).sources ||
                             []
-                          ).map((doc: any) => ({
+                          ).map((doc) => ({
+                            // Let TS infer 'doc' type from the source array
                             documentId:
                               doc.metadata?.documentId ||
                               `doc-${crypto.randomUUID()}`,
@@ -465,13 +457,25 @@ export function useChatManager({
                         }
                         // Removed redundant 'chunk'/'text' check, handled above
                         else if (eventTypeToProcess === "tool_invocation") {
-                          const toolData = jsonDataForThisEvent as any;
+                          const toolData = jsonDataForThisEvent as {
+                            name?: string;
+                            input?: unknown;
+                            output?: unknown;
+                          };
                           if (!updatedMsg.toolInvocations)
                             updatedMsg.toolInvocations = [];
                           updatedMsg.toolInvocations.push({
                             toolName: toolData.name || "unknown_tool",
-                            input: toolData.input,
-                            output: toolData.output,
+                            input:
+                              typeof toolData.input === "object" &&
+                              toolData.input !== null
+                                ? (toolData.input as Record<string, unknown>)
+                                : undefined,
+                            output:
+                              typeof toolData.output === "object" &&
+                              toolData.output !== null
+                                ? (toolData.output as Record<string, unknown>)
+                                : undefined,
                           });
                           console.log(
                             `[useChatManager] Added tool invocation ${toolData.name} to message ${msg.id}.`,
@@ -479,8 +483,27 @@ export function useChatManager({
                         } else if (eventTypeToProcess === "tool_invocations") {
                           if (!updatedMsg.toolInvocations)
                             updatedMsg.toolInvocations = [];
+                          // Map incoming array to match ToolInvocation type
+                          const incomingInvocations =
+                            (jsonDataForThisEvent as Array<{
+                              name?: string;
+                              input?: unknown;
+                              output?: unknown;
+                            }>) || [];
                           updatedMsg.toolInvocations.push(
-                            ...((jsonDataForThisEvent as any[]) || []),
+                            ...incomingInvocations.map((inv) => ({
+                              toolName: inv.name || "unknown_tool", // Map 'name' to 'toolName'
+                              input:
+                                typeof inv.input === "object" &&
+                                inv.input !== null
+                                  ? (inv.input as Record<string, unknown>)
+                                  : undefined,
+                              output:
+                                typeof inv.output === "object" &&
+                                inv.output !== null
+                                  ? (inv.output as Record<string, unknown>)
+                                  : undefined,
+                            })),
                           );
                         } else if (eventTypeToProcess === "error") {
                           const errorMsg =
@@ -508,12 +531,22 @@ export function useChatManager({
                             );
                           }
                           // Safely update text and toolInvocations from final response
+                          const finalData =
+                            jsonDataForThisEvent as ParsedJsonData;
                           updatedMsg.text =
-                            (jsonDataForThisEvent as ParsedJsonData).response ??
-                            updatedMsg.text;
-                          updatedMsg.toolInvocations =
-                            (jsonDataForThisEvent as ParsedJsonData)
-                              .toolInvocations ?? updatedMsg.toolInvocations;
+                            finalData.response ?? updatedMsg.text;
+                          // Check if toolInvocations is an array before assigning
+                          if (Array.isArray(finalData.toolInvocations)) {
+                            // Assuming finalData.toolInvocations elements match ToolInvocation structure
+                            // Add type assertion if necessary, based on how final_response sends tool data
+                            updatedMsg.toolInvocations =
+                              (finalData.toolInvocations as ToolInvocation[]) ??
+                              updatedMsg.toolInvocations;
+                          } else {
+                            // Handle case where it's present but not an array, or keep existing
+                            updatedMsg.toolInvocations =
+                              updatedMsg.toolInvocations;
+                          }
                         }
                         // If event type is not handled above, return message unchanged within this branch
                         return updatedMsg;
