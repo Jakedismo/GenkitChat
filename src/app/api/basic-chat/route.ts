@@ -37,29 +37,37 @@ function formatSSE(event: string, data: string): string {
 export async function POST(request: Request) {
   try {
     const json = await request.json();
+    console.log("SERVER_RECEIVED_PAYLOAD:", JSON.stringify(json, null, 2)); // Add this line
     const validatedInput = InputSchema.safeParse(json);
 
     if (!validatedInput.success) {
+      console.error("SERVER_ZOD_VALIDATION_ERROR:", validatedInput.error.errors); // Log Zod's specific errors
       return NextResponse.json(
         { error: "Invalid input", details: validatedInput.error.errors },
         { status: 400 }
       );
     }
+    console.log("SERVER_VALIDATED_INPUT:", JSON.stringify(validatedInput.data, null, 2)); // Add this
 
     // Pass the full validated data (including sessionId) to the stream function
-    const {
-      stream,
-      responsePromise,
-      sessionId: usedSessionId,
-    } = await runBasicChatFlowStream(validatedInput.data);
+    try {
+      const {
+        stream,
+        responsePromise,
+        sessionId: usedSessionId,
+      } = await runBasicChatFlowStream(validatedInput.data);
 
-    const readableStream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
+      const readableStream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
         // Use const and specific types
         const toolInvocations: ToolInvocation[] = [];
-        // Initialize with partial structure, will be completed before sending final_response
-        const finalResponseData: Partial<FinalResponseData> = {}; 
+        // Initialize with full structure, will be completed before sending final_response
+        const finalResponseData: FinalResponseData = {
+          response: "",
+          toolInvocations: [], // Ensure this key is always present
+          sessionId: "", // Will be updated with the actual sessionId later
+        };
 
         try {
           // Stream text chunks from Genkit stream
@@ -181,8 +189,24 @@ export async function POST(request: Request) {
         Connection: "keep-alive",
       },
     });
+    } catch (genkitError) {
+      console.error("SERVER_ERROR_CALLING_GENKIT_FLOW:", genkitError);
+      const errorMessage = genkitError instanceof Error ? genkitError.message : "Genkit flow failed";
+      // Send an SSE-formatted error back to the client.
+      // Note: This assumes the error happens *before* the readableStream is returned.
+      // If it happens after, the error handling within the stream itself should catch it.
+      const errorPayload = JSON.stringify({ error: `Genkit Flow Error: ${errorMessage}` });
+      // Manually construct an SSE response string for the error.
+      const sseError = `event: error\ndata: ${errorPayload}\n\n`;
+       return new NextResponse(sseError, {
+         status: 500, // Or an appropriate error status
+         headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+       });
+    }
   } catch (error) {
-    console.error("Error in basic-chat API route (initial setup):", error);
+    // This top-level catch handles errors outside the Genkit flow call,
+    // e.g., issues with request.json() or initial Zod parsing if not caught more specifically.
+    console.error("Error in basic-chat API route (initial setup or other unexpected error):", error);
     const errorMessage =
       error instanceof Error ? error.message : "An unexpected error occurred";
     return NextResponse.json(

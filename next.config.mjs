@@ -1,13 +1,45 @@
+// next.config.mjs
+import path from "node:path";
+
+const empty = "./stubs/empty.js";
+
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  // Disable static generation for all pages
-  output: 'standalone',
-  
-  // Webpack configuration to handle Node.js modules
+export default {
+  output: "standalone",
+
+  // Turbopack-only part ──────────────────────────────────────────
+  turbopack: {
+    resolveAlias: {
+      fs: { browser: empty },
+      net: { browser: empty },
+      tls: { browser: empty },
+      dns: { browser: empty },
+      child_process: { browser: empty },
+      async_hooks: { browser: empty },
+      dgram: { browser: empty },
+      http2: { browser: empty },
+      "fs/promises": { browser: empty },
+      http: { browser: empty },
+      https: { browser: empty },
+      os: { browser: empty },
+      path: { browser: empty },
+      stream: { browser: empty },
+      crypto: { browser: empty },
+      zlib: { browser: empty },
+      util: { browser: empty },
+      assert: { browser: empty },
+      events: { browser: empty },
+      url: { browser: empty },
+      buffer: { browser: empty },
+      querystring: { browser: empty },
+      "@opentelemetry/exporter-jaeger": { browser: empty },
+    },
+  },
+
+  // -- Optional: keep Webpack tweaks for prod if you *don’t* ship
+  //    Turbopack builds yet. Turbopack simply ignores this block.
   webpack: (config, { isServer }) => {
-    // Properly handle Node.js specific modules for client-side code
     if (!isServer) {
-      // List all modules that should be marked as empty for client builds
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -18,7 +50,7 @@ const nextConfig = {
         async_hooks: false,
         dgram: false,
         http2: false,
-        'fs/promises': false,
+        "fs/promises": false,
         http: false,
         https: false,
         os: false,
@@ -32,31 +64,26 @@ const nextConfig = {
         url: false,
         buffer: false,
         querystring: false,
-        '@opentelemetry/exporter-jaeger': false,
+        "@opentelemetry/exporter-jaeger": false,
       };
     }
-    
     return config;
   },
-  
-  // Server-only packages (never bundle these for client)
-  serverExternalPackages: [
-    '@genkit-ai/core',
-    '@genkit-ai/express',
-    '@genkit-ai/googleai',
-    '@genkit-ai/next',
-    '@genkit-ai/dev-local-vectorstore',
-    '@genkit-ai/vertexai',
-    '@opentelemetry/exporter-jaeger',
-    'genkit',
-    'genkitx-mcp',
-    'genkitx-openai',
-    'pdf-parse',
-    'llm-chunk',
-    'uuid'
-  ],
-  
-  // We removed transpilePackages since it conflicts with serverExternalPackages
-};
 
-export default nextConfig;
+  // (unchanged) server-only deps
+  serverExternalPackages: [
+    "@genkit-ai/core",
+    "@genkit-ai/express",
+    "@genkit-ai/googleai",
+    "@genkit-ai/next",
+    "@genkit-ai/dev-local-vectorstore",
+    "@genkit-ai/vertexai",
+    "@opentelemetry/exporter-jaeger",
+    "genkit",
+    "genkitx-mcp",
+    "genkitx-openai",
+    "pdf-parse",
+    "llm-chunk",
+    "uuid",
+  ],
+};

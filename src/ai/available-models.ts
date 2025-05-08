@@ -15,6 +15,8 @@ export const availableGeminiModels = [
 export const availableOpenAIModels = [
   { id: "openai/o4-mini", name: "o4 mini" },
   { id: "openai/gpt-4.1", name: "GPT-4.1" },
+  { id: "openai/gpt-4.1-mini", name: "GPT-4.1 mini" },
+  { id: "openai/gpt-4.1-nano", name: "GPT-4.1 nano" },
   { id: "openai/o3", name: "o3" },
   // Add other desired OpenAI models here
 ];

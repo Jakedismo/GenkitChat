@@ -8,10 +8,28 @@ import {
   DocumentData, // Ensure DocumentData is imported
 } from "@/types/chat";
 import mermaid from "mermaid"; // Import mermaid
-// Import Genkit/AI instance if needed for direct calls (currently fetch is used)
-// import { aiInstance } from '@/lib/genkit-instance';
-// Import Tool types if manipulating tool definitions directly
-// import { GenkitTool } from 'genkit/tool';
+import { safeDestr } from "destr";
+
+type ParsedJsonData = {
+  sources?: Array<{
+    metadata?: {
+      documentId?: string;
+      chunkId?: string;
+      originalFileName?: string;
+      chunkIndex?: number;
+      [key: string]: any; // Allow other metadata properties
+    };
+    content?: Array<{ text?: string; [key: string]: any } | null | undefined>; // Elements of content can have other props
+    [key: string]: any; // Allow other properties on source elements
+  }>;
+  text?: string;
+  error?: string; // For error events
+  toolInvocations?: any; // For potential tool invocation data
+  sessionId?: string; // For session ID events
+  response?: string; // For final response text
+  // Allow any other top-level properties for general object logging and other event types
+  [key: string]: any;
+};
 
 // Props expected by the hook
 export interface UseChatManagerProps {
@@ -66,6 +84,7 @@ export function useChatManager({
     undefined,
   );
   const { toast } = useToast();
+  const prevIsLoadingRef = useRef<boolean>(false); // Track previous loading state
 
   // Refs for scrolling
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -97,24 +116,63 @@ export function useChatManager({
   useEffect(() => {
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
-      if (lastMessage.sender === 'bot') {
-        console.log('DEBUG: Last bot message state:', {
+      if (lastMessage.sender === "bot") {
+        console.log("DEBUG: Last bot message state:", {
           id: lastMessage.id,
           textLength: lastMessage.text.length,
-          hasToolInvocations: !!(lastMessage.toolInvocations && lastMessage.toolInvocations.length > 0),
+          hasToolInvocations: !!(
+            lastMessage.toolInvocations &&
+            lastMessage.toolInvocations.length > 0
+          ),
           toolInvocationsCount: lastMessage.toolInvocations?.length || 0,
           toolInvocations: lastMessage.toolInvocations, // Log the actual data
           hasSources: !!(lastMessage.sources && lastMessage.sources.length > 0),
           sourcesCount: lastMessage.sources?.length || 0,
         });
-        if (lastMessage.toolInvocations && lastMessage.toolInvocations.length > 0) {
-          console.log('DEBUG: Tool invocations found on last bot message:', JSON.stringify(lastMessage.toolInvocations, null, 2));
+        if (
+          lastMessage.toolInvocations &&
+          lastMessage.toolInvocations.length > 0
+        ) {
+          console.log(
+            "DEBUG: Tool invocations found on last bot message:",
+            JSON.stringify(lastMessage.toolInvocations, null, 2),
+          );
         } else {
-          console.log('DEBUG: No tool invocations on last bot message.');
+          console.log("DEBUG: No tool invocations on last bot message.");
         }
       }
     }
   }, [messages]);
+
+  // // Effect to run Mermaid AFTER loading completes  // << COMMENTED OUT TO FIX STREAMING INTERFERENCE
+  // useEffect(() => {
+  //   // Check if isLoading just changed from true to false
+  //   if (prevIsLoadingRef.current && !isLoading) {
+  //     // Ensure Mermaid runs client-side only and after render
+  //     if (typeof window !== "undefined") {
+  //       // Use setTimeout to allow React state updates to fully flush
+  //       setTimeout(() => {
+  //         try {
+  //           console.log("Attempting to run mermaid.run()...");
+  //           mermaid.run({
+  //             // Query specific Mermaid elements
+  //             nodes: document.querySelectorAll("pre.mermaid"),
+  //           });
+  //           console.log("mermaid.run() executed.");
+  //         } catch (e) {
+  //           console.error("Mermaid rendering error:", e);
+  //           toast({
+  //             title: "Diagram Error",
+  //             description: "Could not render a diagram.",
+  //             variant: "destructive",
+  //           });
+  //         }
+  //       }, 100); // Small delay (100ms) might help ensure DOM is ready
+  //     }
+  //   }
+  //   // Update the ref *after* the effect runs
+  //   prevIsLoadingRef.current = isLoading;
+  // }, [isLoading, toast]); // Depend on isLoading and toast (for error reporting)
 
   // Core function to handle sending a message
   const handleSendMessage = useCallback(async () => {
@@ -122,6 +180,7 @@ export function useChatManager({
 
     let modelIdToUse: string | null = null;
     let errorDescription: string | null = null;
+    let accumulatedJsonString = ""; // Moved accumulator here for early definition
 
     // Determine model based on props passed to the hook
     if (chatMode === ChatMode.DIRECT_GEMINI) {
@@ -191,9 +250,7 @@ export function useChatManager({
     try {
       const useRag = uploadedFiles.some((f) => f.status === "success");
 
-
       const apiUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
-
 
       const requestBody = {
         query: userMessageText,
@@ -230,165 +287,214 @@ export function useChatManager({
       const decoder = new TextDecoder();
       let done = false;
       let buffer = "";
-      let jsonAssemblyBuffer = ""; // Buffer to assemble fragmented JSON
 
+      // Variables for line-by-line processing
+      let currentSSEEventType: string | null = null;
+      let currentSSEDataLines: string[] = [];
+
+      console.log(">>> Entering main stream read loop (while !done)"); // DEBUG Loop Entry
       while (!done) {
+        console.log(">>> Reading from stream..."); // DEBUG Read Start
         const { value, done: readerDone } = await reader.read();
+        console.log(
+          `>>> Read ${done ? "finished" : value?.byteLength + " bytes"}`,
+        ); // DEBUG Read End
         done = readerDone;
+        if (done) break; // Exit loop immediately if done
         let rawChunk = decoder.decode(value, { stream: !done });
 
         // Normalize literal "\\n" to actual newline "\n", then remove any CRs
-        let normalizedChunk = rawChunk.replace(/\\n/g, "\n"); 
+        let normalizedChunk = rawChunk.replace(/\\n/g, "\n");
         normalizedChunk = normalizedChunk.replace(/\r/g, ""); // Remove any stray CRs
 
-        buffer += normalizedChunk; 
+        // Append normalized chunk to buffer
+        buffer += normalizedChunk;
 
-        let boundary = buffer.indexOf("\n\n"); 
-        while (boundary !== -1) {
-          const eventData = buffer.substring(0, boundary);
-          // The boundary is two newline characters.
-          buffer = buffer.substring(boundary + 2); 
+        // Process buffer line by line
+        let lineEndPos;
+        console.log(`--- Processing buffer (length: ${buffer.length})`); // DEBUG Buffer State
+        while ((lineEndPos = buffer.indexOf("\n")) !== -1) {
+          console.log("--- Processing line loop iteration"); // DEBUG Inner Loop Entry
+          const line = buffer.substring(0, lineEndPos);
+          buffer = buffer.substring(lineEndPos + 1); // Consume line from buffer
+          console.log(`--- Processing line: "${line}"`); // DEBUG Line Content
 
-          let eventType = "message";
-          let dataPayload = "";
-          const lines = eventData.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("event:")) {
-              eventType = line.substring(6).trim();
-            } else if (line.startsWith("data:")) {
-              dataPayload += line.substring(5).trim();
-            } // Ignore comments and empty lines
-          }
+          if (line === "") {
+            // Empty line: event boundary
+            // Dispatch event if we have data lines
+            if (currentSSEDataLines.length > 0) {
+              const eventTypeToProcess = currentSSEEventType || "message"; // Use stored type or default
+              const dataPayload = currentSSEDataLines
+                .map((dLine) => dLine.trim()) // Trim whitespace from each line
+                .join(""); // Join lines directly, assuming fragments of a single JSON object or text stream
+              // Using .join("") is safer if server sends JSON fragments on multiple data lines
 
-          if (dataPayload) { // If current event provided data
-            jsonAssemblyBuffer += dataPayload;
-            // console.log(`SSE_BUFFER_APPEND: EventType: '${eventType}'. Buffer now: '${jsonAssemblyBuffer}'`);
-          }
-
-          // Try to parse if the assembly buffer has content
-          if (jsonAssemblyBuffer) {
-            // console.log(`SSE_PARSE_ATTEMPT: EventType: '${eventType}'. Trying to parse: '${jsonAssemblyBuffer}'`);
-            try {
-              const jsonData = JSON.parse(jsonAssemblyBuffer);
-              
-              // Successfully parsed a complete JSON object
-              // console.log(`SSE_PARSE_SUCCESS: EventType: \\\'${eventType}\\\'. Parsed:`, jsonData);
-
-              setMessages((prevMessages) => {
-                const updatedMessages = prevMessages.map((msg) => {
-                  if (msg.id === botMessagePlaceholderId) {
-                    // Handle different event types based on the eventType of the current SSE event
-                    // (which is the one that completed the JSON object)
-                    if (eventType === "sources") {
-                      const mappedSources: DocumentData[] = (
-                        jsonData.sources || []
-                      ).map((doc: any) => {
-                        const textContent = (doc.content || [])
-                          .filter(
-                            (part: any) =>
-                              part && typeof part.text === "string",
-                          )
-                          .map((part: any) => part.text)
-                          .join("\n\n");
-                        return {
-                          documentId:
-                            doc.metadata?.documentId ||
-                            `doc-${crypto.randomUUID()}`,
-                          chunkId:
-                            doc.metadata?.chunkId ||
-                            `chunk-${crypto.randomUUID()}`,
-                          originalFileName:
-                            doc.metadata?.originalFileName || "Unknown Source",
-                          chunkIndex:
-                            typeof doc.metadata?.chunkIndex === "number"
-                              ? doc.metadata.chunkIndex
-                              : -1,
-                          content: textContent,
-                        };
-                      });
-                      return { ...msg, sources: mappedSources };
-                    } else if (eventType === "chunk" || eventType === "text") {
-                      return { ...msg, text: msg.text + (jsonData.text || "") };
-                    } else if (eventType === "tool_invocation") { 
-                      return {
-                        ...msg,
-                        toolInvocations: [
-                          ...(msg.toolInvocations || []),
-                          ...(jsonData ? [jsonData] : []), 
-                        ],
-                      };
-                    } else if (eventType === "tool_invocations") { 
-                      return {
-                        ...msg,
-                        toolInvocations: [
-                          ...(msg.toolInvocations || []),
-                          ...(jsonData || []),
-                        ],
-                      };
-                    } else if (eventType === "error") {
-                      console.error(
-                        "Streaming error from server event:",
-                        jsonData.error,
-                      );
-                      toast({
-                        title: "Stream Error",
-                        description: jsonData.error || "Unknown error",
-                        variant: "destructive",
-                      });
-                      return {
-                        ...msg,
-                        text:
-                          msg.text +
-                          `\n\n[STREAM ERROR: ${jsonData.error || "Unknown error"}]`,
-                      };
-                    } else if (eventType === "final_response") {
-                      if (jsonData.sessionId && !currentSessionId) {
-                        setCurrentSessionId(jsonData.sessionId);
-                      }
-                      return {
-                        ...msg,
-                        text: jsonData.response ?? msg.text, 
-                        toolInvocations:
-                          jsonData.toolInvocations ?? 
-                          msg.toolInvocations,
-                      };
-                    }
-                    return msg; 
+              // --- Simplified Per-Event JSON Parsing Logic ---
+              // eventTypeToProcess is from L326, dataPayload from L327-L330
+              if (dataPayload.trim()) {
+                let jsonDataForThisEvent: unknown = undefined;
+                try {
+                  if (eventTypeToProcess === "final_response" || dataPayload.includes(`\\"toolInvocations\\"`)) {
+                    console.log(`DEBUG_PARSE_ATTEMPT (per-event): EventType: \\'${eventTypeToProcess}\\', Payload:`, dataPayload);
                   }
-                  return msg; 
-                });
-                return updatedMessages;
-              });
+                  jsonDataForThisEvent = safeDestr<unknown>(dataPayload);
 
-              jsonAssemblyBuffer = ""; // Reset buffer after successful processing
-            } catch (parseError) {
-              if (parseError instanceof SyntaxError) {
-                // JSON is likely incomplete. Hold data in buffer and wait for more.
-                // console.log(`SSE_PARSE_INCOMPLETE: EventType: '${eventType}'. Buffer: '${jsonAssemblyBuffer}'. Error: ${parseError.message}`);
-              } else {
-                // A non-SyntaxError occurred
-                console.error(
-                  "SSE JSON Non-Syntax Parse Error (useChatManager - assembled):",
-                  parseError,
-                  "Data was:",
-                  jsonAssemblyBuffer,
-                );
-                toast({
-                  title: "Response Error",
-                  description: "Received unrecoverable malformed data from server.",
-                  variant: "destructive",
-                });
-                jsonAssemblyBuffer = ""; // Clear buffer on other errors to prevent carry-over
+                  // PARSE SUCCESSFUL for this event's dataPayload!
+                  if (eventTypeToProcess === "final_response") {
+                    console.log(
+                      "DEBUG_PARSE_SUCCESS (per-event): EventType: \\'final_response\\', Parsed jsonData:",
+                      jsonDataForThisEvent,
+                    );
+                  }
+                  if (typeof jsonDataForThisEvent === "object" && jsonDataForThisEvent !== null) {
+                    console.log(
+                      `SSE_EVENT_PROCESSED (per-event): EventType: \\'${eventTypeToProcess}\\', jsonData Keys: \\'${Object.keys(jsonDataForThisEvent).join(", ")}\\'`,
+                    );
+                  } else {
+                    console.log(
+                      `SSE_EVENT_PROCESSED (per-event): EventType: \\'${eventTypeToProcess}\\', jsonData is not an object or is null:`,
+                      jsonDataForThisEvent,
+                    );
+                  }
+
+                  // --- Update State ---
+                  setMessages((prevMessages) => {
+                    const updatedMessages = prevMessages.map((msg) => {
+                      if (msg.id === botMessagePlaceholderId) {
+                        if (eventTypeToProcess === "sources") {
+                          const mappedSources: DocumentData[] = (
+                            (jsonDataForThisEvent as ParsedJsonData).sources || []
+                          ).map((doc: any) => ({
+                            documentId:
+                              doc.metadata?.documentId ||
+                              `doc-${crypto.randomUUID()}`,
+                            chunkId:
+                              doc.metadata?.chunkId ||
+                              `chunk-${crypto.randomUUID()}`,
+                            originalFileName:
+                              doc.metadata?.originalFileName ||
+                              "Unknown Source",
+                            chunkIndex:
+                              typeof doc.metadata?.chunkIndex === "number"
+                                ? doc.metadata.chunkIndex
+                                : -1,
+                            content: (doc.content || [])
+                              .filter(
+                                (part: any) =>
+                                  part && typeof part.text === "string",
+                              )
+                              .map((part: any) => part.text)
+                              .join("\\\\n\\\\n"),
+                          }));
+                          return { ...msg, sources: mappedSources };
+                        } else if (
+                          eventTypeToProcess === "chunk" ||
+                          eventTypeToProcess === "text"
+                        ) {
+                          console.log(
+                            `DEBUG_SET_MESSAGES: Chunk/Text update. Prev text length: ${msg.text.length}, Adding text: \"${(jsonDataForThisEvent as ParsedJsonData).text || ""}\"`,
+                          );
+                          return {
+                            ...msg,
+                            text: msg.text + ((jsonDataForThisEvent as ParsedJsonData).text || ""),
+                          };
+                        } else if (eventTypeToProcess === "tool_invocation") { 
+                          return {
+                            ...msg,
+                            toolInvocations: [
+                              ...(msg.toolInvocations || []),
+                              ...(jsonDataForThisEvent ? [jsonDataForThisEvent] : []), 
+                            ],
+                          };
+                        } else if (eventTypeToProcess === "tool_invocations") { 
+                          return {
+                            ...msg,
+                            toolInvocations: [
+                              ...(msg.toolInvocations || []),
+                              ...((jsonDataForThisEvent as any[]) || []), 
+                            ],
+                          };
+                        } else if (eventTypeToProcess === "error") {
+                          console.error(
+                            "Streaming error from server event:",
+                            (jsonDataForThisEvent as ParsedJsonData).error,
+                          );
+                          toast({
+                            title: "Stream Error",
+                            description: (jsonDataForThisEvent as ParsedJsonData).error || "Unknown error",
+                            variant: "destructive",
+                          });
+                          return {
+                            ...msg,
+                            text:
+                              msg.text +
+                              `\\\\n\\\\n[STREAM ERROR: ${(jsonDataForThisEvent as ParsedJsonData).error || "Unknown error"}]`,
+                          };
+                        } else if (eventTypeToProcess === "final_response") {
+                          if ((jsonDataForThisEvent as ParsedJsonData).sessionId && !currentSessionId)
+                            setCurrentSessionId((jsonDataForThisEvent as ParsedJsonData).sessionId);
+                          return {
+                            ...msg,
+                            text: (jsonDataForThisEvent as ParsedJsonData).response ?? msg.text,
+                            toolInvocations:
+                              (jsonDataForThisEvent as ParsedJsonData).toolInvocations ?? msg.toolInvocations,
+                          };
+                        }
+                        return msg;
+                      }
+                      return msg;
+                    });
+                    return updatedMessages;
+                  });
+                  // accumulatedJsonString is not modified here as it's not for cross-event state.
+                } catch (parseError) {
+                  const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+                  console.error(
+                    `DEBUG_PARSE_ERROR (per-event): EventType: \\'${eventTypeToProcess}\\'. Payload was: \'${dataPayload}\'. Error: ${errorMessage}`
+                  );
+                  // Optionally toast for this specific event's failure:
+                  // toast({
+                  //   title: `Error processing '${eventTypeToProcess}' event`,
+                  //   description: `Could not parse data: ${errorMessage.substring(0,100)}`,
+                  //   variant: "destructive",
+                  // });
+                }
               }
-            }
-          } else if (!dataPayload && !jsonAssemblyBuffer) { 
-            // Current event is empty and buffer is empty. This isn't an error.
-            // console.log(`SSE_EVENT_NO_DATA: EventType: '${eventType}'. No data in current event, assembly buffer is empty.`);
+              // End of simplified per-event parsing logic.
+              // `accumulatedJsonString` (if still present in the outer scope) is not used by this block
+              // to carry state between distinct SSE events processed by this `if (line === "")` block.
+            } // End of processing event data
+
+            // Reset event type and data lines for the next event
+            currentSSEEventType = null;
+            // currentSSEDataLines was already reset above if data was processed
+            currentSSEDataLines = [];
+          } else if (line.startsWith("event:")) {
+            currentSSEEventType = line.substring(6).trim();
+          } else if (line.startsWith("data:")) {
+            currentSSEDataLines.push(line.substring(5)); // Store raw data part (leading space might exist)
+          } else if (line.startsWith(":")) {
+            // Comment, ignore
+          } else {
+            // Ignore other non-empty lines for robustness
           }
- 
-        // Look for the *next* message boundary in the remaining buffer
-          boundary = buffer.indexOf("\n\n"); 
-        }
+        } // End while(lineEndPos !== -1) - inner line processing loop
+      } // End while(!done) - outer stream reading loop
+      console.log("<<< Exiting main stream read loop"); // DEBUG Loop Exit
+
+      // Final check: If stream ends and there's data left in accumulatedJsonString, it implies incomplete JSON at end of stream.
+      if (accumulatedJsonString) {
+        console.error(
+          "SSE Stream ended with incomplete JSON data in accumulator:",
+          accumulatedJsonString,
+        );
+        // Decide if you want to show an error to the user
+        toast({
+          title: "Response Error",
+          description:
+            "Stream ended unexpectedly, response might be incomplete.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error("Error sending message (useChatManager):", error);

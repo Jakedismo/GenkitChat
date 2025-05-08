@@ -300,7 +300,22 @@ const {
 
   // Shared components config for ReactMarkdown
   const markdownComponents = {
-    p: PComponent,
+    p: ({ node, children, ...props }: any) => {
+      // Check the React children being passed to this <p> component.
+      // If any of them is a <pre> tag (which our custom code renderer produces for block code),
+      // then we should not wrap these children with an actual <p> DOM element.
+      const containsPreElement = React.Children.toArray(children).some(
+        (child: any) => child && child.type === 'pre'
+      );
+
+      if (containsPreElement) {
+        // If children include a <pre> element, render them in a fragment
+        // to avoid <p><pre>...</pre></p> nesting.
+        return <>{children}</>;
+      }
+      // Otherwise, render as a normal paragraph.
+      return <p {...props}>{children}</p>;
+    },
     code({ node, className, children, ...props }: any) {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
