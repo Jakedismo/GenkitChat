@@ -226,44 +226,22 @@ export function useChatManager({
           buffer = buffer.substring(boundary + 2); 
 
           let eventType = "message";
-          let dataPayload = ""; // Declare payload string here
-          // Duplicate removed
-          let dataLines: string[] = []; // Store all data lines for this event
-
-          const lines = eventData.split("\n"); 
+          let dataPayload = "";
+          const lines = eventData.split("\n");
           for (const line of lines) {
             if (line.startsWith("event:")) {
               eventType = line.substring(6).trim();
             } else if (line.startsWith("data:")) {
-              // Push the value part (after "data:", potentially includes leading space)
-              dataLines.push(line.substring(5)); 
-            } 
-            // Ignore comments (starting with ':') and empty lines
+              dataPayload += line.substring(5).trim();
+            } // Ignore comments and empty lines
           }
-
-          // Reconstruct the full data payload.
-          // Join the lines directly. Handle the potential leading space 
-          // that might exist after "data: " only on the first line.
-          dataPayload = dataLines.map((line, index) => {
-             if (index === 0 && line.startsWith(" ")) {
-               return line.substring(1); // Remove leading space from first line only
-             }
-             return line;
-          }).join(""); // Join lines directly
-
-          // Log the attempt before trying to parse
-          console.log(`SSE_PARSE_ATTEMPT: EventType: '${eventType}', DataPayload: '${dataPayload}'`); 
 
           if (dataPayload) {
             try {
-              const jsonData = JSON.parse(dataPayload); 
-              console.log(`SSE_PARSE_SUCCESS: Parsed JSON:`, jsonData); // Log success
+              const jsonData = JSON.parse(dataPayload);
               setMessages((prevMessages) => {
                 const updatedMessages = prevMessages.map((msg) => {
-                  // Diagnostic: Log IDs and eventType
-                  console.log(`SSE: Comparing msg.id '${msg.id}' with placeholderId '${botMessagePlaceholderId}'. EventType: '${eventType}'`);
                   if (msg.id === botMessagePlaceholderId) {
-                    console.log(`SSE: Matched placeholderId '${botMessagePlaceholderId}'. Processing eventType '${eventType}'.`);
                     // Handle different event types
                     if (eventType === "sources") {
                       const mappedSources: DocumentData[] = (
@@ -362,10 +340,8 @@ export function useChatManager({
                 description: "Received malformed data from server.",
                 variant: "destructive",
               });
-           }
-         } else { 
-            console.warn(`SSE_PARSE_WARN: Empty dataPayload for eventType \'${eventType}\'. EventData was: \'${eventData.replace(/\n/g, "\\\\n")}\'`); 
-         }
+            }
+          }
  
         // Look for the *next* message boundary in the remaining buffer
           boundary = buffer.indexOf("\n\n"); 
