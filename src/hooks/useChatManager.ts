@@ -10,6 +10,7 @@ import {
 import mermaid from "mermaid"; // Import mermaid
 import { safeDestr } from "destr";
 import { v4 as uuidv4 } from "uuid"; // For generating session IDs
+import { unknown } from "zod";
 
 type ParsedJsonData = {
   sources?: Array<{
@@ -96,7 +97,10 @@ export function useChatManager({
     if (!currentSessionId) {
       const newSessionId = uuidv4();
       setCurrentSessionId(newSessionId);
-      console.log('[useChatManager] New chat session started on mount:', newSessionId);
+      console.log(
+        "[useChatManager] New chat session started on mount:",
+        newSessionId,
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // This effect should run once to initialize the session.
@@ -108,7 +112,10 @@ export function useChatManager({
     if (!currentSessionId) {
       const newSessionId = uuidv4();
       setCurrentSessionId(newSessionId);
-      console.log('[useChatManager] New chat session started on mount:', newSessionId);
+      console.log(
+        "[useChatManager] New chat session started on mount:",
+        newSessionId,
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // This effect should run once to initialize the session.
@@ -353,41 +360,81 @@ export function useChatManager({
                 .join(""); // Join lines directly, assuming fragments of a single JSON object or text stream
               // Using .join("") is safer if server sends JSON fragments on multiple data lines
 
-              // --- Simplified Per-Event JSON Parsing Logic ---
-              // eventTypeToProcess is from L326, dataPayload from L327-L330
+              // --- Robust Per-Event JSON Parsing Logic (Restoring inner try/catch) ---
               if (dataPayload.trim()) {
                 let jsonDataForThisEvent: unknown = undefined;
+                let parseError: Error | null = null;
+
                 try {
-                  if (eventTypeToProcess === "final_response" || dataPayload.includes(`\\"toolInvocations\\"`)) {
-                    console.log(`DEBUG_PARSE_ATTEMPT (per-event): EventType: \\'${eventTypeToProcess}\\', Payload:`, dataPayload);
-                  }
+                  // Add try block around parsing logic
+                  // Attempt to parse the accumulated data payload
                   jsonDataForThisEvent = safeDestr<unknown>(dataPayload);
 
-                  // PARSE SUCCESSFUL for this event's dataPayload!
-                  if (eventTypeToProcess === "final_response") {
-                    console.log(
-                      "DEBUG_PARSE_SUCCESS (per-event): EventType: \\'final_response\\', Parsed jsonData:",
-                      jsonDataForThisEvent,
-                    );
-                  }
-                  if (typeof jsonDataForThisEvent === "object" && jsonDataForThisEvent !== null) {
-                    console.log(
-                      `SSE_EVENT_PROCESSED (per-event): EventType: \\'${eventTypeToProcess}\\', jsonData Keys: \\'${Object.keys(jsonDataForThisEvent).join(", ")}\\'`,
-                    );
+                  // Check if safeDestr failed (returned undefined) on non-empty payload
+                  if (
+                    jsonDataForThisEvent === undefined &&
+                    dataPayload.length > 0
+                  ) {
+                    // Only treat as error for non-text events. Text events might be fragmented JSON.
+                    if (eventTypeToProcess !== "text") {
+                      // Set the error object for non-text parse failures
+                      parseError = new Error(
+                        `Parsing failed: safeDestr returned undefined for non-text event type '${eventTypeToProcess}'`,
+                      );
+                      // Log details immediately, but error handling happens after try/catch
+                      console.error(
+                        `Parse Error Detail: Payload was '${dataPayload}'`,
+                      );
+                    } else {
+                      // For text events, fragmentation is possible. Log less severely.
+                      console.warn(
+                        `[useChatManager] Ignoring text fragment that failed JSON parsing: '${dataPayload}'`,
+                      );
+                      // jsonDataForThisEvent remains undefined, error is not set
+                    }
                   } else {
-                    console.log(
-                      `SSE_EVENT_PROCESSED (per-event): EventType: \\'${eventTypeToProcess}\\', jsonData is not an object or is null:`,
-                      jsonDataForThisEvent,
-                    );
+                    // Parse successful or payload was empty.
+                    // Log details for debugging complex events
+                    if (
+                      eventTypeToProcess !== "text" &&
+                      jsonDataForThisEvent !== undefined
+                    ) {
+                      console.log(
+                        `[useChatManager] Parsed event: Type='${eventTypeToProcess}', Data=`,
+                        jsonDataForThisEvent,
+                      );
+                    }
                   }
+                } catch (e) {
+                  // Catch if safeDestr somehow throws (it shouldn't, but be safe)
+                  parseError = e instanceof Error ? e : new Error(String(e));
+                  console.error(
+                    `Parse Error Detail: Exception during safeDestr. Payload was '${dataPayload}'`,
+                  );
+                }
 
-                  // --- Update State ---
+                // --- Handle successful parse or errors ---
+                if (jsonDataForThisEvent !== undefined) {
+                  // Successfully parsed JSON, update state
+                  // NOTE: It's crucial that setMessages itself doesn't throw an unhandled error.
                   setMessages((prevMessages) => {
                     const updatedMessages = prevMessages.map((msg) => {
                       if (msg.id === botMessagePlaceholderId) {
-                        if (eventTypeToProcess === "sources") {
+                        const updatedMsg = { ...msg };
+
+                        // Handle 'text' event type
+                        if (
+                          eventTypeToProcess === "text" &&
+                          typeof (jsonDataForThisEvent as any)?.text ===
+                            "string"
+                        ) {
+                          updatedMsg.text += (jsonDataForThisEvent as any).text;
+                        }
+                        // Handle 'sources' event type
+                        else if (eventTypeToProcess === "sources") {
                           const mappedSources: DocumentData[] = (
-                            (jsonDataForThisEvent as ParsedJsonData).sources || []
+                            (jsonDataForThisEvent as ParsedJsonData).sources ||
+                            []
                           ).map((doc: any) => ({
                             documentId:
                               doc.metadata?.documentId ||
@@ -398,92 +445,94 @@ export function useChatManager({
                             originalFileName:
                               doc.metadata?.originalFileName ||
                               "Unknown Source",
+                            pageNumber: doc.metadata?.pageNumber,
+                            textToHighlight: doc.metadata?.textToHighlight,
+                            // Ensure content is always a string for DocumentData
+                            content: Array.isArray(doc.content)
+                              ? doc.content
+                                  .map((p) => p?.text || "")
+                                  .join("\\n")
+                              : "",
                             chunkIndex:
                               typeof doc.metadata?.chunkIndex === "number"
                                 ? doc.metadata.chunkIndex
                                 : -1,
-                            content: (doc.content || [])
-                              .filter(
-                                (part: any) =>
-                                  part && typeof part.text === "string",
-                              )
-                              .map((part: any) => part.text)
-                              .join("\\\\n\\\\n"),
                           }));
-                          return { ...msg, sources: mappedSources };
-                        } else if (
-                          eventTypeToProcess === "chunk" ||
-                          eventTypeToProcess === "text"
-                        ) {
+                          updatedMsg.sources = mappedSources;
                           console.log(
-                            `DEBUG_SET_MESSAGES: Chunk/Text update. Prev text length: ${msg.text.length}, Adding text: \"${(jsonDataForThisEvent as ParsedJsonData).text || ""}\"`,
+                            `[useChatManager] Updated message ${msg.id} with ${mappedSources.length} sources.`,
                           );
-                          return {
-                            ...msg,
-                            text: msg.text + ((jsonDataForThisEvent as ParsedJsonData).text || ""),
-                          };
-                        } else if (eventTypeToProcess === "tool_invocation") { 
-                          return {
-                            ...msg,
-                            toolInvocations: [
-                              ...(msg.toolInvocations || []),
-                              ...(jsonDataForThisEvent ? [jsonDataForThisEvent] : []), 
-                            ],
-                          };
-                        } else if (eventTypeToProcess === "tool_invocations") { 
-                          return {
-                            ...msg,
-                            toolInvocations: [
-                              ...(msg.toolInvocations || []),
-                              ...((jsonDataForThisEvent as any[]) || []), 
-                            ],
-                          };
+                        }
+                        // Removed redundant 'chunk'/'text' check, handled above
+                        else if (eventTypeToProcess === "tool_invocation") {
+                          const toolData = jsonDataForThisEvent as any;
+                          if (!updatedMsg.toolInvocations)
+                            updatedMsg.toolInvocations = [];
+                          updatedMsg.toolInvocations.push({
+                            toolName: toolData.name || "unknown_tool",
+                            input: toolData.input,
+                            output: toolData.output,
+                          });
+                          console.log(
+                            `[useChatManager] Added tool invocation ${toolData.name} to message ${msg.id}.`,
+                          );
+                        } else if (eventTypeToProcess === "tool_invocations") {
+                          if (!updatedMsg.toolInvocations)
+                            updatedMsg.toolInvocations = [];
+                          updatedMsg.toolInvocations.push(
+                            ...((jsonDataForThisEvent as any[]) || []),
+                          );
                         } else if (eventTypeToProcess === "error") {
+                          const errorMsg =
+                            (jsonDataForThisEvent as ParsedJsonData).error ||
+                            "Unknown error";
                           console.error(
                             "Streaming error from server event:",
-                            (jsonDataForThisEvent as ParsedJsonData).error,
+                            errorMsg,
                           );
                           toast({
                             title: "Stream Error",
-                            description: (jsonDataForThisEvent as ParsedJsonData).error || "Unknown error",
+                            description: errorMsg,
                             variant: "destructive",
                           });
-                          return {
-                            ...msg,
-                            text:
-                              msg.text +
-                              `\\\\n\\\\n[STREAM ERROR: ${(jsonDataForThisEvent as ParsedJsonData).error || "Unknown error"}]`,
-                          };
+                          updatedMsg.text += `\n\n[STREAM ERROR: ${errorMsg}]`;
                         } else if (eventTypeToProcess === "final_response") {
-                          if ((jsonDataForThisEvent as ParsedJsonData).sessionId && !currentSessionId)
-                            setCurrentSessionId((jsonDataForThisEvent as ParsedJsonData).sessionId);
-                          return {
-                            ...msg,
-                            text: (jsonDataForThisEvent as ParsedJsonData).response ?? msg.text,
-                            toolInvocations:
-                              (jsonDataForThisEvent as ParsedJsonData).toolInvocations ?? msg.toolInvocations,
-                          };
+                          if (
+                            (jsonDataForThisEvent as ParsedJsonData)
+                              .sessionId &&
+                            !currentSessionId
+                          ) {
+                            setCurrentSessionId(
+                              (jsonDataForThisEvent as ParsedJsonData)
+                                .sessionId,
+                            );
+                          }
+                          // Safely update text and toolInvocations from final response
+                          updatedMsg.text =
+                            (jsonDataForThisEvent as ParsedJsonData).response ??
+                            updatedMsg.text;
+                          updatedMsg.toolInvocations =
+                            (jsonDataForThisEvent as ParsedJsonData)
+                              .toolInvocations ?? updatedMsg.toolInvocations;
                         }
-                        return msg;
+                        // If event type is not handled above, return message unchanged within this branch
+                        return updatedMsg;
                       }
+                      // If message ID doesn't match, return original message
                       return msg;
                     });
                     return updatedMessages;
-                  });
-                  // accumulatedJsonString is not modified here as it's not for cross-event state.
-                } catch (parseError) {
-                  const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+                  }); // End setMessages
+                } else if (parseError) {
+                  // Check if parseError object was set during the try block
+                  // Log errors only for non-text events where parsing failed unexpectedly
+                  // This corresponds to the location of the user's original DEBUG_PARSE_ERROR log
                   console.error(
-                    `DEBUG_PARSE_ERROR (per-event): EventType: \\'${eventTypeToProcess}\\'. Payload was: \'${dataPayload}\'. Error: ${errorMessage}`
+                    `DEBUG_PARSE_ERROR (per-event): EventType: \'${eventTypeToProcess}\'. Payload was: \'${dataPayload}\'. Error: ${parseError.message}`,
                   );
-                  // Optionally toast for this specific event's failure:
-                  // toast({
-                  //   title: `Error processing '${eventTypeToProcess}' event`,
-                  //   description: `Could not parse data: ${errorMessage.substring(0,100)}`,
-                  //   variant: "destructive",
-                  // });
                 }
-              }
+                // If it was an ignored text fragment (jsonDataForThisEvent is undefined, parseError is null), no action is taken here.
+              } // End if(dataPayload.trim())
               // End of simplified per-event parsing logic.
               // `accumulatedJsonString` (if still present in the outer scope) is not used by this block
               // to carry state between distinct SSE events processed by this `if (line === "")` block.

@@ -50,6 +50,16 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   onClose,
   previewData,
 }) => {
+  useEffect(() => {
+    // Dynamically construct the worker URL.
+    // This assumes `pdf.worker.min.js` is in your `public` folder
+    // and Next.js serves it from the root.
+    // You might need to adjust if your Next.js base path is different
+    // or if you place the worker file elsewhere.
+    const workerSrc = `/pdf.worker.min.js`;
+    ReactPdfPdfJs.GlobalWorkerOptions.workerSrc = workerSrc;
+  }, []);
+
   if (!isOpen || !previewData) {
     return null;
   }
