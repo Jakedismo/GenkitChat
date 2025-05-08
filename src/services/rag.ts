@@ -78,11 +78,17 @@ export async function indexFileDocument( // Renamed back (or to generic)
     const chunks = await chunk(extractedText, CHUNKING_CONFIG);
     
     // Convert chunks into documents for indexing
+    // Define a unique ID for the document being processed
+    const documentId = `${sessionId}::${fileName}`;
+
     const documents = chunks.map((text, index) => {
-      return Document.fromText(text, { 
-        filePath: fileName,
-        chunkIndex: index,
-        sessionId: sessionId, // Store sessionId in metadata
+      const chunkId = uuidv4(); // Generate a unique ID for each chunk
+      return Document.fromText(text, {
+        documentId: documentId, // Unique ID for the parent document
+        chunkId: chunkId,       // Unique ID for this specific chunk
+        originalFileName: fileName, // Original name of the uploaded file
+        chunkIndex: index,      // Index of the chunk within the original document
+        sessionId: sessionId,   // Session ID for filtering
         timestamp: new Date().toISOString()
       });
     });
@@ -160,7 +166,7 @@ export async function processFileWithOfficeParser( // New name for clarity
 const INITIAL_RETRIEVAL_COUNT = 10;
 
 // Number of documents to use after reranking
-const FINAL_DOCUMENT_COUNT = 15;
+const FINAL_DOCUMENT_COUNT = 10;
 
 /**
  * Simple similarity score calculation between a query and document text
@@ -204,9 +210,9 @@ export async function generateRagResponseStream(
   query: string,
   sessionId: string,
   modelId: string
-): Promise<AsyncIterable<{ text?: string; error?: string }>> { // Return AsyncIterable
+): Promise<AsyncIterable<{ sources?: Document[]; text?: string; error?: string }>> { // Return AsyncIterable, now with sources
   try {
-    console.log(`RAG query: "${query}" for session: ${sessionId}`);
+    console.log(`RAG query: \"${query}\" for session: ${sessionId}`);
     
     // Stage 1: Retrieve a larger initial set of documents
     const initialK = INITIAL_RETRIEVAL_COUNT;
@@ -282,8 +288,13 @@ export async function generateRagResponseStream(
       });
       
       // Generate a stream using the retrieved and reranked documents
-      const llmStream = await aiInstance.generateStream({ // Use generateStream
-        model: modelId,
+      return (async function* () {
+        // First, yield the source documents
+        yield { sources: topDocs };
+
+        // Then, stream the LLM response
+        const llmStream = await aiInstance.generateStream({ // Use generateStream
+          model: modelId,
         prompt: `You are a helpful assistant that provides accurate information based on the documents provided.
         
 Query: ${query}
@@ -292,12 +303,11 @@ Use only the information from the provided documents to answer the question.
 If the answer cannot be found in the documents, say so clearly.
 Do not make up information.
 
-The documents have been ranked by relevance, with the most relevant information listed first.`,
+The documents have been ranked by relevance, with the most relevant information listed first.
+When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. For example, if information comes from the first document in the list, which was named 'annual_report.pdf', cite it as [Source: annual_report.pdf, Chunk: 0].`,
         docs: topDocs,
       });
       
-      // Map the stream chunks to the expected format { text: chunkText }
-      return (async function* () {
         for await (const chunk of llmStream.stream) {
           yield { text: chunk.text }; // Access text property directly
         }
@@ -308,24 +318,30 @@ The documents have been ranked by relevance, with the most relevant information 
       console.log('Falling back to standard retrieval using the initially filtered documents without reranking (streaming).');
       
       // Fallback: Use the filtered docs without reranking, but still stream
-      const llmStream = await aiInstance.generateStream({ // Use generateStream in fallback
-        model: modelId,
-        prompt: `You are a helpful assistant that provides accurate information based on the documents provided.
+      const fallbackDocs = filteredDocs.slice(0, FINAL_DOCUMENT_COUNT);
+      return (async function* () {
+        // First, yield the source documents for fallback
+        yield { sources: fallbackDocs };
+
+        // Then, stream the LLM response
+        const llmStream = await aiInstance.generateStream({ // Use generateStream in fallback
+          model: modelId,
+          prompt: `You are a helpful assistant that provides accurate information based on the documents provided.
         
 Query: ${query}
 
 Use only the information from the provided documents to answer the question.
 If the answer cannot be found in the documents, say so clearly.
-Do not make up information.`,
-        docs: filteredDocs.slice(0, FINAL_DOCUMENT_COUNT),
+Do not make up information.
+When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. For example, if information comes from the first document in the list, which was named 'annual_report.pdf', cite it as [Source: annual_report.pdf, Chunk: 0].`,
+        docs: fallbackDocs,
       });
       
       // Map the fallback stream chunks
-       return (async function* () {
-         for await (const chunk of llmStream.stream) {
-           yield { text: chunk.text }; // Access text property directly
-         }
-       })();
+        for await (const chunk of llmStream.stream) {
+          yield { text: chunk.text }; // Access text property directly
+        }
+      })();
     }
   } catch (error) {
     console.error('Error preparing RAG response stream:', error);

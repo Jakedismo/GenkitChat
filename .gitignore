@@ -40,3 +40,5 @@ next-env.d.ts
 .genkit/*
 .env
 .env.*
+memory-bank/
+.roo

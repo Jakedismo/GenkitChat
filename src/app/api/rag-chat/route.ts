@@ -115,7 +115,10 @@ export async function POST(request: NextRequest) {
          async start(controller) {
            const encoder = new TextEncoder();
            for await (const chunk of stream) {
-             if (chunk.text) {
+             if (chunk.sources) {
+               const formattedSources = `event: sources\ndata: ${JSON.stringify({ sources: chunk.sources })}\n\n`;
+               controller.enqueue(encoder.encode(formattedSources));
+             } else if (chunk.text) {
                const formattedChunk = `event: chunk\ndata: ${JSON.stringify({ text: chunk.text })}\n\n`;
                controller.enqueue(encoder.encode(formattedChunk));
              } else if (chunk.error) {

@@ -34,6 +34,8 @@ import {
 import { ToolInvocation } from "@/lib/genkit-instance";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ChatMessageContent from '@/components/ChatMessageContent'; // Added import
+import CitationPreviewSidebar from '@/components/CitationPreviewSidebar'; // Added import
 // Removed ragAugmentedChatFlow import as it's no longer used
 import { basicChatFlow } from "@/lib/genkit-instance";
 import rehypeHighlight from 'rehype-highlight';
@@ -49,13 +51,26 @@ import mermaid from 'mermaid';
 // Removed pdfjs-dist imports (static and dynamic)
 import dynamic from 'next/dynamic';
 
+// Represents the structure of a document chunk's metadata and content,
+// as received from the backend for RAG citations.
+interface DocumentData {
+  documentId: string;       // Unique ID for the original uploaded document
+  chunkId: string;          // Unique ID for this specific chunk
+  originalFileName: string; // Name of the original uploaded file
+  chunkIndex: number;       // 0-based index of the chunk within its original document
+  content: string;          // The actual text content of the chunk
+  // Optionally, add other metadata like 'score' if needed for display later
+}
+
 interface ChatMessage {
   id: string;
   sender: 'user' | 'bot';
   text: string;
   toolInvocations?: ToolInvocation[];
+  sources?: DocumentData[]; // For RAG: stores the source documents used for this bot message
 }
 
+// File representation for upload
 // Remove RAG_BEDROCK mode
 enum ChatMode {
   DIRECT_GEMINI = 'direct_gemini',
@@ -140,6 +155,16 @@ const LambdaChat: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // State for citation preview sidebar
+  interface CitationPreviewData {
+    fileName: string;
+    content: string;
+    documentId: string; // Original document ID
+    chunkId: string;    // Specific chunk ID
+  }
+  const [citationPreview, setCitationPreview] = useState<CitationPreviewData | null>(null);
+  const [isCitationSidebarOpen, setIsCitationSidebarOpen] = useState(false);
+
   // Ref for the scrollable message container
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null); // Ref for the immediate child of ScrollArea viewport
@@ -204,6 +229,24 @@ const LambdaChat: React.FC = () => {
 
   // Dependencies adjusted: remove RAG-related state and chatMode (as fetching doesn't depend on mode now)
   }, [toast, selectedGeminiModelId, selectedOpenAIModelId]);
+
+  const handleCitationClick = (messageId: string, chunkIndexInSources: number) => {
+    const message = messages.find(m => m.id === messageId);
+    if (message && message.sources && message.sources[chunkIndexInSources]) {
+      const sourceChunk = message.sources[chunkIndexInSources];
+      setCitationPreview({
+        fileName: sourceChunk.originalFileName,
+        content: sourceChunk.content,
+        documentId: sourceChunk.documentId, // Store these for potential future use
+        chunkId: sourceChunk.chunkId,
+      });
+      setIsCitationSidebarOpen(true);
+      // Potentially focus or scroll to sidebar if needed
+    } else {
+      console.warn(`Could not find source for message ${messageId}, chunk index ${chunkIndexInSources}`);
+      toast({ title: "Citation Error", description: "Could not load citation source.", variant: "destructive" });
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!userInput.trim() || isLoading) return;
@@ -320,7 +363,27 @@ const LambdaChat: React.FC = () => {
                       setMessages((prevMessages) => {
                           const updatedMessages = prevMessages.map((msg) => {
                               if (msg.id === botMessagePlaceholderId) {
-                                  if (eventType === 'chunk') {
+                                  if (eventType === 'sources') {
+                                      // Map Genkit Document objects to our frontend DocumentData structure
+                                      const mappedSources: DocumentData[] = (jsonData.sources || []).map((doc: any) => {
+                                        // Concatenate text from all text parts in doc.content
+                                        // Genkit Document content is an array of Part objects e.g. [{text: "..."}]
+                                        const textContent = (doc.content || [])
+                                          .filter((part: any) => part && typeof part.text === 'string')
+                                          .map((part: any) => part.text)
+                                          .join('\n\n'); // Join parts with double newline for readability
+
+                                        return {
+                                          documentId: doc.metadata?.documentId || `doc-${crypto.randomUUID()}`,
+                                          chunkId: doc.metadata?.chunkId || `chunk-${crypto.randomUUID()}`,
+                                          originalFileName: doc.metadata?.originalFileName || 'Unknown Source',
+                                          chunkIndex: typeof doc.metadata?.chunkIndex === 'number' ? doc.metadata.chunkIndex : -1,
+                                          content: textContent,
+                                          // Ensure all fields of DocumentData are present
+                                        };
+                                      });
+                                      return { ...msg, sources: mappedSources };
+                                  } else if (eventType === 'chunk') {
                                       return { ...msg, text: msg.text + jsonData.text };
                                   } else if (eventType === 'tool_invocations') {
                                       return { ...msg, toolInvocations: jsonData };
@@ -531,6 +594,11 @@ const LambdaChat: React.FC = () => {
   return (
     <SidebarProvider>
       <div className="flex h-screen">
+        <CitationPreviewSidebar
+          isOpen={isCitationSidebarOpen}
+          onClose={() => setIsCitationSidebarOpen(false)}
+          previewData={citationPreview}
+        />
         <Sidebar>
           <SidebarTrigger />
           <SidebarContent>
@@ -697,35 +765,42 @@ const LambdaChat: React.FC = () => {
                             : 'bg-secondary text-secondary-foreground'
                         )}
                       >
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeHighlight]} // Added rehypeHighlight
-                          components={{
-                            code({node, className, children, ...props}) {
-                              const match = /language-(\w+)/.exec(className || '');
-                              const language = match ? match[1] : '';
+                        {message.sender === 'bot' && message.sources && message.sources.length > 0 && message.text.includes('[Source:') ? (
+                          <ChatMessageContent
+                            text={message.text}
+                            onCitationClick={(chunkIndex) => handleCitationClick(message.id, chunkIndex)}
+                          />
+                        ) : (
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeHighlight]} // Added rehypeHighlight
+                            components={{
+                              code({node, className, children, ...props}) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                const language = match ? match[1] : '';
 
-                              if (language === 'mermaid') {
+                                if (language === 'mermaid') {
+                                  return (
+                                      <pre className="mermaid" key={crypto.randomUUID()}>
+                                        {String(children).replace(/\n$/, '')}
+                                      </pre>
+                                  );
+                                }
+
+                                // Apply highlight.js styling for other languages
                                 return (
-                                    <pre className="mermaid" key={crypto.randomUUID()}>
-                                      {String(children).replace(/\n$/, '')}
-                                    </pre>
-                                );
+                                  <pre className={className || ''} style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+                                    <code className={className}>
+                                        {children}
+                                    </code>
+                                  </pre>
+                                )
                               }
-
-                              // Apply highlight.js styling for other languages
-                              return (
-                                <pre className={className || ''} style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-                                  <code className={className}>
-                                      {children}
-                                  </code>
-                                </pre>
-                              )
-                            }
-                          }}
-                        >
-                          {message.text}
-                        </ReactMarkdown>
+                            }}
+                          >
+                            {message.text}
+                          </ReactMarkdown>
+                        )}
                       </div>
                       {message.sender === 'bot' && message.toolInvocations && message.toolInvocations.length > 0 && (
                         <div className="mt-2 w-full max-w-[80%] rounded-md border border-border bg-muted p-3 text-xs">
