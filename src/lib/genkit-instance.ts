@@ -86,8 +86,8 @@ type BasicChatInput = z.infer<typeof BasicChatInputSchema>;
 
 const ToolInvocationSchema = z.object({
   name: z.string(),
-  input: z.any().optional(),
-  output: z.any().optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+  output: z.record(z.string(), z.unknown()).optional(),
 });
 export type ToolInvocation = z.infer<typeof ToolInvocationSchema>;
 
@@ -97,6 +97,7 @@ const BasicChatOutputSchema = z.object({
   sessionId: z.string(),
 });
 export type BasicChatOutput = z.infer<typeof BasicChatOutputSchema>;
+
 
 const presetTemperatures: Record<TemperaturePreset, number> = {
   precise: 0.2,
@@ -110,8 +111,8 @@ const systemPrompts: Record<TemperaturePreset, string> = {
 };
 
 interface StreamAndResponse {
-  stream: AsyncIterable<GenerateResponseChunk<any>>;
-  responsePromise: Promise<GenerateResponse<any>>;
+  stream: AsyncIterable<GenerateResponseChunk<unknown>>;
+  responsePromise: Promise<GenerateResponse<unknown>>;
   sessionId: string;
 }
 
@@ -153,7 +154,7 @@ export async function runBasicChatFlowStream(
     effectiveSessionId = session.id;
   }
 
-  let modelConfig: any = {};
+  const modelConfig: Record<string, unknown> = {}; // Use const and a more specific type
   if (modelId.startsWith("openai/")) {
     modelConfig.max_completion_tokens = maxTokens;
   } else {
@@ -194,8 +195,9 @@ export const basicChatFlow = aiInstance.defineFlow(
   async (input: BasicChatInput): Promise<BasicChatOutput> => {
     const { stream, responsePromise, sessionId } =
       await runBasicChatFlowStream(input);
-    for await (const chunk of stream) {
-    } // Consume stream
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _ of stream) {
+    } // Consume stream, ignore chunk variable
     const finalResponse = await responsePromise;
     let responseText = finalResponse.text ?? ""; // Make responseText mutable
     const messages = finalResponse.messages;
@@ -251,6 +253,7 @@ const RagAugmentedChatInputSchema = z.object({
   query: z.string(),
 });
 export type RagAugmentedChatInput = z.infer<typeof RagAugmentedChatInputSchema>;
+// Note: The 'any' usage triggering lint errors originated in ToolInvocationSchema
 const RagAugmentedChatOutputSchema = z.object({
   response: z.string(),
   toolInvocations: z.array(ToolInvocationSchema).optional(),

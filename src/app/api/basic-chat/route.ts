@@ -1,9 +1,9 @@
-import { runBasicChatFlowStream } from "@/lib/genkit-instance"; // Use streaming version
+import { runBasicChatFlowStream, ToolInvocation } from "@/lib/genkit-instance"; // Use streaming version, import ToolInvocation
 import { NextResponse } from "next/server";
 import { z } from "zod";
 // Import necessary types from @genkit-ai/ai
 import {
-  GenerateResponseChunk,
+  GenerateResponse, // Add GenerateResponse
   Part,
   ToolRequestPart,
   ToolResponsePart,
@@ -21,9 +21,16 @@ const InputSchema = z.object({
   perplexityDeepResearchEnabled: z.boolean().optional().default(false), // Added
 });
 
+// Define type for the final_response event payload
+interface FinalResponseData {
+  response: string;
+  toolInvocations?: ToolInvocation[];
+  sessionId: string;
+}
+
 // Helper to format Server-Sent Events (SSE)
 function formatSSE(event: string, data: string): string {
-  return `event: ${event}\ndata: ${data}\n\n`;
+  return `event: ${event}\\ndata: ${data}\\n\\n`;
 }
 
 // Restore manual POST handler
@@ -49,8 +56,10 @@ export async function POST(request: Request) {
     const readableStream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
-        let toolInvocations: any[] = [];
-        let finalResponseData: any = {}; // To store final text/metadata
+        // Use const and specific types
+        const toolInvocations: ToolInvocation[] = [];
+        // Initialize with partial structure, will be completed before sending final_response
+        const finalResponseData: Partial<FinalResponseData> = {}; 
 
         try {
           // Stream text chunks from Genkit stream
@@ -71,10 +80,11 @@ export async function POST(request: Request) {
             "Raw Final Response Object:",
             JSON.stringify(finalResponse, null, 2)
           );
-          finalResponseData.response = (finalResponse as any)?.text ?? ""; // Store final text
+          // Cast to GenerateResponse to access properties safely
+          finalResponseData.response = (finalResponse as GenerateResponse)?.text ?? ""; // Store final text
 
           // Attempt to parse tool calls
-          const messages = (finalResponse as any)?.messages;
+          const messages = (finalResponse as GenerateResponse)?.messages;
           if (messages && Array.isArray(messages)) {
             console.log(
               `Found ${messages.length} messages in history for tool parsing.`
@@ -123,6 +133,17 @@ export async function POST(request: Request) {
             console.warn(
               "Could not find 'messages' array on finalResponse object for tool parsing."
             );
+          }
+
+          // Add tool usage indicator to responseText if tools were used
+          if (finalResponseData.toolInvocations && finalResponseData.toolInvocations.length > 0) {
+            // Create a unique list of tool names
+            const uniqueToolNames = Array.from(
+              // Type of 'inv' is inferred from 'toolInvocations: ToolInvocation[]'
+              new Set(finalResponseData.toolInvocations.map((inv) => inv.name)) 
+            );
+            // Ensure response is a string before appending
+            finalResponseData.response = String(finalResponseData.response || "") + `\\n\\n[Tools Used: ${uniqueToolNames.join(', ')}]`;
           }
 
           // Send final metadata (including session ID used/created)

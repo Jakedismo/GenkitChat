@@ -54,9 +54,10 @@ export const perplexityPlugin = (ai: Genkit): void => {
       const content =
         data.choices?.[0]?.message?.content || "No response content found.";
       return { response: content };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error calling Perplexity API (Search):", error);
-      throw new Error(`Failed to execute Perplexity Search: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to execute Perplexity Search: ${message}`);
     }
   },
 );
@@ -104,10 +105,11 @@ export const perplexityPlugin = (ai: Genkit): void => {
       const content =
         data.choices?.[0]?.message?.content || "No response content found.";
       return { response: content };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error calling Perplexity API (Deep Research):", error);
+      const message = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Failed to execute Perplexity Deep Research: ${error.message}`,
+        `Failed to execute Perplexity Deep Research: ${message}`,
       );
     }
   },

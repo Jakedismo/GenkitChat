@@ -7,20 +7,20 @@ import { chunk } from "llm-chunk";
 import { parseOfficeAsync } from "officeparser"; // Import officeparser
 import { Document } from "genkit/retriever";
 import {
-  GenerateResponse,
-  GenerateResponseChunk,
+// GenerateResponse, // Removed unused
+// GenerateResponseChunk, // Removed unused
   Part,
   ToolRequestPart,
   ToolResponsePart,
 } from "@genkit-ai/ai"; // Added Genkit AI types
 import { v4 as uuidv4 } from "uuid";
-import { z } from "zod";
+// import { z } from "zod"; // Removed unused
 
 // Define the structure for events yielded by generateRagResponseStream
 export type RagStreamEvent =
   | { type: 'sources'; sources: Document[] }
   | { type: 'text'; text: string }
-  | { type: 'tool_invocation'; name: string; input: any; output: any; error?: string }
+  | { type: 'tool_invocation'; name: string; input: unknown; output: unknown; error?: string } // Use unknown
   | { type: 'error'; error: string };
 
 /**
@@ -50,7 +50,7 @@ export const CHUNKING_CONFIG = {
   maxLength: 2000,
   splitter: "sentence",
   overlap: 200,
-} as any;
+} as const; // Use as const
 
 /**
  * Asynchronously retrieves a list of RAG endpoints.
@@ -327,6 +327,7 @@ export async function generateRagResponseStream(
       return (async function* (): AsyncIterable<RagStreamEvent> {
         // Yield sources first (cleaning metadata)
         const sourcesToYield = topDocs.map(({ metadata, ...rest }) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { score, ...metadataWithoutScore } = metadata || {};
           return { ...rest, metadata: metadataWithoutScore };
         });
@@ -345,7 +346,7 @@ Do not make up information not found in documents or tools.`,
           tools: tools // tools here are string names
         };
 
-        const pendingToolRequests = new Map<string, { name: string, input: any }>();
+        const pendingToolRequests = new Map<string, { name: string, input: unknown }>(); // Use unknown
 
         // Call generateStream and iterate
         const llmStreamResult = await aiInstance.generateStream(generateOptions);
@@ -447,7 +448,8 @@ Do not make up information not found in documents or tools.`,
       return (async function* (): AsyncIterable<RagStreamEvent> { // This generator is now inside catch
          // Yield fallback sources first (cleaning metadata)
          const sourcesToYield = fallbackDocs.map(({ metadata, ...rest }) => { // fallbackDocs is in scope
-           const { score, ...metadataWithoutScore } = metadata || {}; 
+           // eslint-disable-next-line @typescript-eslint/no-unused-vars
+           const { score, ...metadataWithoutScore } = metadata || {};
            return { ...rest, metadata: metadataWithoutScore };
          });
          yield { type: 'sources', sources: sourcesToYield as Document[] };
@@ -465,7 +467,7 @@ Do not make up information not found in documents or tools.`,
           };
 
           const llmStreamResult = await aiInstance.generateStream(generateOptions);
-          const pendingToolRequests = new Map<string, { name: string, input: any }>();
+          const pendingToolRequests = new Map<string, { name: string, input: unknown }>(); // Use unknown
 
           for await (const chunk of llmStreamResult.stream) {
             let currentTextOutput = "";

@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
              // For simplicity, we assume close is idempotent or an error here is acceptable.
              try {
                 controller.close();
-             } catch (e) {
+             } catch (_e) { // eslint-disable-line @typescript-eslint/no-unused-vars
                 // Ignore if already closed
              }
            }

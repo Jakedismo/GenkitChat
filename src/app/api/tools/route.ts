@@ -10,7 +10,7 @@ interface DisplayTool {
 // NOTE: Dynamically listing tools proved problematic.
 // Returning a hardcoded list for known configured servers (context7).
 
-export async function GET(request: Request) {
+export async function GET() {
   console.log("GET /api/tools called");
   try {
     // Hardcoded tools for the context7 server

@@ -18,10 +18,11 @@ export async function GET() {
       ragEndpoints,
       bedrockModels,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching services config:', error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: 'Failed to fetch service configurations', details: error.message },
+      { error: 'Failed to fetch service configurations', details: message },
       { status: 500 }
     );
   }
