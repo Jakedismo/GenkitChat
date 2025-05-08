@@ -93,6 +93,29 @@ export function useChatManager({
     // }
   }, [messages, scrollToBottom]); // Depend on messages and scrollToBottom
 
+  // Diagnostic useEffect to log details of the last bot message
+  useEffect(() => {
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.sender === 'bot') {
+        console.log('DEBUG: Last bot message state:', {
+          id: lastMessage.id,
+          textLength: lastMessage.text.length,
+          hasToolInvocations: !!(lastMessage.toolInvocations && lastMessage.toolInvocations.length > 0),
+          toolInvocationsCount: lastMessage.toolInvocations?.length || 0,
+          toolInvocations: lastMessage.toolInvocations, // Log the actual data
+          hasSources: !!(lastMessage.sources && lastMessage.sources.length > 0),
+          sourcesCount: lastMessage.sources?.length || 0,
+        });
+        if (lastMessage.toolInvocations && lastMessage.toolInvocations.length > 0) {
+          console.log('DEBUG: Tool invocations found on last bot message:', JSON.stringify(lastMessage.toolInvocations, null, 2));
+        } else {
+          console.log('DEBUG: No tool invocations on last bot message.');
+        }
+      }
+    }
+  }, [messages]);
+
   // Core function to handle sending a message
   const handleSendMessage = useCallback(async () => {
     if (!userInput.trim() || isLoading) return;
@@ -207,6 +230,7 @@ export function useChatManager({
       const decoder = new TextDecoder();
       let done = false;
       let buffer = "";
+      let jsonAssemblyBuffer = ""; // Buffer to assemble fragmented JSON
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
@@ -236,13 +260,25 @@ export function useChatManager({
             } // Ignore comments and empty lines
           }
 
-          if (dataPayload) {
+          if (dataPayload) { // If current event provided data
+            jsonAssemblyBuffer += dataPayload;
+            // console.log(`SSE_BUFFER_APPEND: EventType: '${eventType}'. Buffer now: '${jsonAssemblyBuffer}'`);
+          }
+
+          // Try to parse if the assembly buffer has content
+          if (jsonAssemblyBuffer) {
+            // console.log(`SSE_PARSE_ATTEMPT: EventType: '${eventType}'. Trying to parse: '${jsonAssemblyBuffer}'`);
             try {
-              const jsonData = JSON.parse(dataPayload);
+              const jsonData = JSON.parse(jsonAssemblyBuffer);
+              
+              // Successfully parsed a complete JSON object
+              // console.log(`SSE_PARSE_SUCCESS: EventType: \\\'${eventType}\\\'. Parsed:`, jsonData);
+
               setMessages((prevMessages) => {
                 const updatedMessages = prevMessages.map((msg) => {
                   if (msg.id === botMessagePlaceholderId) {
-                    // Handle different event types
+                    // Handle different event types based on the eventType of the current SSE event
+                    // (which is the one that completed the JSON object)
                     if (eventType === "sources") {
                       const mappedSources: DocumentData[] = (
                         jsonData.sources || []
@@ -272,20 +308,16 @@ export function useChatManager({
                       });
                       return { ...msg, sources: mappedSources };
                     } else if (eventType === "chunk" || eventType === "text") {
-                      // AGGRESSIVE DIAGNOSTIC was here, reverting to normal concatenation.
                       return { ...msg, text: msg.text + (jsonData.text || "") };
-                    } else if (eventType === "tool_invocation") { // Singular, from RAG
-                      // jsonData is a single tool invocation object
+                    } else if (eventType === "tool_invocation") { 
                       return {
                         ...msg,
                         toolInvocations: [
                           ...(msg.toolInvocations || []),
-                          ...(jsonData ? [jsonData] : []), // Wrap single object in array
+                          ...(jsonData ? [jsonData] : []), 
                         ],
                       };
-                    } else if (eventType === "tool_invocations") {
-                      // TODO: Define ToolInvocation type properly if not already available via types/chat
-                      // Assumes jsonData here is an array if this event type is used
+                    } else if (eventType === "tool_invocations") { 
                       return {
                         ...msg,
                         toolInvocations: [
@@ -310,37 +342,48 @@ export function useChatManager({
                           `\n\n[STREAM ERROR: ${jsonData.error || "Unknown error"}]`,
                       };
                     } else if (eventType === "final_response") {
-                      // TODO: Define structure for jsonData.response if needed
                       if (jsonData.sessionId && !currentSessionId) {
                         setCurrentSessionId(jsonData.sessionId);
                       }
                       return {
                         ...msg,
-                        text: jsonData.response ?? msg.text, // Corrected path for text
+                        text: jsonData.response ?? msg.text, 
                         toolInvocations:
-                          jsonData.toolInvocations ?? // Corrected path for toolInvocations
+                          jsonData.toolInvocations ?? 
                           msg.toolInvocations,
                       };
                     }
-                    return msg; // Return unchanged if eventType is unknown for this message
+                    return msg; 
                   }
-                  return msg; // Return other messages unchanged
+                  return msg; 
                 });
                 return updatedMessages;
               });
+
+              jsonAssemblyBuffer = ""; // Reset buffer after successful processing
             } catch (parseError) {
-              console.error(
-                "SSE JSON Parse Error (useChatManager):",
-                parseError,
-                "Data was:",
-                dataPayload,
-              );
-              toast({
-                title: "Response Error",
-                description: "Received malformed data from server.",
-                variant: "destructive",
-              });
+              if (parseError instanceof SyntaxError) {
+                // JSON is likely incomplete. Hold data in buffer and wait for more.
+                // console.log(`SSE_PARSE_INCOMPLETE: EventType: '${eventType}'. Buffer: '${jsonAssemblyBuffer}'. Error: ${parseError.message}`);
+              } else {
+                // A non-SyntaxError occurred
+                console.error(
+                  "SSE JSON Non-Syntax Parse Error (useChatManager - assembled):",
+                  parseError,
+                  "Data was:",
+                  jsonAssemblyBuffer,
+                );
+                toast({
+                  title: "Response Error",
+                  description: "Received unrecoverable malformed data from server.",
+                  variant: "destructive",
+                });
+                jsonAssemblyBuffer = ""; // Clear buffer on other errors to prevent carry-over
+              }
             }
+          } else if (!dataPayload && !jsonAssemblyBuffer) { 
+            // Current event is empty and buffer is empty. This isn't an error.
+            // console.log(`SSE_EVENT_NO_DATA: EventType: '${eventType}'. No data in current event, assembly buffer is empty.`);
           }
  
         // Look for the *next* message boundary in the remaining buffer
