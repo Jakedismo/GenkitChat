@@ -116,11 +116,11 @@ interface StreamAndResponse {
 }
 
 class InMemorySessionStore implements SessionStore {
-  private store = new Map<string, SessionData<any>>();
-  async get(sessionId: string): Promise<SessionData<any> | undefined> {
+  private store = new Map<string, SessionData<Record<string, unknown>>>();
+  async get(sessionId: string): Promise<SessionData<Record<string, unknown>> | undefined> {
     return this.store.get(sessionId);
   }
-  async save(sessionId: string, sessionData: SessionData<any>): Promise<void> {
+  async save(sessionId: string, sessionData: SessionData<Record<string, unknown>>): Promise<void> {
     this.store.set(sessionId, sessionData);
   }
 }
@@ -212,18 +212,14 @@ export const basicChatFlow = aiInstance.defineFlow(
               const requestPart = toolRequests.get(reqRef);
               if (!requestPart) return; // Ensure requestPart is defined
 
-              const unknownInput = requestPart.toolRequest.input as unknown;
-              const unknownOutput = toolResponsePart.toolResponse?.output as unknown;
-
               toolInvocations.push({
                 name: requestPart.toolRequest.name,
-                input: (typeof unknownInput === 'object' && unknownInput !== null) 
-                  ? unknownInput as Record<string, unknown> 
-                  : undefined,
-                output: (typeof unknownOutput === 'object' && unknownOutput !== null)
-                  ? unknownOutput as Record<string, unknown>
-                  : undefined,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                input: requestPart.toolRequest.input as Record<string, unknown> | undefined, // Direct cast, assuming target type handles potential 'any'
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                output: toolResponsePart.toolResponse?.output as Record<string, unknown> | undefined, // Direct cast
               });
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               toolRequests.delete(reqRef);
             }
           });

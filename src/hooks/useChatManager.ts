@@ -320,7 +320,7 @@ export function useChatManager({
         ); // DEBUG Read End
         done = readerDone;
         if (done) break; // Exit loop immediately if done
-        let rawChunk = decoder.decode(value, { stream: !done });
+        const rawChunk = decoder.decode(value, { stream: !done });
 
         // Normalize literal "\\n" to actual newline "\n", then remove any CRs
         let normalizedChunk = rawChunk.replace(/\\n/g, "\n");
@@ -655,7 +655,7 @@ export function useChatManager({
       title: "Chat Cleared",
       description: "Ready for a new conversation.",
     });
-  }, [setMessages, setCurrentSessionId, resetUploadedFiles, toast]); // Add dependencies
+  }, [setMessages, setCurrentSessionId, toast]); // Add dependencies, removed resetUploadedFiles per ESLint
 
   return {
     messages,

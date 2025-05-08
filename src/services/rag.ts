@@ -112,9 +112,13 @@ export async function indexFileDocument( // Renamed back (or to generic)
     console.log(`Processing file: ${fileName} with MIME type: ${mimeType} using @papra/lecture`);
 
     // Extract text using @papra/lecture
-    // Ensure fileBuffer is ArrayBuffer as expected by @papra/lecture
-    // Node.js Buffer's underlying ArrayBuffer is accessed via .buffer property
-    const extractionResult = await extractText({ arrayBuffer: fileBuffer.buffer, mimeType });
+    // Create a new ArrayBuffer by copying the contents of fileBuffer.
+    // This ensures it's a true ArrayBuffer and not SharedArrayBuffer,
+    // and avoids issues with byte offsets if fileBuffer is a view into a larger buffer.
+    const arrayBufferCopy = new ArrayBuffer(fileBuffer.length);
+    new Uint8Array(arrayBufferCopy).set(new Uint8Array(fileBuffer));
+
+    const extractionResult = await extractText({ arrayBuffer: arrayBufferCopy, mimeType });
     const extractedText = extractionResult.textContent;
 
     if (!extractedText || extractedText.trim().length === 0) {

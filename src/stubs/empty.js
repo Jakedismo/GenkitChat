@@ -1,3 +1,4 @@
 // stubs/empty.js
-export default {};
+const emptyObject = {};
+export default emptyObject;
 // (CommonJS also works:  module.exports = {}; )

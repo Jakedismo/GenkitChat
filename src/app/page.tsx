@@ -18,7 +18,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Code } from "lucide-react";
-import { ToolInvocation } from "@/lib/genkit-instance";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ChatMessageContent from "@/components/chat/ChatMessageContent"; // Added import
@@ -219,7 +218,13 @@ const LambdaChat: React.FC = () => {
     fetchToolInfo();
 
     // Dependencies for fetching tool info - check if model IDs are needed
-  }, [toast]); // Removed model IDs as dependencies unless tool fetching depends on them
+  }, [
+    toast,
+    availableGeminiModels.length,
+    availableOpenAIModels.length,
+    selectedGeminiModelId,
+    selectedOpenAIModelId,
+  ]); // Added missing dependencies
 
   // Citation click handler remains here as it controls local UI state
   const handleCitationClick = (
@@ -437,7 +442,7 @@ const LambdaChat: React.FC = () => {
                             </p>
                             {message.toolInvocations.map(
                               (
-                                inv: ToolInvocation,
+                                inv,
                                 index: number, // Added types
                               ) => (
                                 <details key={index} className="mb-2 last:mb-0">
@@ -445,6 +450,7 @@ const LambdaChat: React.FC = () => {
                                     {inv.toolName}
                                   </summary>
                                   <div className="mt-1 pl-4 space-y-1">
+                                    {/* ... rest of the code ... */}
                                     <div>
                                       <span className="font-semibold">
                                         Input:
