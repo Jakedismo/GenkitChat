@@ -1,13 +1,4 @@
-import React, { useEffect } from "react";
-import { Document, Page } from "react-pdf";
-// Use the specific pdfjs-dist version that react-pdf depends on
-// Import the main library entry; worker set separately
-import * as pdfjsLib from "pdfjs-dist";
-
-// Import CSS for react-pdf and react-pdf-highlighter
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
-import "react-pdf-highlighter/dist/style.css";
+import React from "react";
 
 import {
   Sheet,
@@ -15,20 +6,19 @@ import {
   SheetHeader,
   SheetTitle,
   SheetClose,
-  SheetDescription, // Can be used for sub-header or remove if not needed
+  SheetDescription,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 
 interface CitationPreviewData {
-  fileName: string; // Original file name, still useful for title
-  pdfUrl: string; // URL to the PDF file
-  pageNumber: number; // 1-based page number for the citation
-  textToHighlight: string; // The specific text content of the chunk to highlight
-  documentId?: string;
-  chunkId?: string;
-  // content: string; // Effectively replaced by textToHighlight for PDF view, original chunk content
+  fileName: string;
+  pdfUrl: string; // Kept for structure, but not used in simplified view
+  pageNumber: number;
+  // textToHighlight: string; // Removed for simplification
+  // documentId?: string; // Removed for simplification
+  // chunkId?: string; // Removed for simplification
 }
 
 interface CitationPreviewSidebarProps {
@@ -42,15 +32,11 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   onClose,
   previewData,
 }) => {
-  // PDF worker setup is now expected to be handled globally by PdfWorkerSetup.tsx,
-  // which uses the `pdfjs` object exported from `react-pdf`.
-
   if (!isOpen || !previewData) {
     return null;
   }
 
-  // Destructure for easier access and to ensure correct prop names are used
-  const { fileName, pdfUrl, pageNumber } = previewData;
+  const { fileName, pageNumber } = previewData;
 
   return (
     <Sheet
@@ -59,7 +45,6 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
         if (!open) onClose();
       }}
     >
-      {/* Increased width for better PDF viewing, adjust as needed */}
       <SheetContent
         side="right"
         className="w-full md:w-3/4 lg:w-1/2 xl:max-w-2xl p-0 flex flex-col"
@@ -78,50 +63,11 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
           </div>
           <SheetDescription>
             Page: {pageNumber}
-            {/* Future: Display chunk text: {previewData.textToHighlight.substring(0,100)}... */}
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-1 bg-gray-100 dark:bg-gray-800">
-          <div className="p-1" style={{ height: "calc(100vh - 130px)" }}>
-            {" "}
-            {/* Adjust height based on actual header/footer height */}
-            <Document
-              file={pdfUrl}
-              onLoadError={(error) =>
-                console.error("Error loading PDF:", error.message)
-              }
-              loading={
-                <div className="flex justify-center items-center h-full">
-                  <p>Loading PDF...</p>
-                </div>
-              }
-              error={
-                <div className="flex justify-center items-center h-full text-red-500">
-                  <p>Failed to load PDF. Please check the URL or file.</p>
-                </div>
-              }
-              className="flex justify-center items-start h-full overflow-auto" // Ensure Document itself can scroll if content overflows
-            >
-              {/*
-                The Page component will be rendered by Document once the PDF is loaded.
-                No need to conditionally render Page based on a pdfDocument state here,
-                as Document handles its own loading state.
-              */}
-              <Page
-                pageNumber={pageNumber}
-                scale={1.0} // Initial scale, can be made dynamic
-                renderAnnotationLayer={true} // Default true, explicit for clarity
-                renderTextLayer={true} // Default true, explicit for clarity
-                onRenderError={(error) =>
-                  console.error("Error rendering PDF page:", error.message)
-                }
-                loading={
-                  <div className="flex justify-center items-center h-full">
-                    <p>Loading page {pageNumber}...</p>
-                  </div>
-                }
-              />
-            </Document>
+          <div className="p-4">
+            <p>PDF Preview Area (Simplified)</p>
           </div>
         </ScrollArea>
       </SheetContent>

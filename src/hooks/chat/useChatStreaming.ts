@@ -130,36 +130,66 @@ function processSseEvent(
 
   if (eventTypeToProcess === "text") {
     let textContent = "";
+    let parsedSuccessfully = false;
+
     try {
       const parsedAsJson = safeDestr<{ text?: string }>(joinedDataPayload);
       if (parsedAsJson && typeof parsedAsJson.text === "string") {
         textContent = parsedAsJson.text;
-      } else {
-        console.warn(
-          `[useChatStreaming] Text event payload not valid JSON {"text":"..."}: '${joinedDataPayload}'. Attempting extraction.`,
-        );
-        if (
-          joinedDataPayload.startsWith('{"text":"') &&
-          joinedDataPayload.endsWith('"}')
-        ) {
-          textContent = joinedDataPayload.substring(
-            '{"text":"'.length,
-            joinedDataPayload.length - '"}'.length,
-          );
-        } else if (joinedDataPayload.startsWith('{"text":"')) {
-          textContent = joinedDataPayload.substring('{"text":"'.length);
-          if (textContent.endsWith('"')) textContent = textContent.slice(0, -1);
-        } else {
-          textContent = joinedDataPayload; // Assume raw text if not fitting the pattern
-        }
+        parsedSuccessfully = true;
       }
     } catch (e) {
+      // safeDestr itself threw (e.g., syntax error in JSON)
       console.error(
-        `[useChatStreaming] Error parsing text event payload: ${e}. Payload: '${joinedDataPayload}'`,
+        `[useChatStreaming] safeDestr failed for text event payload: ${(e as Error).message}. Payload: '${joinedDataPayload}'`
       );
-      textContent = joinedDataPayload; // Fallback
+      // Proceed to manual extraction attempt below
     }
-    if (textContent) callbacks.onText(textContent);
+
+    if (!parsedSuccessfully) {
+      // This block is reached if safeDestr failed OR if it parsed but didn't match {"text": "string"}
+      if (joinedDataPayload.startsWith('{\"text\":\"')) {
+        // Manually extract content from a structure like {"text":"... (possibly unterminated)
+        let extracted = joinedDataPayload.substring('{\"text\":\"'.length);
+        // Heuristic: if the original payload didn't end with "}", it was likely unterminated.
+        // We don't necessarily need to remove a partial "}" if it wasn't there.
+        // The main goal is to avoid passing the JSON syntax itself.
+        // If it was '{"text":"abc', extracted is 'abc'.
+        // If it was '{"text":"abc\"', extracted is 'abc\"'. We should remove the trailing quote.
+        // If it was '{"text":"abc\"}', extracted is 'abc\"}'. We should remove trailing '\"}'.
+
+        if (joinedDataPayload.endsWith('\"}')) { // e.g. {"text":"foo"}
+          textContent = extracted.slice(0, -2); // Remove "}
+        } else if (joinedDataPayload.endsWith('\"')) { // e.g. {"text":"foo" (missing final })
+          textContent = extracted.slice(0, -1); // Remove "
+        } else {
+          // Likely an unterminated string, e.g. {"text":"foo
+          // In this case, 'extracted' is 'foo', which is what we want.
+          textContent = extracted;
+        }
+        console.warn(
+          `[useChatStreaming] Text event payload was not valid JSON or did not match expected structure. Manually extracted: '${textContent}' from payload: '${joinedDataPayload}'`
+        );
+      } else {
+        // If it doesn't even start with {"text":", treat as raw text.
+        // This could also be a fallback if the server sometimes sends plain text for "text" events.
+        textContent = joinedDataPayload;
+        console.warn(
+          `[useChatStreaming] Text event payload not JSON and not starting with '{\"text\":\"'. Treating as raw text: '${joinedDataPayload}'`
+        );
+      }
+    }
+
+    if (textContent) { // Ensure we only call onText if there's something to send
+      callbacks.onText(textContent);
+    } else if (joinedDataPayload) { // If textContent is empty but original payload wasn't, means extraction failed to produce text
+      callbacks.onText(""); // Send empty string to signify an attempt but no usable text
+      console.warn(
+        `[useChatStreaming] Text event processing resulted in empty textContent from non-empty payload: '${joinedDataPayload}'`
+      );
+    }
+    // If both joinedDataPayload and textContent are empty, onText won't be called, which is fine.
+
   } else {
     // Handle other event types that expect well-formed JSON
     try {
