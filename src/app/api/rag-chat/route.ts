@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from 'fs/promises'; // Add fs/promises
+import path from 'path';     // Add path
 // Removed unused import 'ai/rsc'
 import {
   generateRagResponseStream,
@@ -8,6 +10,8 @@ import {
 } from "@/services/rag";
 // Tool imports are no longer needed here as tools are accessed via aiInstance by name
 // Removed incorrect Tool type import
+
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads'); // Define base uploads dir
 
 // Handle file uploads
 export async function POST(request: NextRequest) {
@@ -38,10 +42,47 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Process each file using officeparser via the service
-      const results = await Promise.all(
-        files.map(file => processFileWithOfficeParser(file, sessionId)) // Call the correct function
-      );
+      // Ensure session directory exists
+      const sessionDir = path.join(UPLOADS_DIR, sessionId);
+      await fs.mkdir(sessionDir, { recursive: true });
+
+      const fileProcessingPromises = files.map(async (file) => {
+        // Basic sanitization again for safety
+        const safeFileName = path.basename(file.name);
+        if (safeFileName !== file.name) {
+            console.error(`Invalid file name detected during upload: ${file.name}`);
+            // Return structure indicating failure for this file
+            return { success: false, error: `Invalid file name: ${file.name}` };
+        }
+        const filePath = path.join(sessionDir, safeFileName);
+
+        try {
+          // Save the file to disk
+          const buffer = Buffer.from(await file.arrayBuffer());
+          await fs.writeFile(filePath, buffer);
+          console.log(`Saved uploaded file to: ${filePath}`); // Log save location
+
+          // Now process the file using the original File object (Option 2)
+          // If processFileWithOfficeParser needed the path, we would pass filePath here.
+           const processingResult = await processFileWithOfficeParser(file, sessionId);
+           if (!processingResult.success) {
+             // Optionally remove the saved file if processing failed?
+             // await fs.unlink(filePath).catch(err => console.error(`Failed to remove file after processing error: ${filePath}`, err));
+             // Return the error structure
+             return processingResult;
+           }
+           // Processing successful
+           return processingResult;
+
+        } catch (saveOrProcessError) {
+            console.error(`Error saving or processing file ${file.name} at ${filePath}:`, saveOrProcessError);
+            // Return structure indicating failure for this file
+            return { success: false, error: saveOrProcessError instanceof Error ? saveOrProcessError.message : String(saveOrProcessError) };
+        }
+      });
+
+      // Process results from saving and parsing attempts
+      const results = await Promise.all(fileProcessingPromises);
 
       const failedFiles = results
         .map((result, index) => (!result.success ? {
@@ -61,7 +102,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         sessionId,
         success: true,
-        message: `Successfully processed ${files.length} file(s)`,
+        message: `Successfully processed and saved ${files.length} file(s)`, // Updated message
       });
     }
     // Handle chat requests (application/json)
