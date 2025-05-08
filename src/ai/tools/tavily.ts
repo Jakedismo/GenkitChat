@@ -79,7 +79,9 @@ export const tavilyExtractTool = aiInstance.defineTool(
       "Extracts raw content from a list of URLs using Tavily Extract API.",
     inputSchema: z.object({
       urls: z
-        .array(z.string().url())
+        // Relaxed URL validation to allow scheme-less URLs initially.
+        // Normalization and validation will happen inside the function.
+        .array(z.string().min(1)) // Changed from .url()
         .min(1)
         .describe("List of URLs to extract content from."),
       extract_depth: z.enum(["basic", "advanced"]).optional()
@@ -104,9 +106,19 @@ export const tavilyExtractTool = aiInstance.defineTool(
     if (!process.env.TAVILY_API_KEY) {
       throw new Error("Tavily API key missing (TAVILY_API_KEY).");
     }
+
+    // Normalize URLs: Add https:// if scheme is missing
+    const normalizedUrls = urls.map(url => {
+      // Basic check if scheme is missing
+      if (!url.match(/^https?:\\/\\//i)) {
+        console.log(`[tavilyExtractTool] Normalizing URL: ${url} -> https://${url}`);
+        return `https://${url}`;
+      }
+      return url;
+    });
     
-    // Use any to bypass type issues, but then construct a properly formatted return value
-    const response = await tvly.extract(urls, options as any) as any;
+    // Use normalized URLs and any to bypass type issues, then construct a properly formatted return value
+    const response = await tvly.extract(normalizedUrls, options as any) as any;
     
     // Safely extract and transform the results to match our schema
     return {

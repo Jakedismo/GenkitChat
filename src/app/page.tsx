@@ -36,6 +36,10 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ChatMessageContent from '@/components/ChatMessageContent'; // Added import
 import CitationPreviewSidebar from '@/components/CitationPreviewSidebar'; // Added import
+import ChatConfigSidebar from '@/components/chat/ChatConfigSidebar';
+import ServerStatusDisplay from '@/components/chat/ServerStatusDisplay'; // Added import
+import ChatInputControls from '@/components/chat/ChatInputControls'; // Added import
+import FileUploadManager from '@/components/chat/FileUploadManager'; // Added import
 // Removed ragAugmentedChatFlow import as it's no longer used
 import { basicChatFlow } from "@/lib/genkit-instance";
 import rehypeHighlight from 'rehype-highlight';
@@ -247,6 +251,49 @@ const LambdaChat: React.FC = () => {
       toast({ title: "Citation Error", description: "Could not load citation source.", variant: "destructive" });
     }
   };
+
+  // Custom component to handle paragraphs and prevent nesting <pre> inside <p>
+  const PComponent = (props: any) => {
+    // Check if any direct child node in the HAST tree is a 'pre' element
+    // ReactMarkdown passes the original hast node via the 'node' prop
+    const containsPre = props.node?.children?.some(
+      (child: any) => child.type === 'element' && child.tagName === 'pre'
+    );
+
+    if (containsPre) {
+      // If it contains a pre, render children without the <p> wrapper
+      return <>{props.children}</>;
+    }
+    // Otherwise, render a normal paragraph
+    return <p>{props.children}</p>;
+  };
+
+  // Shared components config for ReactMarkdown, including custom P and Code renderers
+  const markdownComponents = {
+    p: PComponent, // Use our custom paragraph renderer
+    code({node, className, children, ...props}: any) { // Keep existing custom code renderer
+      const match = /language-(\w+)/.exec(className || '');
+      const language = match ? match[1] : '';
+
+      if (language === 'mermaid') {
+        return (
+            <pre className="mermaid" key={crypto.randomUUID()}>
+              {String(children).replace(/\n$/, '')}
+            </pre>
+        );
+      }
+
+      // Apply highlight.js styling for other languages
+      return (
+        <pre className={className || ''} style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+          <code className={className}>
+              {children}
+          </code>
+        </pre>
+      )
+    }
+  };
+
 
   const handleSendMessage = async () => {
     if (!userInput.trim() || isLoading) return;
@@ -602,137 +649,21 @@ const LambdaChat: React.FC = () => {
         <Sidebar>
           <SidebarTrigger />
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel>Chat Configuration</SidebarGroupLabel>
-              <Separator />
-              <div className="p-2 space-y-4">
-                <div>
-                  <p className="mb-2 text-sm font-medium">Chat Mode</p>
-                  <Select value={chatMode} onValueChange={(value) => setChatMode(value as ChatMode)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Chat Mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* Removed RAG_BEDROCK */}
-                      <SelectItem value={ChatMode.DIRECT_GEMINI}>Direct (Gemini)</SelectItem>
-                      <SelectItem value={ChatMode.DIRECT_OPENAI}>Direct (OpenAI)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className={cn(chatMode !== ChatMode.DIRECT_GEMINI && 'opacity-50 cursor-not-allowed')}>
-                  {/* Added Sparkles icon */}
-                  <p className="mb-2 text-sm font-medium"><Sparkles size={16} className="inline mr-1"/> Gemini Model</p>
-                  <Select
-                    value={selectedGeminiModelId}
-                    onValueChange={setSelectedGeminiModelId}
-                    disabled={chatMode !== ChatMode.DIRECT_GEMINI}
-                  >
-                    <SelectTrigger disabled={chatMode !== ChatMode.DIRECT_GEMINI}>
-                      <SelectValue placeholder="Select Gemini Model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableGeminiModels.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* Adjusted className to show OpenAI selector when its mode is active */}
-                <div className={cn(chatMode !== ChatMode.DIRECT_OPENAI && 'opacity-50 cursor-not-allowed')}>
-                  <p className="mb-2 text-sm font-medium"> <BrainCircuit size={16} className="inline mr-1"/> OpenAI Model</p>
-                  <Select
-                    value={selectedOpenAIModelId}
-                    onValueChange={setSelectedOpenAIModelId}
-                    disabled={chatMode !== ChatMode.DIRECT_OPENAI}
-                  >
-                    <SelectTrigger disabled={chatMode !== ChatMode.DIRECT_OPENAI}>
-                      <SelectValue placeholder="Select OpenAI Model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableOpenAIModels.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="temperature-preset">Creativity</Label>
-                  <Select
-                    value={temperaturePreset}
-                    onValueChange={(value) => setTemperaturePreset(value as TemperaturePreset)}
-                    name="temperature-preset"
-                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Creativity" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="precise">Precise</SelectItem>
-                      <SelectItem value="normal">Normal</SelectItem>
-                      <SelectItem value="creative">Creative</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {temperaturePreset === 'precise' && 'More factual, focused output.'}
-                    {temperaturePreset === 'normal' && 'Balanced output.'}
-                    {temperaturePreset === 'creative' && 'More imaginative, diverse output.'}
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="max-tokens">Max Response Length (Tokens)</Label>
-                  <Input
-                    id="max-tokens"
-                    type="number"
-                    value={maxTokens}
-                    onChange={(e) => setMaxTokens(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    min="1"
-                    max="8192" // Example max, adjust as needed
-                    step="16"
-                  />
-                </div> {/* Closing div for max-tokens */}
-                
-                {/* TAVILY TOOL TOGGLES MOVED NEAR INPUT */}
-
-              </div> {/* Closing div for p-2 space-y-4 */}
-            </SidebarGroup>
-            {/* Removed RAG Configuration SidebarGroup */}
-            <SidebarGroup>
-              <SidebarGroupLabel>Connected Servers</SidebarGroupLabel>
-              <Separator />
-              <div className="p-2 space-y-2">
-                {connectedServers.map(server => (
-                  <div key={server.name} className="text-sm">
-                    <div className="flex items-center space-x-2 mb-1">
-                       <Server size={16} />
-                       <span className="font-medium">{server.name}</span>
-                       <span className={cn(
-                         "text-xs px-1.5 py-0.5 rounded",
-                         server.status === 'Connected' && 'bg-green-100 text-green-800',
-                         server.status === 'Error' && 'bg-red-100 text-red-800',
-                         server.status === 'Pending' && 'bg-yellow-100 text-yellow-800'
-                       )}>{server.status}</span>
-                    </div>
-                    {server.status === 'Connected' && (
-                      <ul className="list-disc list-inside pl-4 text-xs text-muted-foreground space-y-1">
-                        {server.tools.length > 0 ? (
-                          server.tools.map(tool => (
-                            <li key={tool.name} title={tool.description}>{tool.name}</li>
-                          ))
-                        ) : (
-                          <li>No tools listed for this server.</li>
-                        )}
-                      </ul>
-                    )}
-                  </div>
-                ))}
-                {connectedServers.length === 0 && (
-                  <p className="text-xs text-muted-foreground p-2">No MCP servers configured.</p>
-                )}
-              </div>
-            </SidebarGroup>
+            <ChatConfigSidebar
+              chatMode={chatMode}
+              onChatModeChange={setChatMode}
+              selectedGeminiModelId={selectedGeminiModelId}
+              onSelectedGeminiModelIdChange={setSelectedGeminiModelId}
+              availableGeminiModels={availableGeminiModels}
+              selectedOpenAIModelId={selectedOpenAIModelId}
+              onSelectedOpenAIModelIdChange={setSelectedOpenAIModelId}
+              availableOpenAIModels={availableOpenAIModels}
+              temperaturePreset={temperaturePreset}
+              onTemperaturePresetChange={setTemperaturePreset}
+              maxTokens={maxTokens}
+              onMaxTokensChange={setMaxTokens}
+            />
+            <ServerStatusDisplay connectedServers={connectedServers} />
             <div className="p-2 mt-auto">
                 <Button variant="outline" className="w-full" onClick={clearChat}>Clear Chat</Button>
             </div>
@@ -743,7 +674,7 @@ const LambdaChat: React.FC = () => {
             </p>
           </SidebarFooter>
         </Sidebar>
-        <div className="flex-1 p-4">
+        <div className="flex-1 p-4"> {/* Main content area */}
           <Card className="flex h-full flex-col">
             <CardContent className="relative flex-1">
               <ScrollArea className="h-full w-full">
@@ -766,37 +697,18 @@ const LambdaChat: React.FC = () => {
                         )}
                       >
                         {message.sender === 'bot' && message.sources && message.sources.length > 0 && message.text.includes('[Source:') ? (
+                          // Pass components down to ChatMessageContent
                           <ChatMessageContent
                             text={message.text}
                             onCitationClick={(chunkIndex) => handleCitationClick(message.id, chunkIndex)}
+                            components={markdownComponents} // Pass components down
                           />
                         ) : (
+                          // Use components for regular markdown rendering
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeHighlight]} // Added rehypeHighlight
-                            components={{
-                              code({node, className, children, ...props}) {
-                                const match = /language-(\w+)/.exec(className || '');
-                                const language = match ? match[1] : '';
-
-                                if (language === 'mermaid') {
-                                  return (
-                                      <pre className="mermaid" key={crypto.randomUUID()}>
-                                        {String(children).replace(/\n$/, '')}
-                                      </pre>
-                                  );
-                                }
-
-                                // Apply highlight.js styling for other languages
-                                return (
-                                  <pre className={className || ''} style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-                                    <code className={className}>
-                                        {children}
-                                    </code>
-                                  </pre>
-                                )
-                              }
-                            }}
+                            rehypePlugins={[rehypeHighlight]}
+                            components={markdownComponents} // Use the shared components object here
                           >
                             {message.text}
                           </ReactMarkdown>
@@ -841,43 +753,7 @@ const LambdaChat: React.FC = () => {
                 </div>
               </ScrollArea>
             </CardContent>
-            {/* Display uploaded files */}
-            {uploadedFiles.length > 0 && (
-              <div className="border-t p-2">
-                <div className="text-sm font-medium mb-2">Uploaded Files:</div>
-                <div className="space-y-1">
-                  {uploadedFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      className={cn(
-                        "flex items-center justify-between p-2 rounded text-sm",
-                        file.status === 'success' && "bg-green-50 text-green-700",
-                        file.status === 'error' && "bg-red-50 text-red-700",
-                        file.status === 'uploading' && "bg-yellow-50 text-yellow-700",
-                      )}
-                    >
-                      <div className="flex items-center space-x-2 overflow-hidden"> {/* Added overflow-hidden */}
-                        <FileText size={16} className="flex-shrink-0"/> {/* Added flex-shrink-0 */}
-                        <span className="truncate">{file.file.name}</span> {/* Removed max-w */}
-                        {file.status === 'uploading' && (
-                          <span className="animate-pulse ml-2 flex-shrink-0">Uploading...</span>
-                        )}
-                        {file.status === 'error' && (
-                          <span className="text-xs text-red-500 ml-2 flex-shrink-0">{file.error || 'Upload failed'}</span>
-                        )}
-                      </div>
-                      <button
-                        className="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0" // Added margin and shrink
-                        onClick={() => removeFile(file.id)}
-                        title="Remove file"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <FileUploadManager uploadedFiles={uploadedFiles} onRemoveFile={removeFile} />
 
             <div className="border-t p-4">
               {/* Hidden file input */}
@@ -890,117 +766,28 @@ const LambdaChat: React.FC = () => {
                 // accept=".pdf" // Allow any file type for now, refine later if needed
               />
 
-              {/* START: ADD TAVILY TOOL TOGGLES NEAR INPUT */}
-              <TooltipProvider delayDuration={100}>
-                <div className="flex items-center justify-end space-x-4 mb-2 pr-1">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setTavilySearchEnabled(!tavilySearchEnabled)}
-                        className="h-7 w-7" // Smaller button
-                      >
-                        <Search className={cn("h-4 w-4", tavilySearchEnabled ? "text-blue-500" : "text-muted-foreground")} />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{tavilySearchEnabled ? "Disable" : "Enable"} Tavily Web Search</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                       <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setTavilyExtractEnabled(!tavilyExtractEnabled)}
-                        className="h-7 w-7" // Smaller button
-                      >
-                        <ExternalLink className={cn("h-4 w-4", tavilyExtractEnabled ? "text-green-500" : "text-muted-foreground")} />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                       <p>{tavilyExtractEnabled ? "Disable" : "Enable"} Tavily Web Content Extraction</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  {/* START: ADD PERPLEXITY TOOL TOGGLES */}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setPerplexitySearchEnabled(!perplexitySearchEnabled)}
-                        className="h-7 w-7" // Smaller button
-                      >
-                        {/* Replaced Search with Sparkles icon */}
-                        <Sparkles className={cn("h-4 w-4", perplexitySearchEnabled ? "text-purple-500" : "text-muted-foreground")} />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{perplexitySearchEnabled ? "Disable" : "Enable"} Perplexity Web Search</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                       <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setPerplexityDeepResearchEnabled(!perplexityDeepResearchEnabled)}
-                        className="h-7 w-7" // Smaller button
-                      >
-                        <BrainCircuit className={cn("h-4 w-4", perplexityDeepResearchEnabled ? "text-orange-500" : "text-muted-foreground")} />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                       <p>{perplexityDeepResearchEnabled ? "Disable" : "Enable"} Perplexity Deep Research</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  {/* END: ADD PERPLEXITY TOOL TOGGLES */}
-                </div>
-              </TooltipProvider>
-              {/* END: ADD TAVILY TOOL TOGGLES NEAR INPUT */}
-
-              <div className="flex items-center space-x-2">
-                <div className="relative flex-1">
-                  <Input
-                    type="text"
-                    placeholder="Enter your message..."
-                    value={userInput}
-                    onChange={(e) => setUserInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    disabled={isLoading}
-                    className="pr-10" // Add padding for the paperclip button
-                  />
-
-                  {/* Paperclip button - Enable when not loading/uploading */}
-                  <button
-                    className={cn(
-                      "absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600",
-                      (isLoading || isUploading) && "opacity-50 cursor-not-allowed"
-                    )}
-                    onClick={triggerFileUpload}
-                    disabled={isLoading || isUploading}
-                    title="Upload file(s)" // Updated title
-                  >
-                    <Paperclip size={16} />
-                  </button>
-                </div>
-
-                <Button onClick={handleSendMessage} disabled={isLoading || isUploading}>
-                  {isLoading ? 'Sending...' : 'Send'}
-                </Button>
-              </div>
+              <ChatInputControls
+                userInput={userInput}
+                onUserInputChanges={setUserInput}
+                onSendMessage={handleSendMessage}
+                isLoading={isLoading}
+                isUploading={isUploading}
+                tavilySearchEnabled={tavilySearchEnabled}
+                onTavilySearchToggle={() => setTavilySearchEnabled(!tavilySearchEnabled)}
+                tavilyExtractEnabled={tavilyExtractEnabled}
+                onTavilyExtractToggle={() => setTavilyExtractEnabled(!tavilyExtractEnabled)}
+                perplexitySearchEnabled={perplexitySearchEnabled}
+                onPerplexitySearchToggle={() => setPerplexitySearchEnabled(!perplexitySearchEnabled)}
+                perplexityDeepResearchEnabled={perplexityDeepResearchEnabled}
+                onPerplexityDeepResearchToggle={() => setPerplexityDeepResearchEnabled(!perplexityDeepResearchEnabled)}
+                onFileUploadTrigger={triggerFileUpload}
+              />
             </div>
           </Card>
         </div>
-      </div>
-    </SidebarProvider>
-  );
+       </div>
+     </SidebarProvider>
+   );
 };
 
 export default LambdaChat;

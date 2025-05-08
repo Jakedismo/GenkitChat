@@ -209,7 +209,8 @@ function simpleSimilarityScore(query: string, text: string): number {
 export async function generateRagResponseStream(
   query: string,
   sessionId: string,
-  modelId: string
+  modelId: string,
+  tools?: GenkitTool[] // Add optional tools parameter
 ): Promise<AsyncIterable<{ sources?: Document[]; text?: string; error?: string }>> { // Return AsyncIterable, now with sources
   try {
     console.log(`RAG query: \"${query}\" for session: ${sessionId}`);
@@ -281,6 +282,9 @@ export async function generateRagResponseStream(
       const topDocs = rerankedDocs.slice(0, finalK);
       
       console.log(`Reranked and returning top ${topDocs.length} documents`);
+      if (tools && tools.length > 0) {
+          console.log(`Passing ${tools.length} tools to LLM along with RAG docs.`);
+      }
       
       // Log reranking scores for debugging
       topDocs.forEach((doc, index) => {
@@ -295,17 +299,14 @@ export async function generateRagResponseStream(
         // Then, stream the LLM response
         const llmStream = await aiInstance.generateStream({ // Use generateStream
           model: modelId,
-        prompt: `You are a helpful assistant that provides accurate information based on the documents provided.
-        
+        prompt: `You are a helpful assistant. Answer the query based *primarily* on the provided documents.
+However, you may use the available tools if the documents do not contain the necessary information or if the query explicitly asks for external data (like current events).
+Always prioritize document information if available.
 Query: ${query}
-
-Use only the information from the provided documents to answer the question.
-If the answer cannot be found in the documents, say so clearly.
-Do not make up information.
-
-The documents have been ranked by relevance, with the most relevant information listed first.
-When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. For example, if information comes from the first document in the list, which was named 'annual_report.pdf', cite it as [Source: annual_report.pdf, Chunk: 0].`,
+When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. Example: [Source: report.pdf, Chunk: 0].
+Do not make up information not found in documents or tools.`,
         docs: topDocs,
+        tools: tools // Pass the tools array
       });
       
         for await (const chunk of llmStream.stream) {
@@ -319,27 +320,37 @@ When citing a document, use its original file name and its 0-based index from th
       
       // Fallback: Use the filtered docs without reranking, but still stream
       const fallbackDocs = filteredDocs.slice(0, FINAL_DOCUMENT_COUNT);
+      if (tools && tools.length > 0) {
+          console.log(`Passing ${tools.length} tools to LLM along with FALLBACK RAG docs.`);
+      }
       return (async function* () {
         // First, yield the source documents for fallback
         yield { sources: fallbackDocs };
 
         // Then, stream the LLM response
-        const llmStream = await aiInstance.generateStream({ // Use generateStream in fallback
+        const llmStream = await aiInstance.generateStream({ 
           model: modelId,
-          prompt: `You are a helpful assistant that provides accurate information based on the documents provided.
-        
+          // Modify prompt to allow tool use alongside docs
+          prompt: `You are a helpful assistant. Answer the query based *primarily* on the provided documents.
+However, you may use the available tools if the documents do not contain the necessary information or if the query explicitly asks for external data (like current events).
+Always prioritize document information if available.
 Query: ${query}
+When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. Example: [Source: report.pdf, Chunk: 0].
+Do not make up information not found in documents or tools.`,
+          docs: topDocs,
+          tools: tools // Pass the tools array
+        });
 
-Use only the information from the provided documents to answer the question.
-If the answer cannot be found in the documents, say so clearly.
-Do not make up information.
-When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. For example, if information comes from the first document in the list, which was named 'annual_report.pdf', cite it as [Source: annual_report.pdf, Chunk: 0].`,
-        docs: fallbackDocs,
-      });
-      
-      // Map the fallback stream chunks
         for await (const chunk of llmStream.stream) {
-          yield { text: chunk.text }; // Access text property directly
+          // Handle tool calls if necessary? Genkit stream might include tool request/response chunks
+          // For now, assume we only care about text output for simplicity.
+          if (chunk.content) {
+             // Check if chunk.content is {text: '...'} structure or just text
+             const textOutput = typeof chunk.content === 'string' ? chunk.content :
+                                Array.isArray(chunk.content) ? chunk.content.map(part => part.text || '').join('') :
+                                '';
+             if (textOutput) yield { text: textOutput };
+           }
         }
       })();
     }

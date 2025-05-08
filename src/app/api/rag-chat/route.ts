@@ -6,6 +6,9 @@ import {
   processFileWithOfficeParser,
   MAX_UPLOAD_SIZE // Need this back for server-side size check
 } from "@/services/rag";
+// Import tool definitions (adjust path/names as needed)
+import { tavilySearch } from "@/ai/tools/tavily";
+import { GenkitTool } from "genkit/tool"; // Import GenkitTool type for the array
 
 // Handle file uploads
 export async function POST(request: NextRequest) {
@@ -65,7 +68,8 @@ export async function POST(request: NextRequest) {
     // Handle chat requests (application/json)
     else {
       const body = await request.json();
-      const { query, sessionId, modelId } = body;
+      // Extract tool flags along with other parameters
+      const { query, sessionId, modelId, tavilySearchEnabled /* other tool flags... */ } = body;
 
       // Validation
        if (!query) {
@@ -89,8 +93,17 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      // Generate RAG response stream
-      const stream = await generateRagResponseStream(query, sessionId, modelId);
+      // Determine which tools to potentially pass based on flags
+      const toolsToUse: GenkitTool[] = [];
+      if (tavilySearchEnabled) {
+        // Assuming tavilySearch is the correct Genkit tool definition object
+        toolsToUse.push(tavilySearch);
+        console.log("Adding Tavily tool to RAG request");
+      }
+      // Add other tools based on their flags here...
+      
+      // Generate RAG response stream, passing tools
+      const stream = await generateRagResponseStream(query, sessionId, modelId, toolsToUse);
       
       // Helper to transform the stream format if necessary, assuming aiInstance stream format
       const transformStream = async function*() {
