@@ -213,8 +213,8 @@ export const basicChatFlow = aiInstance.defineFlow(
               const requestPart = toolRequests.get(reqRef)!;
               toolInvocations.push({
                 name: requestPart.toolRequest.name,
-                input: requestPart.toolRequest.input,
-                output: toolResponsePart.toolResponse?.output,
+                input: requestPart.toolRequest.input as Record<string, unknown> | undefined,
+                output: toolResponsePart.toolResponse?.output as Record<string, unknown> | undefined,
               });
               toolRequests.delete(reqRef);
             }

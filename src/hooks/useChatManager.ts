@@ -80,17 +80,17 @@ export function useChatManager({
   useEffect(() => {
     scrollToBottom();
     // Ensure Mermaid runs client-side only
-    if (typeof window !== "undefined") {
-      try {
-        mermaid.run({
-          // Specify nodes for Mermaid to scan - querySelectorAll can be safer than run() without args
-          // This assumes your markdown renderer uses <pre class="mermaid">...</pre>
-          nodes: document.querySelectorAll("pre.mermaid"),
-        });
-      } catch (e) {
-        console.error("Mermaid rendering error:", e);
-      }
-    }
+    // if (typeof window !== "undefined") { // mermaid.run() and its try-catch block should be commented out
+    //   try {
+    //     mermaid.run({
+    //       // Specify nodes for Mermaid to scan - querySelectorAll can be safer than run() without args
+    //       // This assumes your markdown renderer uses <pre class=\"mermaid\">...</pre>
+    //       nodes: document.querySelectorAll("pre.mermaid"),
+    //     });
+    //   } catch (e) {
+    //     console.error("Mermaid rendering error:", e);
+    //   }
+    // }
   }, [messages, scrollToBottom]); // Depend on messages and scrollToBottom
 
   // Core function to handle sending a message
@@ -162,15 +162,15 @@ export function useChatManager({
       botMessagePlaceholder,
     ]);
     setUserInput("");
-    console.log("Setting isLoading to TRUE (useChatManager)");
+
     setIsLoading(true);
 
     try {
       const useRag = uploadedFiles.some((f) => f.status === "success");
-      console.log(`Sending message. Use RAG: ${useRag} (useChatManager)`);
+
 
       const apiUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
-      console.log(`Targeting API endpoint: ${apiUrl} (useChatManager)`);
+
 
       const requestBody = {
         query: userMessageText,
@@ -207,18 +207,24 @@ export function useChatManager({
       const decoder = new TextDecoder();
       let done = false;
       let buffer = "";
-      console.log("Starting SSE processing loop (useChatManager)...");
+
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
-        const chunk = decoder.decode(value, { stream: !done });
-        buffer += chunk;
+        let rawChunk = decoder.decode(value, { stream: !done });
 
-        let boundary = buffer.indexOf("\n\n");
+        // Normalize literal "\\n" to actual newline "\n", then remove any CRs
+        let normalizedChunk = rawChunk.replace(/\\n/g, "\n"); 
+        normalizedChunk = normalizedChunk.replace(/\r/g, ""); // Remove any stray CRs
+
+        buffer += normalizedChunk; 
+
+        let boundary = buffer.indexOf("\n\n"); 
         while (boundary !== -1) {
           const eventData = buffer.substring(0, boundary);
-          buffer = buffer.substring(boundary + 2);
+          // The boundary is two newline characters.
+          buffer = buffer.substring(boundary + 2); 
 
           let eventType = "message";
           let dataPayload = "";
@@ -231,12 +237,15 @@ export function useChatManager({
             } // Ignore comments and empty lines
           }
 
+
           if (dataPayload) {
             try {
               const jsonData = JSON.parse(dataPayload);
               setMessages((prevMessages) => {
                 const updatedMessages = prevMessages.map((msg) => {
+
                   if (msg.id === botMessagePlaceholderId) {
+
                     // Handle different event types
                     if (eventType === "sources") {
                       const mappedSources: DocumentData[] = (
@@ -266,10 +275,21 @@ export function useChatManager({
                         };
                       });
                       return { ...msg, sources: mappedSources };
-                    } else if (eventType === "chunk") {
+                    } else if (eventType === "chunk" || eventType === "text") {
+                      // AGGRESSIVE DIAGNOSTIC was here, reverting to normal concatenation.
                       return { ...msg, text: msg.text + (jsonData.text || "") };
+                    } else if (eventType === "tool_invocation") { // Singular, from RAG
+                      // jsonData is a single tool invocation object
+                      return {
+                        ...msg,
+                        toolInvocations: [
+                          ...(msg.toolInvocations || []),
+                          ...(jsonData ? [jsonData] : []), // Wrap single object in array
+                        ],
+                      };
                     } else if (eventType === "tool_invocations") {
                       // TODO: Define ToolInvocation type properly if not already available via types/chat
+                      // Assumes jsonData here is an array if this event type is used
                       return {
                         ...msg,
                         toolInvocations: [
@@ -300,9 +320,9 @@ export function useChatManager({
                       }
                       return {
                         ...msg,
-                        text: jsonData.response?.text ?? msg.text,
+                        text: jsonData.response ?? msg.text, // Corrected path for text
                         toolInvocations:
-                          jsonData.response?.toolInvocations ??
+                          jsonData.toolInvocations ?? // Corrected path for toolInvocations
                           msg.toolInvocations,
                       };
                     }
@@ -329,7 +349,7 @@ export function useChatManager({
           boundary = buffer.indexOf("\n\n");
         }
       }
-      console.log("SSE processing loop finished (useChatManager).");
+
     } catch (error) {
       console.error("Error sending message (useChatManager):", error);
       const errorMessage =
@@ -348,7 +368,7 @@ export function useChatManager({
         variant: "destructive",
       });
     } finally {
-      console.log("Setting isLoading to FALSE (useChatManager)");
+
       setIsLoading(false);
     }
   }, [
