@@ -5,6 +5,7 @@ import {
 } from "@/lib/genkit-instance";
 import { chunk } from "llm-chunk";
 import { parseOfficeAsync } from "officeparser"; // Import officeparser
+import * as pdfjsLib from 'pdfjs-dist'; // Revert to main import, worker path will specify legacy
 import { Document } from "genkit/retriever";
 import {
 // GenerateResponse, // Removed unused
@@ -15,6 +16,26 @@ import {
 } from "@genkit-ai/ai"; // Added Genkit AI types
 import { v4 as uuidv4 } from "uuid";
 // import { z } from "zod"; // Removed unused
+
+// Configure PDF.js worker for backend usage.
+// This needs to point to the worker file. Using require.resolve is a common Node.js pattern.
+// Ensure 'pdfjs-dist' is in dependencies.
+try {
+  // Dynamically resolve the worker path from the installed 'pdfjs-dist' package.
+  // Using the legacy build worker for Node.js environments.
+  const workerSrcPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.js');
+  if (pdfjsLib.GlobalWorkerOptions.workerSrc !== workerSrcPath) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrcPath;
+    console.log('[RAG Service] PDF.js worker (backend) source set to:', workerSrcPath);
+  }
+} catch (error) {
+  console.warn('[RAG Service] Could not automatically set pdfjs-dist worker source for backend. PDF processing might fail.', error);
+  // Fallback or manual configuration might be needed if require.resolve fails in your specific deployment.
+  // For example, if the worker is copied to a known location:
+  // pdfjsLib.GlobalWorkerOptions.workerSrc = './path/to/your/copied/pdf.worker.mjs';
+  // Or using a CDN (less ideal for backend stability but can work):
+  // pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+}
 
 // Define the structure for events yielded by generateRagResponseStream
 export type RagStreamEvent =
@@ -82,49 +103,100 @@ export async function indexFileDocument( // Renamed back (or to generic)
   fileName: string,
   sessionId: string,
 ): Promise<boolean> {
+  const allDocuments: Document[] = [];
+  const documentId = `${sessionId}::${fileName}`;
+  let overallChunkIndex = 0;
+
   try {
-    // Extract text using officeparser
-    console.log(`Extracting text from ${fileName} using officeparser...`);
-    const extractedText = await parseOfficeAsync(fileBuffer);
-    if (!extractedText) {
-      console.error(`officeparser failed to extract text from ${fileName}`);
-      return false;
-    }
-    console.log(
-      `Text extracted from ${fileName} (Length: ${extractedText.length})`,
-    );
+    if (fileName.toLowerCase().endsWith(".pdf")) {
+      console.log(`Processing PDF file: ${fileName} using pdfjs-dist`);
+      
+      // Worker source should be set globally at the module level now.
 
-    // Split the extracted text into chunks
-    const chunks = await chunk(extractedText, CHUNKING_CONFIG);
+      const loadingTask = pdfjsLib.getDocument({ data: fileBuffer.buffer }); // pdfjs-dist expects ArrayBuffer
+      const pdfDoc = await loadingTask.promise;
+      console.log(`PDF loaded: ${fileName}, Pages: ${pdfDoc.numPages}`);
 
-    // Convert chunks into documents for indexing
-    // Define a unique ID for the document being processed
-    const documentId = `${sessionId}::${fileName}`;
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const textContent = await page.getTextContent();
+        // Ensure item is typed correctly for text extraction. TextItem is not directly exported from pdfjsLib in common setups.
+        const pageText = textContent.items.map((item: { str: string }) => item.str).join(" "); // Extract text from page
 
-    const documents = chunks.map((text, index) => {
-      const chunkId = uuidv4(); // Generate a unique ID for each chunk
-      return Document.fromText(text, {
-        documentId: documentId, // Unique ID for the parent document
-        chunkId: chunkId, // Unique ID for this specific chunk
-        originalFileName: fileName, // Original name of the uploaded file
-        chunkIndex: index, // Index of the chunk within the original document
-        sessionId: sessionId, // Session ID for filtering
-        timestamp: new Date().toISOString(),
+        if (pageText.trim().length > 0) {
+          const pageChunks = await chunk(pageText, CHUNKING_CONFIG);
+          pageChunks.forEach((chunkText) => {
+            const chunkId = uuidv4();
+            allDocuments.push(
+              Document.fromText(chunkText, {
+                documentId: documentId,
+                chunkId: chunkId,
+                originalFileName: fileName,
+                pageNumber: i, // Store the 1-indexed page number
+                textToHighlight: chunkText, // Store the chunk content for highlighting
+                chunkIndex: overallChunkIndex++, // Overall chunk index
+                sessionId: sessionId,
+                timestamp: new Date().toISOString(),
+              }),
+            );
+          });
+        }
+        // Optional: Release page resources if memory becomes an issue, though usually handled by pdfDoc.destroy()
+        // page.cleanup();
+      }
+      if (pdfDoc && typeof (pdfDoc as any).destroy === 'function') {
+        (pdfDoc as any).destroy(); // Clean up PDF document resources (synchronous)
+      }
+      console.log(`Extracted ${allDocuments.length} chunks from PDF ${fileName}`);
+
+    } else {
+      console.log(`Extracting text from ${fileName} using officeparser...`);
+      const extractedText = await parseOfficeAsync(fileBuffer);
+      if (!extractedText) {
+        console.error(`officeparser failed to extract text from ${fileName}`);
+        return false;
+      }
+      console.log(
+        `Text extracted from ${fileName} (Length: ${extractedText.length})`,
+      );
+
+      const chunks = await chunk(extractedText, CHUNKING_CONFIG);
+      chunks.forEach((text) => {
+        const chunkId = uuidv4();
+        allDocuments.push(
+          Document.fromText(text, {
+            documentId: documentId,
+            chunkId: chunkId,
+            originalFileName: fileName,
+            // pageNumber: 1, // Default page number for non-PDFs or leave undefined
+            textToHighlight: text, // Chunk content for potential non-PDF preview
+            chunkIndex: overallChunkIndex++,
+            sessionId: sessionId,
+            timestamp: new Date().toISOString(),
+          }),
+        );
       });
-    });
+      console.log(`Extracted ${allDocuments.length} chunks using officeparser from ${fileName}`);
+    }
 
-    // Index the documents
-    await aiInstance.index({
-      indexer: ragIndexerRef,
-      documents,
-    });
-
-    console.log(
-      `Indexed ${documents.length} chunks from ${fileName} for session ${sessionId}`,
-    );
+    if (allDocuments.length > 0) {
+      await aiInstance.index({
+        indexer: ragIndexerRef,
+        documents: allDocuments,
+      });
+      console.log(
+        `Indexed ${allDocuments.length} total chunks from ${fileName} for session ${sessionId}`,
+      );
+    } else {
+      console.log(`No chunks extracted from ${fileName}. Nothing to index.`);
+    }
+    
     return true;
   } catch (error) {
-    console.error("Error indexing PDF document:", error);
+    console.error(`Error processing document ${fileName}:`, error);
+    // Specific cleanup for pdfDoc if an error occurs after it's loaded but before destroy
+    // This part is tricky as pdfDoc might not be defined or might have already been destroyed.
+    // Consider adding a flag or checking if pdfDoc exists and has a destroy method.
     return false;
   }
 }

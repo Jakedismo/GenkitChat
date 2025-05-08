@@ -9,6 +9,7 @@ import {
 } from "@/types/chat";
 import mermaid from "mermaid"; // Import mermaid
 import { safeDestr } from "destr";
+import { v4 as uuidv4 } from "uuid"; // For generating session IDs
 
 type ParsedJsonData = {
   sources?: Array<{
@@ -89,6 +90,29 @@ export function useChatManager({
   // Refs for scrolling
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+
+  // Effect to initialize session ID on mount if not already set
+  useEffect(() => {
+    if (!currentSessionId) {
+      const newSessionId = uuidv4();
+      setCurrentSessionId(newSessionId);
+      console.log('[useChatManager] New chat session started on mount:', newSessionId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // This effect should run once to initialize the session.
+  }, []); // Intentionally empty dependency array
+
+  // Function to scroll to bottom
+  // Effect to initialize session ID on mount if not already set
+  useEffect(() => {
+    if (!currentSessionId) {
+      const newSessionId = uuidv4();
+      setCurrentSessionId(newSessionId);
+      console.log('[useChatManager] New chat session started on mount:', newSessionId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // This effect should run once to initialize the session.
+  }, []); // Intentionally empty dependency array for one-time run if currentSessionId is initially undefined.
 
   // Function to scroll to bottom
   const scrollToBottom = useCallback(() => {

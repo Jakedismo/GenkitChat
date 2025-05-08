@@ -40,6 +40,12 @@ export default {
   //    Turbopack builds yet. Turbopack simply ignores this block.
   webpack: (config, { isServer }) => {
     if (!isServer) {
+      // For react-pdf to prevent issues with canvas module resolution on client-side
+      if (!config.resolve.alias) {
+        config.resolve.alias = {};
+      }
+      config.resolve.alias.canvas = false;
+
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,

@@ -202,7 +202,8 @@ const {
   const { toast } = useToast(); // toast is used by useChatManager (via useEffect/handleSendMessage)
 
   // State for citation preview sidebar
-  // Interface CitationPreviewData moved to types/chat.ts
+  // Assuming CitationPreviewData is imported from where it's defined (e.g., types/chat.ts or CitationPreviewSidebar.tsx)
+  // For this edit, we assume the type is correctly imported and matches the sidebar's expectation.
   const [citationPreview, setCitationPreview] =
     useState<CitationPreviewData | null>(null);
   const [isCitationSidebarOpen, setIsCitationSidebarOpen] = useState(false);
@@ -267,14 +268,43 @@ const {
   ) => {
     const message = messages.find((m) => m.id === messageId);
     if (message && message.sources && message.sources[chunkIndexInSources]) {
-      const sourceChunk = message.sources[chunkIndexInSources];
-      setCitationPreview({
-        fileName: sourceChunk.originalFileName,
-        content: sourceChunk.content,
-        documentId: sourceChunk.documentId,
-        chunkId: sourceChunk.chunkId,
-      });
-      setIsCitationSidebarOpen(true);
+      const sourceChunk = message.sources[chunkIndexInSources] as DocumentData & { pageNumber?: number; textToHighlight?: string }; // Cast to include new optional fields
+
+      // Ensure required fields for PDF preview are present
+      if (sourceChunk.originalFileName && sourceChunk.documentId && typeof sourceChunk.pageNumber === 'number' && sourceChunk.textToHighlight) {
+        setCitationPreview({
+          originalFileName: sourceChunk.originalFileName,
+          pdfUrl: `/api/files/${encodeURIComponent(sourceChunk.documentId)}`, // Construct URL for PDF serving API
+          pageNumber: sourceChunk.pageNumber,
+          textToHighlight: sourceChunk.textToHighlight,
+          documentId: sourceChunk.documentId,
+          chunkId: sourceChunk.chunkId,
+        });
+        setIsCitationSidebarOpen(true);
+      } else {
+        // Fallback for older data or if critical info is missing for PDF preview
+        // This could show the raw content as before, or a specific error.
+        console.warn(
+          `Source chunk for message ${messageId}, index ${chunkIndexInSources} is missing data for PDF preview. Got:`, sourceChunk
+        );
+        // Displaying raw content as a fallback:
+        setCitationPreview({
+          originalFileName: sourceChunk.originalFileName || "Unknown File",
+          // @ts-ignore - Deliberate fallback for content if pdfUrl/pageNumber/textToHighlight are missing
+          content: sourceChunk.content || sourceChunk.textToHighlight || "No content available for preview.", 
+                  pdfUrl: "", // Invalid URL to indicate no PDF preview
+                  pageNumber: 0, // Invalid page to indicate no PDF preview
+                  textToHighlight: sourceChunk.textToHighlight || sourceChunk.content || "",
+          documentId: sourceChunk.documentId,
+          chunkId: sourceChunk.chunkId,
+        });
+        setIsCitationSidebarOpen(true);
+        toast({
+          title: "Citation Preview Issue",
+          description: "Could not fully load PDF preview data. Displaying available content.",
+          variant: "default",
+        });
+      }
     } else {
       console.warn(
         `Could not find source for message ${messageId}, chunk index ${chunkIndexInSources}`,
