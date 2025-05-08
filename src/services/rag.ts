@@ -6,8 +6,22 @@ import {
 import { chunk } from "llm-chunk";
 import { parseOfficeAsync } from "officeparser"; // Import officeparser
 import { Document } from "genkit/retriever";
+import {
+  GenerateResponse,
+  GenerateResponseChunk,
+  Part,
+  ToolRequestPart,
+  ToolResponsePart,
+} from "@genkit-ai/ai"; // Added Genkit AI types
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
+
+// Define the structure for events yielded by generateRagResponseStream
+export type RagStreamEvent =
+  | { type: 'sources'; sources: Document[] }
+  | { type: 'text'; text: string }
+  | { type: 'tool_invocation'; name: string; input: any; output: any; error?: string }
+  | { type: 'error'; error: string };
 
 /**
  * Maximum file size allowed for uploads (100MB in bytes)
@@ -219,11 +233,8 @@ export async function generateRagResponseStream(
   query: string,
   sessionId: string,
   modelId: string,
-  tools?: any[], // Changed GenkitTool[] to any[]
-): Promise<
-  AsyncIterable<{ sources?: Document[]; text?: string; error?: string }>
-> {
-  // Return AsyncIterable, now with sources
+  tools?: string[], // Expecting tool names as strings now
+): Promise<AsyncIterable<RagStreamEvent>> {
   try {
     console.log(`RAG query: \"${query}\" for session: ${sessionId}`);
 
@@ -244,9 +255,9 @@ export async function generateRagResponseStream(
 
     if (!filteredDocs || filteredDocs.length === 0) {
       console.log("No documents found for session:", sessionId);
-      // Return an AsyncIterable that yields the error message object
-      return (async function* () {
+      return (async function* (): AsyncIterable<RagStreamEvent> {
         yield {
+          type: 'error',
           error:
             "I couldn't find any relevant information in the documents you provided. Could you try rephrasing your question or uploading a document that might contain the answer?",
         };
@@ -313,13 +324,13 @@ export async function generateRagResponseStream(
       });
 
       // Return the async generator
-      return (async function* (): AsyncIterable<{ sources?: Document[]; text?: string; error?: string }> {
+      return (async function* (): AsyncIterable<RagStreamEvent> {
         // Yield sources first (cleaning metadata)
         const sourcesToYield = topDocs.map(({ metadata, ...rest }) => {
           const { score, ...metadataWithoutScore } = metadata || {};
           return { ...rest, metadata: metadataWithoutScore };
         });
-        yield { sources: sourcesToYield as Document[] };
+        yield { type: 'sources', sources: sourcesToYield as Document[] };
 
         // Define options for generateStream
         const generateOptions = {
@@ -331,26 +342,92 @@ Query: ${query}
 When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. Example: [Source: report.pdf, Chunk: 0].
 Do not make up information not found in documents or tools.`,
           docs: topDocs, // Use the original topDocs (with score metadata) for the LLM call
-          tools: tools
+          tools: tools // tools here are string names
         };
 
-        // Call generateStream and iterate
-        const llmStream = await aiInstance.generateStream(generateOptions);
-        for await (const chunk of llmStream.stream) {
-           // Handle potential content structures (text, tool calls etc.)
-           // This part might need refinement based on how Genkit yields tool call info
-           if (chunk.content) {
-             const textOutput = Array.isArray(chunk.content)
-               ? chunk.content.map(part => part.text || '').join('')
-               : (typeof chunk.content === 'string' ? chunk.content : ''); // Handle plain string content too
-             if (textOutput) {
-                yield { text: textOutput };
-             }
-             // TODO: Add handling for chunk.isToolRequest() or similar if needed
-           }
-        }
-      })(); // End of async generator function call
+        const pendingToolRequests = new Map<string, { name: string, input: any }>();
 
+        // Call generateStream and iterate
+        const llmStreamResult = await aiInstance.generateStream(generateOptions);
+        for await (const chunk of llmStreamResult.stream) {
+          let currentTextOutput = "";
+          if (Array.isArray(chunk.content)) {
+            for (const part of chunk.content as Part[]) {
+              if (part.text) {
+                currentTextOutput += part.text;
+              } else if (part.toolRequest) {
+                if (currentTextOutput) {
+                  yield { type: 'text', text: currentTextOutput };
+                  currentTextOutput = ""; 
+                }
+                if (part.toolRequest.ref && part.toolRequest.name) {
+                  pendingToolRequests.set(part.toolRequest.ref, { 
+                    name: part.toolRequest.name, 
+                    input: part.toolRequest.input 
+                  });
+                }
+              } else if (part.toolResponse) {
+                if (currentTextOutput) {
+                  yield { type: 'text', text: currentTextOutput };
+                  currentTextOutput = "";
+                }
+                if (part.toolResponse.ref && pendingToolRequests.has(part.toolResponse.ref)) {
+                  const requestDetails = pendingToolRequests.get(part.toolResponse.ref)!;
+                  yield { 
+                    type: 'tool_invocation', 
+                    name: requestDetails.name,
+                    input: requestDetails.input,
+                    output: part.toolResponse.output
+                    // If error information is needed, it should be part of the tool's 'output' field
+                  };
+                  pendingToolRequests.delete(part.toolResponse.ref);
+                } else if (part.toolResponse.name) { 
+                  yield {
+                    type: 'tool_invocation',
+                    name: part.toolResponse.name, 
+                    input: undefined, 
+                    output: part.toolResponse.output
+                    // If error information is needed, it should be part of the tool's 'output' field
+                  };
+                }
+              }
+            }
+            if (currentTextOutput) {
+              yield { type: 'text', text: currentTextOutput };
+            }
+          } else if (typeof chunk.content === 'string' && chunk.content) {
+            yield { type: 'text', text: chunk.content };
+          }
+        }
+        const finalResponse = await llmStreamResult.response; // Corrected: .response (getter)
+        if (finalResponse.messages && Array.isArray(finalResponse.messages)) {
+            const finalToolRequests = new Map<string, ToolRequestPart>();
+            for (const message of finalResponse.messages) {
+                if (message.role === 'model' && Array.isArray(message.content)) {
+                    for (const part of message.content as Part[]) {
+                        if (part.toolRequest?.ref) {
+                            finalToolRequests.set(part.toolRequest.ref, part as ToolRequestPart);
+                        }
+                    }
+                } else if (message.role === 'tool' && Array.isArray(message.content)) {
+                    for (const part of message.content as Part[]) {
+                        const toolResponsePart = part as ToolResponsePart;
+                        if (toolResponsePart.toolResponse?.ref && finalToolRequests.has(toolResponsePart.toolResponse.ref)) {
+                            const requestPart = finalToolRequests.get(toolResponsePart.toolResponse.ref)!;
+                            yield {
+                                type: 'tool_invocation',
+                                name: requestPart.toolRequest.name,
+                                input: requestPart.toolRequest.input,
+                                output: toolResponsePart.toolResponse.output
+                                // If error information is needed, it should be part of the tool's 'output' field
+                            };
+                            finalToolRequests.delete(toolResponsePart.toolResponse.ref); 
+                        }
+                    }
+                }
+            }
+        }
+      })(); // End of async generator function call for successful reranking path
     } catch (rerankingError) { // Start of catch block for reranking
       console.error(
         "Error occurred during the reranking stage:",
@@ -360,55 +437,122 @@ Do not make up information not found in documents or tools.`,
         "Falling back to standard retrieval using the initially filtered documents without reranking (streaming).",
       );
 
-      const fallbackDocs = filteredDocs.slice(0, FINAL_DOCUMENT_COUNT);
+      const fallbackDocs = filteredDocs.slice(0, FINAL_DOCUMENT_COUNT); // fallbackDocs defined here
       if (tools && tools.length > 0) {
         console.log(
           `Passing ${tools.length} tools to LLM along with FALLBACK RAG docs.`,
         );
       }
-
       // Return the async generator for fallback
-      return (async function* (): AsyncIterable<{ sources?: Document[]; text?: string; error?: string }> {
+      return (async function* (): AsyncIterable<RagStreamEvent> { // This generator is now inside catch
          // Yield fallback sources first (cleaning metadata)
-         const sourcesToYield = fallbackDocs.map(({ metadata, ...rest }) => {
-           const { score, ...metadataWithoutScore } = metadata || {}; // Score might not exist here, but safer to handle
+         const sourcesToYield = fallbackDocs.map(({ metadata, ...rest }) => { // fallbackDocs is in scope
+           const { score, ...metadataWithoutScore } = metadata || {}; 
            return { ...rest, metadata: metadataWithoutScore };
          });
-         yield { sources: sourcesToYield as Document[] };
+         yield { type: 'sources', sources: sourcesToYield as Document[] };
 
-         // Define options for generateStream
-         const generateOptions = {
-           model: modelId,
-           prompt: `You are a helpful assistant. Answer the query based *primarily* on the provided documents.
+          const generateOptions = {
+            model: modelId,
+            prompt: `You are a helpful assistant. Answer the query based *primarily* on the provided documents.
 However, you may use the available tools if the documents do not contain the necessary information or if the query explicitly asks for external data (like current events).
 Always prioritize document information if available.
 Query: ${query}
 When citing a document, use its original file name and its 0-based index from the provided list. Format citations as [Source: <original_file_name>, Chunk: <index_in_list>]. Example: [Source: report.pdf, Chunk: 0].
 Do not make up information not found in documents or tools.`,
-           docs: fallbackDocs, // Use fallbackDocs
-           tools: tools
-         };
+            docs: fallbackDocs, // Use fallbackDocs
+            tools: tools
+          };
 
-         // Call generateStream and iterate
-         const llmStream = await aiInstance.generateStream(generateOptions);
-         for await (const chunk of llmStream.stream) {
-            if (chunk.content) {
-              const textOutput = Array.isArray(chunk.content)
-                ? chunk.content.map(part => part.text || '').join('')
-                : (typeof chunk.content === 'string' ? chunk.content : '');
-              if (textOutput) {
-                 yield { text: textOutput };
+          const llmStreamResult = await aiInstance.generateStream(generateOptions);
+          const pendingToolRequests = new Map<string, { name: string, input: any }>();
+
+          for await (const chunk of llmStreamResult.stream) {
+            let currentTextOutput = "";
+            if (Array.isArray(chunk.content)) {
+              for (const part of chunk.content as Part[]) {
+                if (part.text) {
+                  currentTextOutput += part.text;
+                } else if (part.toolRequest) {
+                  if (currentTextOutput) {
+                    yield { type: 'text', text: currentTextOutput };
+                    currentTextOutput = ""; 
+                  }
+                  if (part.toolRequest.ref && part.toolRequest.name) {
+                    pendingToolRequests.set(part.toolRequest.ref, { 
+                      name: part.toolRequest.name, 
+                      input: part.toolRequest.input 
+                    });
+                  }
+                } else if (part.toolResponse) {
+                  if (currentTextOutput) {
+                    yield { type: 'text', text: currentTextOutput };
+                    currentTextOutput = "";
+                  }
+                  if (part.toolResponse.ref && pendingToolRequests.has(part.toolResponse.ref)) {
+                    const requestDetails = pendingToolRequests.get(part.toolResponse.ref)!;
+                    yield { 
+                      type: 'tool_invocation', 
+                      name: requestDetails.name,
+                      input: requestDetails.input,
+                      output: part.toolResponse.output
+                      // If error information is needed, it should be part of the tool's 'output' field
+                    };
+                    pendingToolRequests.delete(part.toolResponse.ref);
+                  } else if (part.toolResponse.name) {
+                    yield {
+                      type: 'tool_invocation',
+                      name: part.toolResponse.name, 
+                      input: undefined, 
+                      output: part.toolResponse.output
+                      // If error information is needed, it should be part of the tool's 'output' field
+                    };
+                  }
+                }
               }
-              // TODO: Add handling for chunk.isToolRequest() or similar if needed
+              if (currentTextOutput) {
+                yield { type: 'text', text: currentTextOutput };
+              }
+            } else if (typeof chunk.content === 'string' && chunk.content) {
+              yield { type: 'text', text: chunk.content };
             }
+         }
+         // Final check for tool invocations from the complete response (similar to non-fallback)
+         const finalResponse = await llmStreamResult.response;
+         if (finalResponse.messages && Array.isArray(finalResponse.messages)) {
+             const finalToolRequests = new Map<string, ToolRequestPart>();
+             for (const message of finalResponse.messages) {
+                 if (message.role === 'model' && Array.isArray(message.content)) {
+                     for (const part of message.content as Part[]) {
+                         if (part.toolRequest?.ref) {
+                             finalToolRequests.set(part.toolRequest.ref, part as ToolRequestPart);
+                         }
+                     }
+                 } else if (message.role === 'tool' && Array.isArray(message.content)) {
+                     for (const part of message.content as Part[]) {
+                         const toolResponsePart = part as ToolResponsePart;
+                         if (toolResponsePart.toolResponse?.ref && finalToolRequests.has(toolResponsePart.toolResponse.ref)) {
+                             const requestPart = finalToolRequests.get(toolResponsePart.toolResponse.ref)!;
+                             yield {
+                                 type: 'tool_invocation',
+                                 name: requestPart.toolRequest.name,
+                                 input: requestPart.toolRequest.input,
+                                 output: toolResponsePart.toolResponse.output
+                                 // If error information is needed, it should be part of the tool's 'output' field
+                             };
+                             finalToolRequests.delete(toolResponsePart.toolResponse.ref);
+                         }
+                     }
+                 }
+             }
          }
       })(); // End of async generator function call
     } // End of catch block for reranking
   } catch (error) { // Catch block for the outer try (initial retrieval, etc.)
     console.error("Error preparing RAG response stream:", error);
-    // Return an AsyncIterable that yields the error message object
-    return (async function* () {
+    return (async function* (): AsyncIterable<RagStreamEvent> {
       yield {
+        type: 'error',
         error: `I'm sorry, there was an error generating a response: ${error instanceof Error ? error.message : String(error)}`,
       };
     })();

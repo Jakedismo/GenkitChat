@@ -6,8 +6,7 @@ import {
   processFileWithOfficeParser,
   MAX_UPLOAD_SIZE // Need this back for server-side size check
 } from "@/services/rag";
-// Import tool definitions (adjust path/names as needed)
-import { tavilySearchTool } from "@/ai/tools/tavily"; // Use the correct exported name
+// Tool imports are no longer needed here as tools are accessed via aiInstance by name
 // Removed incorrect Tool type import
 
 // Handle file uploads
@@ -69,7 +68,15 @@ export async function POST(request: NextRequest) {
     else {
       const body = await request.json();
       // Extract tool flags along with other parameters
-      const { query, sessionId, modelId, tavilySearchEnabled /* other tool flags... */ } = body;
+      const { 
+        query, 
+        sessionId, 
+        modelId, 
+        tavilySearchEnabled,
+        tavilyExtractEnabled, // Added flag
+        perplexitySearchEnabled, 
+        perplexityDeepResearchEnabled 
+      } = body;
 
       // Validation
        if (!query) {
@@ -94,31 +101,28 @@ export async function POST(request: NextRequest) {
       }
       
       // Determine which tools to potentially pass based on flags
-      const toolsToUse: any[] = []; // Use any[] for simplicity if exact type is elusive
+      const toolNamesToUse: string[] = [];
       if (tavilySearchEnabled) {
-        // Use the imported tool definition object
-        toolsToUse.push(tavilySearchTool);
-        console.log("Adding Tavily tool to RAG request");
+        toolNamesToUse.push("tavilySearch"); 
+        console.log("Enabling Tavily Search tool for RAG request");
+      }
+      if (tavilyExtractEnabled) {
+        toolNamesToUse.push("tavilyExtract");
+        console.log("Enabling Tavily Extract tool for RAG request");
+      }
+      if (perplexitySearchEnabled) {
+        toolNamesToUse.push("perplexitySearch");
+        console.log("Enabling Perplexity Search tool for RAG request");
+      }
+      if (perplexityDeepResearchEnabled) {
+        toolNamesToUse.push("perplexityDeepResearch");
+        console.log("Enabling Perplexity Deep Research tool for RAG request");
       }
       // Add other tools based on their flags here...
       
-      // Generate RAG response stream, passing tools
-      const stream = await generateRagResponseStream(query, sessionId, modelId, toolsToUse);
+      // Generate RAG response stream, passing tool names
+      const stream = await generateRagResponseStream(query, sessionId, modelId, toolNamesToUse);
       
-      // Helper to transform the stream format if necessary, assuming aiInstance stream format
-      const transformStream = async function*() {
-        for await (const chunk of stream) {
-           if (chunk.error) {
-             // Handle potential errors yielded by the stream
-             console.error("Error chunk from RAG stream:", chunk.error);
-             yield `\n\n[ERROR: ${chunk.error}]\n\n`; // Send error message format if needed
-             break; // Stop streaming on error
-           } else if (chunk.text) {
-             yield chunk.text;
-           }
-        }
-      };
-
       // Return the stream using StreamingTextResponse or similar
       // Adapting based on typical 'ai' package usage
        // Use streamToResponse for Server-Sent Events compatible streaming
@@ -127,22 +131,63 @@ export async function POST(request: NextRequest) {
        const responseStream = new ReadableStream({
          async start(controller) {
            const encoder = new TextEncoder();
-           for await (const chunk of stream) {
-             if (chunk.sources) {
-               const formattedSources = `event: sources\ndata: ${JSON.stringify({ sources: chunk.sources })}\n\n`;
-               controller.enqueue(encoder.encode(formattedSources));
-             } else if (chunk.text) {
-               const formattedChunk = `event: chunk\ndata: ${JSON.stringify({ text: chunk.text })}\n\n`;
-               controller.enqueue(encoder.encode(formattedChunk));
-             } else if (chunk.error) {
-               const formattedError = `event: error\ndata: ${JSON.stringify({ error: chunk.error })}\n\n`;
-               controller.enqueue(encoder.encode(formattedError));
-               break; // Stop on error
+           try {
+             for await (const event of stream) { // event from generateRagResponseStream
+               let sseEventString = "";
+               switch (event.type) {
+                 case 'sources':
+                   sseEventString = `event: sources\ndata: ${JSON.stringify({ sources: event.sources })}\n\n`;
+                   break;
+                 case 'text':
+                   sseEventString = `event: text\ndata: ${JSON.stringify({ text: event.text })}\n\n`;
+                   break;
+                 case 'tool_invocation':
+                   // Ensure all parts of the tool_invocation are serializable
+                   const toolData = { 
+                     name: event.name, 
+                     input: event.input, 
+                     output: event.output,
+                     error: event.error // Include error if present
+                   };
+                   sseEventString = `event: tool_invocation\ndata: ${JSON.stringify(toolData)}\n\n`;
+                   break;
+                 case 'error':
+                   sseEventString = `event: error\ndata: ${JSON.stringify({ error: event.error })}\n\n`;
+                   controller.enqueue(encoder.encode(sseEventString));
+                   // Close the stream after sending the error
+                   controller.close();
+                   return; // Exit the loop and stream
+                 default:
+                   // Optionally log or handle unknown event types
+                   console.warn("Unknown RAG stream event type:", event);
+                   continue; // Skip to next event
+               }
+               if (sseEventString) {
+                 controller.enqueue(encoder.encode(sseEventString));
+               }
              }
-             // Add final_response event if needed, depends on generateStream implementation details
+           } catch (error) {
+             console.error("Error during RAG stream processing in route:", error);
+             // Try to send a final error event to the client
+             const formattedError = `event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : String(error) })}\n\n`;
+             try {
+               controller.enqueue(encoder.encode(formattedError));
+             } catch (e) {
+               // If enqueue fails, controller might already be closed or in a bad state
+               console.error("Failed to enqueue final error to client:", e);
+             }
+           } finally {
+             // Ensure the controller is closed if not already
+             // (e.g., if the loop finishes without an error event from the stream)
+             // However, if controller.close() was called due to 'error' event, this might error.
+             // A more robust check would be controller.desiredSize === null or similar if API supports.
+             // For simplicity, we assume close is idempotent or an error here is acceptable.
+             try {
+                controller.close();
+             } catch (e) {
+                // Ignore if already closed
+             }
            }
-           // Signal stream end? The frontend loop should handle reader.closed
-           controller.close();
          }
        });
 
