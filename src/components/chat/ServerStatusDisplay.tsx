@@ -3,23 +3,11 @@ import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 // Assuming SidebarGroup and SidebarGroupLabel are correctly exported from your main sidebar component.
 // If not, you might need to replace them with appropriate JSX or ensure they are exported.
-import { SidebarGroup, SidebarGroupLabel } from '@/components/ui/sidebar';
+import { SidebarGroup, SidebarGroupLabel } from '@/components/ui/sidebar/index'; // Explicitly point to index
 import { Server } from 'lucide-react';
+import { ConnectedServer, DisplayTool } from '@/types/chat'; // Import shared types
 
-// These types would ideally live in a shared types file (e.g., src/types/chat.ts)
-// and be imported by both page.tsx and this component.
-// For now, ensure they match the definitions in page.tsx if not yet centralized.
-export interface DisplayTool {
-  name: string;
-  description: string;
-  source?: string;
-}
-
-export interface ConnectedServer {
-  name: string;
-  status: 'Connected' | 'Error' | 'Pending';
-  tools: DisplayTool[];
-}
+// Local type definitions removed, using shared types now.
 
 interface ServerStatusDisplayProps {
   connectedServers: ConnectedServer[];

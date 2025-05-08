@@ -10,3 +10,10 @@ export const availableGeminiModels = [
     name: "Gemini 2.5 Pro",
   },
 ];
+
+// List of available OpenAI models for the frontend dropdown
+export const availableOpenAIModels = [
+  { id: 'openai/o4-mini', name: 'o4 mini' },
+  { id: 'openai/gpt-4.1', name: 'GPT-4.1' },
+  // Add other desired OpenAI models here
+];

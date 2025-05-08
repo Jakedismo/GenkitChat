@@ -1,33 +1,20 @@
-import React from 'react';
-import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import React from "react";
+import { cn } from "@/lib/utils";
+import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-// Assuming SidebarGroup and SidebarGroupLabel are correctly exported from your main sidebar component.
-// If not, you might need to replace them with appropriate JSX or ensure they are exported.
-import { SidebarGroup, SidebarGroupLabel } from '@/components/ui/sidebar';
-import { Sparkles, BrainCircuit } from 'lucide-react';
-
-// These types would ideally live in a shared types file (e.g., src/types/chat.ts)
-// and be imported by both page.tsx and this component.
-export enum ChatMode {
-  DIRECT_GEMINI = 'direct_gemini',
-  DIRECT_OPENAI = 'direct_openai',
-}
-
-export type TemperaturePreset = 'precise' | 'normal' | 'creative';
-
-export interface ModelInfo {
-  id: string;
-  name: string;
-}
+} from "@/components/ui/select";
+// Assuming SidebarGroup and SidebarGroupLabel are correctly exported from your main sidebar component via index.ts
+import { SidebarGroup, SidebarGroupLabel } from "@/components/ui/sidebar";
+import { Sparkles, BrainCircuit } from "lucide-react";
+// Import shared types
+import { ChatMode, TemperaturePreset, ModelInfo } from "@/types/chat";
 
 interface ChatConfigSidebarProps {
   chatMode: ChatMode;
@@ -59,10 +46,14 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
   onMaxTokensChange,
 }) => {
   return (
-    <SidebarGroup> {/* If SidebarGroup is not exported from @/components/ui/sidebar, you might need to use a <div> and style manually */}
-      <SidebarGroupLabel>Chat Configuration</SidebarGroupLabel> {/* Same as above for SidebarGroupLabel, might use <h3> */}
+    <SidebarGroup>
+      {" "}
+      {/* Uses imported SidebarGroup */}
+      <SidebarGroupLabel>Chat Configuration</SidebarGroupLabel>{" "}
+      {/* Uses imported SidebarGroupLabel */}
       <Separator />
       <div className="p-2 space-y-4">
+        {/* Chat Mode Select */}
         <div>
           <p className="mb-2 text-sm font-medium">Chat Mode</p>
           <Select
@@ -83,10 +74,11 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
           </Select>
         </div>
 
+        {/* Gemini Model Select */}
         <div
           className={cn(
             chatMode !== ChatMode.DIRECT_GEMINI &&
-              'opacity-50 cursor-not-allowed'
+              "opacity-50 cursor-not-allowed",
           )}
         >
           <p className="mb-2 text-sm font-medium">
@@ -110,10 +102,11 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
           </Select>
         </div>
 
+        {/* OpenAI Model Select */}
         <div
           className={cn(
             chatMode !== ChatMode.DIRECT_OPENAI &&
-              'opacity-50 cursor-not-allowed'
+              "opacity-50 cursor-not-allowed",
           )}
         >
           <p className="mb-2 text-sm font-medium">
@@ -137,6 +130,7 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
           </Select>
         </div>
 
+        {/* Creativity Select */}
         <div>
           <Label htmlFor="temperature-preset">Creativity</Label>
           <Select
@@ -156,12 +150,14 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground mt-1">
-            {temperaturePreset === 'precise' && 'More factual, focused output.'}
-            {temperaturePreset === 'normal' && 'Balanced output.'}
-            {temperaturePreset === 'creative' && 'More imaginative, diverse output.'}
+            {temperaturePreset === "precise" && "More factual, focused output."}
+            {temperaturePreset === "normal" && "Balanced output."}
+            {temperaturePreset === "creative" &&
+              "More imaginative, diverse output."}
           </p>
         </div>
 
+        {/* Max Tokens Input */}
         <div>
           <Label htmlFor="max-tokens">Max Response Length (Tokens)</Label>
           <Input
@@ -169,9 +165,7 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
             type="number"
             value={maxTokens}
             onChange={(e) =>
-              onMaxTokensChange(
-                Math.max(1, parseInt(e.target.value, 10) || 1)
-              )
+              onMaxTokensChange(Math.max(1, parseInt(e.target.value, 10) || 1))
             }
             min="1"
             max="8192" // Example max, adjust as needed
@@ -179,7 +173,7 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
           />
         </div>
       </div>
-    </SidebarGroup> // Match opening tag
+    </SidebarGroup>
   );
 };
 

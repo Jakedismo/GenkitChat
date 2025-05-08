@@ -102,38 +102,52 @@ export const tavilyExtractTool = aiInstance.defineTool(
       ),
     }),
   },
-  async ({ urls, ...options }) => {
+  // Destructure known options explicitly
+  async ({ urls, extract_depth }) => {
     if (!process.env.TAVILY_API_KEY) {
       throw new Error("Tavily API key missing (TAVILY_API_KEY).");
     }
 
     // Normalize URLs: Add https:// if scheme is missing
     const normalizedUrls = urls.map(url => {
-      // Basic check if scheme is missing
-      if (!url.match(/^https?:\\/\\//i)) {
+      // Correctly check if scheme (http:// or https://) is missing using regex
+      if (!/^https?:\/\//i.test(url)) {
         console.log(`[tavilyExtractTool] Normalizing URL: ${url} -> https://${url}`);
         return `https://${url}`;
       }
       return url;
     });
-    
-    // Use normalized URLs and any to bypass type issues, then construct a properly formatted return value
-    const response = await tvly.extract(normalizedUrls, options as any) as any;
-    
-    // Safely extract and transform the results to match our schema
+
+    // Construct options object for Tavily API call
+    const tavilyOptions: { extract_depth?: 'basic' | 'advanced' } = {};
+    if (extract_depth) {
+      // Ensure the key matches what the Tavily API expects (usually snake_case)
+      tavilyOptions.extract_depth = extract_depth;
+    }
+
+    // Use normalized URLs and explicit options
+    // Cast the response to 'any' for now to handle potential variations in Tavily's output structure
+    const response = await tvly.extract(normalizedUrls, tavilyOptions) as any; 
+
+    // Safely extract and transform the results to match our defined outputSchema
+    // Provide default empty arrays if response parts are missing/not arrays
+    const results = Array.isArray(response?.results)
+      ? response.results.map((r: any) => ({
+          url: r?.url || '', // Use optional chaining and provide default
+          content: r?.content || '',
+        }))
+      : [];
+
+    const failed_results = Array.isArray(response?.failedResults)
+      ? response.failedResults.map((f: any) => ({
+          url: f?.url || '',
+          error: f?.error || 'Unknown error',
+        }))
+      : [];
+
     return {
-      results: Array.isArray(response.results) 
-        ? response.results.map((r: any) => ({
-            url: r.url || '',
-            content: r.content || '',
-          }))
-        : [],
-      failed_results: Array.isArray(response.failedResults) 
-        ? response.failedResults.map((f: any) => ({
-            url: f.url || '',
-            error: f.error || 'Unknown error',
-          }))
-        : [],
+      results,
+      failed_results,
     };
   }
 );

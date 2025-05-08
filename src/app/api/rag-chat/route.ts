@@ -7,8 +7,8 @@ import {
   MAX_UPLOAD_SIZE // Need this back for server-side size check
 } from "@/services/rag";
 // Import tool definitions (adjust path/names as needed)
-import { tavilySearch } from "@/ai/tools/tavily";
-import { GenkitTool } from "genkit/tool"; // Import GenkitTool type for the array
+import { tavilySearchTool } from "@/ai/tools/tavily"; // Use the correct exported name
+// Removed incorrect Tool type import
 
 // Handle file uploads
 export async function POST(request: NextRequest) {
@@ -94,10 +94,10 @@ export async function POST(request: NextRequest) {
       }
       
       // Determine which tools to potentially pass based on flags
-      const toolsToUse: GenkitTool[] = [];
+      const toolsToUse: any[] = []; // Use any[] for simplicity if exact type is elusive
       if (tavilySearchEnabled) {
-        // Assuming tavilySearch is the correct Genkit tool definition object
-        toolsToUse.push(tavilySearch);
+        // Use the imported tool definition object
+        toolsToUse.push(tavilySearchTool);
         console.log("Adding Tavily tool to RAG request");
       }
       // Add other tools based on their flags here...
