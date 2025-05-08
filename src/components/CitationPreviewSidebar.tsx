@@ -1,11 +1,8 @@
 import React, { useEffect } from "react";
-import {
-  Document,
-  Page,
-} from "react-pdf";
+import { Document, Page } from "react-pdf";
 // Use the specific pdfjs-dist version that react-pdf depends on
 // Import the main library entry; worker set separately
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from "pdfjs-dist";
 
 // Import CSS for react-pdf and react-pdf-highlighter
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -45,10 +42,8 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   onClose,
   previewData,
 }) => {
-  useEffect(() => { // Set workerSrc once on component mount
-    // Point to the worker file copied to the public directory
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
-  }, []);
+  // PDF worker setup is now expected to be handled globally by PdfWorkerSetup.tsx,
+  // which uses the `pdfjs` object exported from `react-pdf`.
 
   if (!isOpen || !previewData) {
     return null;

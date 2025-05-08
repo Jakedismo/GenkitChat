@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import dynamic from 'next/dynamic';
 import {
   Sidebar,
   SidebarContent,
@@ -21,11 +22,12 @@ import { Code } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ChatMessageContent from "@/components/chat/ChatMessageContent"; // Added import
-import CitationPreviewSidebar from "@/components/CitationPreviewSidebar"; // Added import
+// import CitationPreviewSidebar from "@/components/CitationPreviewSidebar"; // Added import - Will be dynamically imported
 import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
 import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay"; // Added import
 import ChatInputControls from "@/components/chat/ChatInputControls"; // Added import
 import FileUploadManager from "@/components/chat/FileUploadManager"; // Added import
+import PdfWorkerSetup from "@/components/PdfWorkerSetup";
 import { useChatSettings } from "@/hooks/useChatSettings"; // Added hook import
 import { useFileUploads } from "@/hooks/useFileUploads"; // Added hook import
 import { useChatManager } from "@/hooks/useChatManager"; // Added hook import
@@ -76,6 +78,8 @@ mermaid.initialize({ startOnLoad: false }); // Don't run automatically on load
 
 // Interface for uploaded files with additional metadata (Moved to types/chat.ts)
 // interface UploadedFile { ... }
+
+const CitationPreviewSidebar = dynamic(() => import('@/components/CitationPreviewSidebar'), { ssr: false });
 
 const LambdaChat: React.FC = () => {
   // Use the custom hook for chat settings state
@@ -348,6 +352,7 @@ const LambdaChat: React.FC = () => {
 
   return (
     <SidebarProvider>
+      <PdfWorkerSetup />
       <div className="flex h-screen">
         <CitationPreviewSidebar
           isOpen={isCitationSidebarOpen}

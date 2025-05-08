@@ -53,6 +53,7 @@
     "firebase": "^11.3.0",
     "fs": "^0.0.1-security",
     "genkit": "^1.7.0",
+    "genkitx-anthropic": "^0.22.0",
     "genkitx-mcp": "^1.7.0",
     "genkitx-openai": "^0.22.3",
     "llm-chunk": "^0.0.1",

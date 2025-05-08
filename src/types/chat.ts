@@ -66,3 +66,45 @@ export interface CitationPreviewData {
   documentId: string; // Original document ID
   chunkId: string;    // Specific chunk ID
 }
+
+// --- Types for processing raw SSE data payloads ---
+
+interface ParsedSourceMetadata {
+  documentId?: string;
+  chunkId?: string;
+  originalFileName?: string;
+  chunkIndex?: number;
+  pageNumber?: number;
+  textToHighlight?: string;
+  [key: string]: unknown; // Allow other metadata properties
+}
+
+interface ParsedSourceContent {
+  text?: string;
+  // Add other content properties if relevant
+}
+
+interface ParsedSource {
+  metadata?: ParsedSourceMetadata;
+  content?: ParsedSourceContent[] | string; // Content could be array or string
+}
+
+// Possible structure for incoming tool invocation data before mapping to ToolInvocation type
+interface RawToolInvocation {
+  name?: string;
+  input?: unknown;
+  output?: unknown;
+}
+
+// Represents the potential structure of parsed JSON data from SSE events
+export interface ParsedJsonData {
+  // Based on event types processed
+  sources?: ParsedSource[];         // From "sources" event
+  error?: string;                   // From "error" event
+  response?: string;                // From "final_response" event text
+  toolInvocations?: RawToolInvocation[]; // From "final_response" or "tool_invocations" event
+  sessionId?: string;               // From "final_response" event
+  text?: string;                    // From "text" event (though typically handled differently now)
+  // Add any other properties received in SSE data payloads
+  [key: string]: unknown;           // Allow flexibility
+}
