@@ -42,3 +42,6 @@ next-env.d.ts
 .env.*
 memory-bank/
 .roo
+
+# Vector database
+__db_ragIndex.json

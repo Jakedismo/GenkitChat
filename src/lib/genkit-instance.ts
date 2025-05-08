@@ -98,7 +98,6 @@ const BasicChatOutputSchema = z.object({
 });
 export type BasicChatOutput = z.infer<typeof BasicChatOutputSchema>;
 
-
 const presetTemperatures: Record<TemperaturePreset, number> = {
   precise: 0.2,
   normal: 0.7,
@@ -160,7 +159,7 @@ export async function runBasicChatFlowStream(
   } else {
     modelConfig.maxOutputTokens = maxTokens;
   }
-  if (modelId !== "openai/o4-mini") {
+  if (modelId !== "openai/o4-mini" && modelId !== "openai/o3") {
     modelConfig.temperature = temperature;
   } else {
     console.log(`Model ${modelId} uses default temperature.`);
@@ -213,8 +212,12 @@ export const basicChatFlow = aiInstance.defineFlow(
               const requestPart = toolRequests.get(reqRef)!;
               toolInvocations.push({
                 name: requestPart.toolRequest.name,
-                input: requestPart.toolRequest.input as Record<string, unknown> | undefined,
-                output: toolResponsePart.toolResponse?.output as Record<string, unknown> | undefined,
+                input: requestPart.toolRequest.input as
+                  | Record<string, unknown>
+                  | undefined,
+                output: toolResponsePart.toolResponse?.output as
+                  | Record<string, unknown>
+                  | undefined,
               });
               toolRequests.delete(reqRef);
             }
