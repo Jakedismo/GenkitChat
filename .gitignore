@@ -37,11 +37,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.genkit/*
+# Vector database
+__db_ragIndex.json
+
+# Coding IDEs
+.clinerules
+memory/
+.genkit/
 .env
 .env.*
 memory-bank/
 .roo
-
-# Vector database
-__db_ragIndex.json
