@@ -1,0 +1,8 @@
+---
+model: {{resolvedModelId}}
+input:
+  schema:
+    resolvedModelId: string
+---
+{{role "system"}}
+{{>_assistant_intro description="precise and factual"}}...

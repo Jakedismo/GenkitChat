@@ -1,0 +1,4 @@
+{{directivePrefix}}
+{{#each tools}}
+- {{this}}
+{{/each}}
