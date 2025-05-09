@@ -230,6 +230,22 @@ const LambdaChat: React.FC = () => {
     selectedOpenAIModelId,
   ]); // Added missing dependencies
 
+  const handlePerplexitySearchToggle = () => {
+    const newPerplexityState = !perplexitySearchEnabled;
+    setPerplexitySearchEnabled(newPerplexityState);
+    if (newPerplexityState) {
+      setTavilySearchEnabled(false); // Disable Tavily if Perplexity is enabled
+    }
+  };
+
+  const handleTavilySearchToggle = () => {
+    const newTavilyState = !tavilySearchEnabled;
+    setTavilySearchEnabled(newTavilyState);
+    if (newTavilyState) {
+      setPerplexitySearchEnabled(false); // Disable Perplexity if Tavily is enabled
+    }
+  };
+
   // Citation click handler remains here as it controls local UI state
   const handleCitationClick = (
     messageId: string,

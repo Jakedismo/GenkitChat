@@ -14,7 +14,8 @@ This project is a web-based chat interface built with Next.js and powered by Goo
   * **Direct Chat:** Interact directly with selected Gemini or OpenAI models.
   * **RAG Chat:** Upload PDF documents and query their content using Retrieval-Augmented Generation. Features two-stage retrieval with simulated reranking.
 * **PDF Processing:** Uses `officeparser` on the backend to extract text from uploaded PDF files.
-* **Genkit Framework:** Core logic managed by Genkit flows defined in `src/lib/genkit-instance.ts`.
+* **DotPrompt Management:** System prompts are managed using Genkit's DotPrompt format (`.prompt` files) located in `src/ai/prompts/`, allowing for easier iteration and versioning of prompts.
+* **Genkit Framework:** Core logic managed by Genkit flows defined in `src/lib/genkit-instance.ts`. This includes configuration for DotPrompt loading.
 * **Model Context Protocol (MCP) Integration:**
   * Uses `genkitx-mcp` plugin to connect to external MCP servers.
   * To add an MCP Server:
@@ -125,9 +126,10 @@ The application will start, initialize Genkit, load plugins (including starting 
   * `api/basic-chat/route.ts`: API endpoint for direct Gemini/OpenAI chat (streaming).
   * `api/rag-chat/route.ts`: API endpoint handling both file uploads (for indexing via `officeparser`) and RAG queries (streaming).
   * `api/tools/route.ts`: API endpoint to list available tools (currently hardcoded).
-* `src/lib/genkit-instance.ts`: Central location for Genkit initialization, plugin configuration, and flow definitions (including RAG retriever/indexer setup).
+* `src/lib/genkit-instance.ts`: Central location for Genkit initialization (including `promptDir` configuration for DotPrompts), plugin configuration, and flow definitions. Manages loading and execution of DotPrompts for basic chat modes.
 * `src/components/`: Reusable React UI components (shadcn/ui based).
-* `src/services/rag.ts`: Contains the core RAG logic, including text extraction via `officeparser`, chunking, indexing, retrieval, and reranking logic.
+* `src/services/rag.ts`: Contains the core RAG logic, including text extraction via `officeparser`, chunking, indexing, retrieval, and reranking logic. Uses a DotPrompt file for its system prompt.
+* `src/ai/prompts/`: Contains `.prompt` files (using Genkit's DotPrompt format) that define system prompts for various chat functionalities (RAG, basic chat modes).
 * `src/ai/available-models.ts`: Static definitions of models available in the UI selectors.
 
 ## Notes & Future Work
