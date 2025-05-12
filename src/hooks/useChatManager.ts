@@ -22,8 +22,8 @@ import {
 
 export interface UseChatManagerProps {
   chatMode: ChatMode;
-  selectedGeminiModelId: string;
-  selectedOpenAIModelId: string;
+  selectedGeminiModelId: string | null;
+  selectedOpenAIModelId: string | null;
   temperaturePreset: TemperaturePreset;
   maxTokens: number;
   uploadedFiles: UploadedFile[];
@@ -32,6 +32,8 @@ export interface UseChatManagerProps {
   tavilyExtractEnabled: boolean;
   perplexitySearchEnabled: boolean;
   perplexityDeepResearchEnabled: boolean;
+  context7ResolveLibraryIdEnabled: boolean;
+  context7GetLibraryDocsEnabled: boolean;
 }
 
 export interface UseChatManagerReturn {
@@ -223,6 +225,11 @@ export function useChatManager({
     try {
       const useRag = uploadedFiles.some((f) => f.status === "success");
       const apiUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
+      // Check if the user message specifically asks to use context7
+      const shouldEnableContext7 = userMessageText.toLowerCase().includes("context7") || 
+                                 userMessageText.toLowerCase().includes("library docs") ||
+                                 userMessageText.toLowerCase().includes("library documentation");
+      
       const requestBody = {
         query: userMessageText,
         userMessage: userMessageText,
@@ -234,6 +241,8 @@ export function useChatManager({
         tavilyExtractEnabled: tavilyExtractEnabled,
         perplexitySearchEnabled: perplexitySearchEnabled,
         perplexityDeepResearchEnabled: perplexityDeepResearchEnabled,
+        context7ResolveLibraryIdEnabled: shouldEnableContext7 || context7ResolveLibraryIdEnabled || false,
+        context7GetLibraryDocsEnabled: shouldEnableContext7 || context7GetLibraryDocsEnabled || false,
       };
 
       const response = await fetch(apiUrl, {

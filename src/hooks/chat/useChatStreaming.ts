@@ -609,16 +609,29 @@ function processSseEvent(
               
               // Check if the response appears truncated by looking for abrupt endings
               const responseText = jsonData.response;
-              const lastSentenceBreak = Math.max(
-                responseText.lastIndexOf('. '),
-                responseText.lastIndexOf('.\n'),
-                responseText.lastIndexOf('? '),
-                responseText.lastIndexOf('! ')
-              );
               
-              // If no sentence break found in the last 20% of the text, it might be truncated
-              if (lastSentenceBreak > 0 && lastSentenceBreak < responseText.length * 0.8) {
-                console.warn(`[useChatStreaming] Response may be truncated: last sentence break at ${lastSentenceBreak}/${responseText.length}`);
+              const isSuspiciousTruncation = 
+                responseText.endsWith('\\') || 
+                responseText.endsWith('"') ||
+                responseText.endsWith('{') || 
+                responseText.endsWith('[') ||
+                (responseText.match(/```/g)?.length || 0) % 2 !== 0; // Unclosed code block
+                
+              if (isSuspiciousTruncation) {
+                console.warn(`[useChatStreaming] Response appears to be truncated, ending with suspicious character`);
+              } else {
+                // Check for natural sentence breaks
+                const lastSentenceBreak = Math.max(
+                  responseText.lastIndexOf('. '),
+                  responseText.lastIndexOf('.\n'),
+                  responseText.lastIndexOf('? '),
+                  responseText.lastIndexOf('! ')
+                );
+                
+                // If no sentence break found in the last 20% of the text, it might be truncated
+                if (lastSentenceBreak > 0 && lastSentenceBreak < responseText.length * 0.8) {
+                  console.warn(`[useChatStreaming] Response may be truncated: last sentence break at ${lastSentenceBreak}/${responseText.length}`);
+                }
               }
               
               // At this point, jsonData.response is the string as parsed by safeDestr (or after String() conversion).
@@ -627,28 +640,50 @@ function processSseEvent(
               // First check for raw message structure with content array (most common case causing truncation)
               if (jsonData.message && jsonData.message.content && Array.isArray(jsonData.message.content)) {
                 console.log(`[useChatStreaming] Found message.content array with ${jsonData.message.content.length} items`);
-                // Extract and join text from all content parts
-                const contentParts = jsonData.message.content.map((part: any) => {
-                  if (typeof part === 'string') return part;
-                  if (part && typeof part === 'object' && part.text) return part.text;
-                  return JSON.stringify(part);
-                });
-                jsonData.response = contentParts.join('');
-                console.log(`[useChatStreaming] Joined message.content array parts into response (${jsonData.response.length} chars)`);
-              }
-              // Check for candidates array structure
-              else if (jsonData.custom && jsonData.custom.candidates && Array.isArray(jsonData.custom.candidates) && jsonData.custom.candidates.length > 0) {
-                const candidate = jsonData.custom.candidates[0];
-                if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
-                  console.log(`[useChatStreaming] Found candidate content parts array with ${candidate.content.parts.length} items`);
+                try {
                   // Extract and join text from all content parts
-                  const contentParts = candidate.content.parts.map((part: any) => {
+                  const contentParts = jsonData.message.content.map((part: any) => {
                     if (typeof part === 'string') return part;
                     if (part && typeof part === 'object' && part.text) return part.text;
                     return JSON.stringify(part);
                   });
-                  jsonData.response = contentParts.join('');
-                  console.log(`[useChatStreaming] Joined candidate content parts into response (${jsonData.response.length} chars)`);
+                  const joinedContent = contentParts.join('');
+                  
+                  // Only replace if we actually got content
+                  if (joinedContent && joinedContent.trim().length > 0) {
+                    jsonData.response = joinedContent;
+                    console.log(`[useChatStreaming] Joined message.content array parts into response (${joinedContent.length} chars)`);
+                  } else {
+                    console.warn(`[useChatStreaming] message.content array yielded empty result, keeping original response`);
+                  }
+                } catch (contentJoinError) {
+                  console.error(`[useChatStreaming] Error joining content array:`, contentJoinError);
+                }
+              }
+              // Then check for candidates array structure
+              else if (jsonData.custom && jsonData.custom.candidates && Array.isArray(jsonData.custom.candidates) && jsonData.custom.candidates.length > 0) {
+                const candidate = jsonData.custom.candidates[0];
+                if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
+                  console.log(`[useChatStreaming] Found candidate content parts array with ${candidate.content.parts.length} items`);
+                  try {
+                    // Extract and join text from all content parts
+                    const contentParts = candidate.content.parts.map((part: any) => {
+                      if (typeof part === 'string') return part;
+                      if (part && typeof part === 'object' && part.text) return part.text;
+                      return JSON.stringify(part);
+                    });
+                    const joinedContent = contentParts.join('');
+                    
+                    // Only replace if we actually got content
+                    if (joinedContent && joinedContent.trim().length > 0) {
+                      jsonData.response = joinedContent;
+                      console.log(`[useChatStreaming] Joined candidate content parts into response (${joinedContent.length} chars)`);
+                    } else {
+                      console.warn(`[useChatStreaming] candidate.content.parts yielded empty result, keeping original response`);
+                    }
+                  } catch (contentJoinError) {
+                    console.error(`[useChatStreaming] Error joining candidate parts:`, contentJoinError);
+                  }
                 }
               }
               // Check if the response itself is a string that looks like stringified JSON (nested JSON)
@@ -738,7 +773,7 @@ function processSseEvent(
       }
     } catch (e) {
       console.error(
-        `[useChatStreaming] Error parsing JSON for event '${eventTypeToProcess}'. Payload: '${joinedDataPayload}'. Error: ${(e as Error).message}`,
+        `[useChatStreaming] Error parsing JSON for event '${eventTypeToProcess}'. Payload: '${joinedDataPayload.substring(0, 200)}...'. Error: ${(e as Error).message}`,
       );
           
       // Advanced recovery for final_response errors
@@ -781,7 +816,45 @@ function processSseEvent(
             }
           }
                 
-          // Try to extract response with a more comprehensive regex pattern
+          // First try to extract message content array (Google AI format)
+          if (joinedDataPayload.includes('"content":[{') || joinedDataPayload.includes('"parts":[{')) {
+            try {
+              // Look for all text properties in content/parts arrays
+              const textMatches = joinedDataPayload.match(/"text"\s*:\s*"((?:\\.|[^"\\])*)"/g) || [];
+              if (textMatches.length > 0) {
+                console.log(`[useChatStreaming] Found ${textMatches.length} text entries in error recovery`);
+                
+                const textParts = textMatches.map(match => {
+                  const extracted = match.replace(/"text"\s*:\s*"/, '').replace(/"$/, '');
+                  return extracted
+                    .replace(/\\"/g, '"')
+                    .replace(/\\n/g, '\n')
+                    .replace(/\\r/g, '\r')
+                    .replace(/\\t/g, '\t')
+                    .replace(/\\\\/g, '\\');
+                });
+                
+                const joinedContent = textParts.join('');
+                
+                if (joinedContent) {
+                  console.log(`[useChatStreaming] Array structure recovery extracted ${textParts.length} parts (${joinedContent.length} chars)`);
+                  
+                  const recoveredResponse = {
+                    response: joinedContent,
+                    toolInvocations: [],
+                    sessionId: ""
+                  };
+                  
+                  callbacks.onFinalResponse(recoveredResponse, "");
+                  return; // Skip the error callback since we handled it
+                }
+              }
+            } catch (arrayRecoveryError) {
+              console.error(`[useChatStreaming] Error in array recovery:`, arrayRecoveryError);
+            }
+          }
+          
+          // Then try to extract response with a more comprehensive regex pattern
           // This pattern handles escaped quotes and multi-line content better
           if (joinedDataPayload.includes('"response":"')) {
             // Extract the full message content character by character

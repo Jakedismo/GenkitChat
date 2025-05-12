@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,13 @@ import PdfWorkerSetup from "@/components/PdfWorkerSetup";
 import { useChatSettings } from "@/hooks/useChatSettings";
 import { useFileUploads } from "@/hooks/useFileUploads";
 import { useChatManager } from "@/hooks/useChatManager";
-import { ChatMode, ConnectedServer, CitationPreviewData, DocumentData, DisplayTool } from "@/types/chat";
+import {
+  ChatMode,
+  ConnectedServer,
+  CitationPreviewData,
+  DocumentData,
+  DisplayTool,
+} from "@/types/chat";
 import "highlight.js/styles/github-dark.css";
 import mermaid from "mermaid";
 
@@ -31,7 +38,7 @@ const CitationPreviewSidebar = dynamic(
   { ssr: false },
 );
 
-const LambdaChat: React.FC = () => {
+const GenkitChat: React.FC = () => {
   // Use the custom hook for chat settings state
   const {
     chatMode,
@@ -54,13 +61,18 @@ const LambdaChat: React.FC = () => {
     setPerplexitySearchEnabled,
     perplexityDeepResearchEnabled,
     setPerplexityDeepResearchEnabled,
+    // Context7 tools
+    context7ResolveLibraryIdEnabled,
+    setContext7ResolveLibraryIdEnabled,
+    context7GetLibraryDocsEnabled,
+    setContext7GetLibraryDocsEnabled,
   } = useChatSettings();
 
   // Need currentSessionId for useFileUploads
   const [currentSessionIdForUpload, setCurrentSessionIdForUpload] = useState<
     string | undefined
   >(undefined);
-  
+
   // State for UI refresh when needed
   const [renderKey, setRenderKey] = useState<number>(Date.now());
 
@@ -99,6 +111,8 @@ const LambdaChat: React.FC = () => {
     tavilyExtractEnabled,
     perplexitySearchEnabled,
     perplexityDeepResearchEnabled,
+    context7ResolveLibraryIdEnabled,
+    context7GetLibraryDocsEnabled,
   });
 
   // Need to sync session ID used for uploads with the one from chat manager
@@ -106,11 +120,14 @@ const LambdaChat: React.FC = () => {
     setCurrentSessionIdForUpload(currentSessionId);
   }, [currentSessionId]);
 
-  const [connectedServers, setConnectedServers] = useState<ConnectedServer[]>([]);
+  const [connectedServers, setConnectedServers] = useState<ConnectedServer[]>(
+    [],
+  );
   const { toast } = useToast();
 
   // State for citation preview sidebar
-  const [citationPreview, setCitationPreview] = useState<CitationPreviewData | null>(null);
+  const [citationPreview, setCitationPreview] =
+    useState<CitationPreviewData | null>(null);
   const [isCitationSidebarOpen, setIsCitationSidebarOpen] = useState(false);
 
   // Effect for fetching tool info
@@ -139,7 +156,8 @@ const LambdaChat: React.FC = () => {
         console.error("Failed to fetch tool info:", error);
         toast({
           title: "Error",
-          description: "Could not fetch tool information from connected servers.",
+          description:
+            "Could not fetch tool information from connected servers.",
           variant: "destructive",
         });
         setConnectedServers((prev) =>
@@ -151,10 +169,19 @@ const LambdaChat: React.FC = () => {
     };
 
     fetchToolInfo();
-  }, [toast, availableGeminiModels.length, availableOpenAIModels.length, selectedGeminiModelId, selectedOpenAIModelId]);
+  }, [
+    toast,
+    availableGeminiModels.length,
+    availableOpenAIModels.length,
+    selectedGeminiModelId,
+    selectedOpenAIModelId,
+  ]);
 
   // Citation click handler remains here as it controls local UI state
-  const handleCitationClick = (messageId: string, chunkIndexInSources: number) => {
+  const handleCitationClick = (
+    messageId: string,
+    chunkIndexInSources: number,
+  ) => {
     const message = messages.find((m) => m.id === messageId);
     if (message && message.sources && message.sources[chunkIndexInSources]) {
       const sourceChunk = message.sources[
@@ -181,22 +208,29 @@ const LambdaChat: React.FC = () => {
         // Fallback for older data or if critical info is missing
         setCitationPreview({
           fileName: sourceChunk.originalFileName || "Unknown File",
-          content: sourceChunk.content || sourceChunk.textToHighlight || "No content available for preview.",
+          content:
+            sourceChunk.content ||
+            sourceChunk.textToHighlight ||
+            "No content available for preview.",
           pdfUrl: "",
           pageNumber: 0,
-          textToHighlight: sourceChunk.textToHighlight || sourceChunk.content || "",
+          textToHighlight:
+            sourceChunk.textToHighlight || sourceChunk.content || "",
           documentId: sourceChunk.documentId,
           chunkId: sourceChunk.chunkId,
         });
         setIsCitationSidebarOpen(true);
         toast({
           title: "Citation Preview Issue",
-          description: "Could not fully load PDF preview data. Displaying available content.",
+          description:
+            "Could not fully load PDF preview data. Displaying available content.",
           variant: "default",
         });
       }
     } else {
-      console.warn(`Could not find source for message ${messageId}, chunk index ${chunkIndexInSources}`);
+      console.warn(
+        `Could not find source for message ${messageId}, chunk index ${chunkIndexInSources}`,
+      );
       toast({
         title: "Citation Error",
         description: "Could not load citation source.",
@@ -207,7 +241,10 @@ const LambdaChat: React.FC = () => {
 
   // Shared components config for ReactMarkdown with arrow function syntax
   const markdownComponents = {
-    p: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
+    p: ({
+      children,
+      ...props
+    }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
       const hasPreElement = (children: React.ReactNode): boolean => {
         return React.Children.toArray(children).some((child) => {
           if (React.isValidElement(child)) {
@@ -226,7 +263,11 @@ const LambdaChat: React.FC = () => {
       return <p {...props}>{children}</p>;
     },
 
-    code: ({ className, children, inline }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
+    code: ({
+      className,
+      children,
+      inline,
+    }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
       if (inline) {
@@ -303,239 +344,313 @@ const LambdaChat: React.FC = () => {
     <TooltipProvider delayDuration={0}>
       <div className="relative h-screen overflow-hidden">
         <PdfWorkerSetup />
-      <div key={`chat-container-${renderKey}`} className="flex h-full w-full">
-        <CitationPreviewSidebar
-          isOpen={isCitationSidebarOpen}
-          onClose={() => setIsCitationSidebarOpen(false)}
-          previewData={citationPreview}
-        />
-        <aside className="hidden md:flex md:flex-col md:w-[250px] border-r bg-muted/40 p-4 h-full overflow-y-auto">
-          <ChatConfigSidebar
-            chatMode={chatMode}
-            onChatModeChange={setChatMode}
-            selectedGeminiModelId={selectedGeminiModelId}
-            onSelectedGeminiModelIdChange={setSelectedGeminiModelId}
-            availableGeminiModels={availableGeminiModels}
-            selectedOpenAIModelId={selectedOpenAIModelId}
-            onSelectedOpenAIModelIdChange={setSelectedOpenAIModelId}
-            availableOpenAIModels={availableOpenAIModels}
-            temperaturePreset={temperaturePreset}
-            onTemperaturePresetChange={setTemperaturePreset}
-            maxTokens={maxTokens}
-            onMaxTokensChange={setMaxTokens}
+        <div key={`chat-container-${renderKey}`} className="flex h-full w-full">
+          <CitationPreviewSidebar
+            isOpen={isCitationSidebarOpen}
+            onClose={() => setIsCitationSidebarOpen(false)}
+            previewData={citationPreview}
           />
-          <ServerStatusDisplay connectedServers={connectedServers} />
-          <div className="p-2 mt-auto">
-            <Button variant="outline" className="w-full" onClick={clearChat}>
-              Clear Chat
-            </Button>
-          </div>
-          <div className="mt-4 pt-2 border-t">
-            <p className="text-center text-xs text-muted-foreground">
-              Powered by GenkitChat
-            </p>
-          </div>
-        </aside>
-        <div className="flex-1 p-4 flex flex-col relative">
-          <Card className="flex flex-1 flex-col overflow-hidden">
-            <CardContent className="relative flex-1 p-0 overflow-hidden">
-              <ScrollArea
-                className="h-full w-full pb-0"
-                ref={scrollAreaRef as React.RefObject<HTMLDivElement>}
-              >
-                <div className="flex flex-col gap-4 p-4 pb-48" key={`messages-${renderKey}`}>
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={cn(
-                        "flex w-full flex-col",
-                        message.sender === "user" ? "items-end" : "items-start",
-                      )}
-                    >
+          <aside className="hidden md:flex md:flex-col md:w-[250px] border-r bg-muted/40 p-4 h-full overflow-y-auto">
+            <ChatConfigSidebar
+              chatMode={chatMode}
+              onChatModeChange={setChatMode}
+              selectedGeminiModelId={selectedGeminiModelId}
+              onSelectedGeminiModelIdChange={setSelectedGeminiModelId}
+              availableGeminiModels={availableGeminiModels}
+              selectedOpenAIModelId={selectedOpenAIModelId}
+              onSelectedOpenAIModelIdChange={setSelectedOpenAIModelId}
+              availableOpenAIModels={availableOpenAIModels}
+              temperaturePreset={temperaturePreset}
+              onTemperaturePresetChange={setTemperaturePreset}
+              maxTokens={maxTokens}
+              onMaxTokensChange={setMaxTokens}
+            />
+            <ServerStatusDisplay connectedServers={connectedServers} />
+            
+            {/* Context7 Tool Controls */}
+            {connectedServers.some(s => s.name === "context7" && s.status === "Connected") && (
+              <div className="mt-4 space-y-2 border-t pt-4">
+                <h3 className="text-sm font-medium">Context7 Tools</h3>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs">Library ID Resolver</span>
+                  <Switch 
+                    checked={context7ResolveLibraryIdEnabled}
+                    onCheckedChange={setContext7ResolveLibraryIdEnabled}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs">Library Docs</span>
+                  <Switch 
+                    checked={context7GetLibraryDocsEnabled}
+                    onCheckedChange={setContext7GetLibraryDocsEnabled}
+                  />
+                </div>
+              </div>
+            )}
+            
+            <div className="p-2 mt-auto">
+              <Button variant="outline" className="w-full" onClick={clearChat}>
+                Clear Chat
+              </Button>
+            </div>
+            <div className="mt-4 pt-2 border-t">
+              <p className="text-center text-xs text-muted-foreground">
+                Powered by GenkitChat
+              </p>
+            </div>
+          </aside>
+          <div className="flex-1 p-4 flex flex-col relative">
+            <Card className="flex flex-1 flex-col overflow-hidden">
+              <CardContent className="relative flex-1 p-0 overflow-hidden">
+                <ScrollArea
+                  className="h-full w-full pb-0"
+                  ref={scrollAreaRef as React.RefObject<HTMLDivElement>}
+                >
+                  <div
+                    className="flex flex-col gap-4 p-4 pb-48"
+                    key={`messages-${renderKey}`}
+                  >
+                    {messages.map((message) => (
                       <div
+                        key={message.id}
                         className={cn(
-                          "max-w-[80%] rounded-lg px-4 py-2",
-                          "prose dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-li:my-0",
+                          "flex w-full flex-col",
                           message.sender === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-secondary text-secondary-foreground",
+                            ? "items-end"
+                            : "items-start",
                         )}
                       >
-                        {/* Debug info for message text structure - only shown in development */}
-                        {process.env.NODE_ENV === 'development' && message.sender === 'bot' && 
-                          message.text && 
-                          message.text !== 'No content to display' && 
-                          !(typeof message.text === 'string' && message.text.trim() === '') && (
-                          <div className="text-xs text-muted-foreground mb-2 border-b border-muted pb-1">
-                            <span>Text type: {typeof message.text}</span>
-                            {Array.isArray(message.text) && (
-                              <span> (Array with {message.text.length} items)</span>
+                        <div
+                          className={cn(
+                            "max-w-[80%] rounded-lg px-4 py-2",
+                            "prose dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-li:my-0",
+                            message.sender === "user"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-secondary text-secondary-foreground",
+                          )}
+                        >
+                          {/* Debug info for message text structure - only shown in development */}
+                          {process.env.NODE_ENV === "development" &&
+                            message.sender === "bot" &&
+                            message.text &&
+                            message.text !== "No content to display" &&
+                            !(
+                              typeof message.text === "string" &&
+                              message.text.trim() === ""
+                            ) && (
+                              <div className="text-xs text-muted-foreground mb-2 border-b border-muted pb-1">
+                                <span>Text type: {typeof message.text}</span>
+                                {Array.isArray(message.text) && (
+                                  <span>
+                                    {" "}
+                                    (Array with {message.text.length} items)
+                                  </span>
+                                )}
+                                {typeof message.text === "object" &&
+                                  message.text !== null &&
+                                  !Array.isArray(message.text) && (
+                                    <span>
+                                      {" "}
+                                      (Object with keys:{" "}
+                                      {Object.keys(message.text || {}).join(
+                                        ", ",
+                                      )}
+                                      )
+                                    </span>
+                                  )}
+                              </div>
                             )}
-                            {typeof message.text === 'object' && message.text !== null && !Array.isArray(message.text) && (
-                              <span> (Object with keys: {Object.keys(message.text || {}).join(', ')})</span>
+
+                          <div className="relative">
+                            {message.sender === "user" ? (
+                              // Render user messages directly
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                rehypePlugins={[rehypeHighlight]}
+                                components={markdownComponents}
+                              >
+                                {typeof message.text === "string"
+                                  ? message.text
+                                  : String(message.text || "")}
+                              </ReactMarkdown>
+                            ) : message.text &&
+                              (typeof message.text !== "string" ||
+                                message.text.trim() !== "") ? (
+                              message.sources &&
+                              message.sources.length > 0 &&
+                              typeof message.text === "string" &&
+                              message.text.includes("[Source:") ? (
+                                <ChatMessageContent
+                                  text={message.text}
+                                  onCitationClick={(chunkIndex) =>
+                                    handleCitationClick(message.id, chunkIndex)
+                                  }
+                                  components={markdownComponents}
+                                />
+                              ) : (
+                                <ChatMessageContent
+                                  text={message.text}
+                                  onCitationClick={() => {}} // Empty handler for non-citation text
+                                  components={markdownComponents}
+                                />
+                              )
+                            ) : null}
+
+                            {message.sender === "bot" && (
+                              <button
+                                onClick={() => fixTruncatedMessage(message.id)}
+                                className="absolute top-0 right-0 p-1 text-xs text-muted-foreground opacity-0 hover:opacity-100 focus:opacity-100 bg-muted/50 rounded transition-opacity"
+                                title="Fix message formatting"
+                              >
+                                <span className="sr-only">Fix message</span>
+                                <span className="h-4 w-4 inline-block">⟳</span>
+                              </button>
                             )}
                           </div>
-                        )}
-                        
-                        <div className="relative">
-                          {message.sender === "bot" && 
-                            (message.text && (typeof message.text !== 'string' || message.text.trim() !== '')) ?
-                            (message.sources &&
-                            message.sources.length > 0 &&
-                            (typeof message.text === 'string' && message.text.includes("[Source:"))) ? (
-                              <ChatMessageContent
-                                text={message.text}
-                                onCitationClick={(chunkIndex) =>
-                                  handleCitationClick(message.id, chunkIndex)
-                                }
-                                components={markdownComponents}
-                              />
-                            ) : (
-                              <ChatMessageContent
-                                text={message.text}
-                                onCitationClick={() => {}} // Empty handler for non-citation text
-                                components={markdownComponents}
-                              />
-                            )
-                            : null
-                          }
-                          
-                          {message.sender === "bot" && (
-                            <button
-                              onClick={() => fixTruncatedMessage(message.id)}
-                              className="absolute top-0 right-0 p-1 text-xs text-muted-foreground opacity-0 hover:opacity-100 focus:opacity-100 bg-muted/50 rounded transition-opacity"
-                              title="Fix message formatting"
-                            >
-                              <span className="sr-only">Fix message</span>
-                              <span className="h-4 w-4 inline-block">⟳</span>
-                            </button>
-                          )}
                         </div>
-                      </div>
-                      {message.sender === "bot" &&
-                        message.toolInvocations &&
-                        message.toolInvocations.length > 0 && (
-                          <div className="mt-2 w-full max-w-[80%] rounded-md border border-border bg-muted p-3 text-xs">
-                            <p className="mb-2 flex items-center gap-1 font-medium text-muted-foreground">
-                              <Code size={14} /> Tool Calls: <span className="ml-1 text-xs text-muted-foreground">({message.toolInvocations.length})</span>
-                            </p>
-                            {message.toolInvocations.map(
-                              (inv, index: number) => (
-                                <details key={index} className="mb-2 last:mb-0">
-                                  <summary className="cursor-pointer hover:underline">
-                                    {inv.toolName}
-                                  </summary>
-                                  <div className="mt-1 pl-4 space-y-1">
-                                    <div>
-                                      <span className="font-semibold">
-                                        Input:
-                                      </span>
-                                      <pre className="mt-1 p-2 rounded bg-background text-xs overflow-x-auto">
-                                        {JSON.stringify(inv.input, null, 2)}
-                                      </pre>
-                                    </div>
-                                    {inv.output && (
+                        {message.sender === "bot" &&
+                          message.toolInvocations &&
+                          message.toolInvocations.length > 0 && (
+                            <div className="mt-2 w-full max-w-[80%] rounded-md border border-border bg-muted p-3 text-xs">
+                              <p className="mb-2 flex items-center gap-1 font-medium text-muted-foreground">
+                                <Code size={14} /> Tool Calls:{" "}
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  ({message.toolInvocations.length})
+                                </span>
+                              </p>
+                              {message.toolInvocations.map(
+                                (inv, index: number) => (
+                                  <details
+                                    key={index}
+                                    className="mb-2 last:mb-0"
+                                  >
+                                    <summary className="cursor-pointer hover:underline">
+                                      {inv.toolName}
+                                    </summary>
+                                    <div className="mt-1 pl-4 space-y-1">
                                       <div>
                                         <span className="font-semibold">
-                                          Output:
+                                          Input:
                                         </span>
                                         <pre className="mt-1 p-2 rounded bg-background text-xs overflow-x-auto">
-                                          {JSON.stringify(inv.output, null, 2)}
+                                          {JSON.stringify(inv.input, null, 2)}
                                         </pre>
                                       </div>
-                                    )}
-                                  </div>
-                                </details>
-                              ),
-                            )}
+                                      {inv.output && (
+                                        <div>
+                                          <span className="font-semibold">
+                                            Output:
+                                          </span>
+                                          <pre className="mt-1 p-2 rounded bg-background text-xs overflow-x-auto">
+                                            {JSON.stringify(
+                                              inv.output,
+                                              null,
+                                              2,
+                                            )}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </details>
+                                ),
+                              )}
+                            </div>
+                          )}
+                      </div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                    {isLoading && (
+                      <div className="flex w-full flex-col items-start">
+                        <div className="max-w-[80%] rounded-lg px-4 py-2 whitespace-pre-wrap bg-secondary text-secondary-foreground opacity-70 animate-pulse">
+                          Thinking...
+                        </div>
+                      </div>
+                    )}
+                    {!isLoading &&
+                      messages.length > 0 &&
+                      process.env.NODE_ENV === "development" && (
+                        <div className="flex w-full flex-col items-center mt-2">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => setRenderKey(Date.now())}
+                              className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
+                              title="Force UI refresh if message appears truncated"
+                            >
+                              Refresh UI
+                            </button>
+                            <button
+                              onClick={() => {
+                                const fixed = fixTruncatedMessage();
+                                setRenderKey(Date.now());
+                              }}
+                              className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
+                              title="Fix message formatting and refresh UI"
+                            >
+                              Refresh Messages
+                            </button>
                           </div>
-                        )}
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                  {isLoading && (
-                    <div className="flex w-full flex-col items-start">
-                      <div className="max-w-[80%] rounded-lg px-4 py-2 whitespace-pre-wrap bg-secondary text-secondary-foreground opacity-70 animate-pulse">
-                        Thinking...
-                      </div>
-                    </div>
-                  )}
-                  {!isLoading && messages.length > 0 && process.env.NODE_ENV === 'development' && (
-                    <div className="flex w-full flex-col items-center mt-2">
-                      <div className="flex space-x-2">
-                        <button 
-                          onClick={() => setRenderKey(Date.now())} 
-                          className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
-                          title="Force UI refresh if message appears truncated"
-                        >
-                          Refresh UI
-                        </button>
-                        <button 
-                          onClick={() => {
-                            const fixed = fixTruncatedMessage();
-                            setRenderKey(Date.now());
-                          }} 
-                          className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
-                          title="Fix message formatting and refresh UI"
-                        >
-                          Refresh Messages
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-            
-            <div className="fixed bottom-0 z-10 bg-card shadow-md border-t transition-all duration-300 w-full left-0 md:left-[250px] md:w-[calc(100%-250px)]" key="input-container">
-              <FileUploadManager
-                uploadedFiles={uploadedFiles}
-                onRemoveFile={removeFile}
-              />
-              
-              <div className="p-4">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={(e) => handleFileChange(e.target.files)}
-                  className="hidden"
-                  multiple
+                        </div>
+                      )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+
+              <div
+                className="fixed bottom-0 z-10 bg-card shadow-md border-t transition-all duration-300 w-full left-0 md:left-[250px] md:w-[calc(100%-250px)]"
+                key="input-container"
+              >
+                <FileUploadManager
+                  uploadedFiles={uploadedFiles}
+                  onRemoveFile={removeFile}
                 />
 
-                <ChatInputControls
-                  userInput={userInput}
-                  onUserInputChanges={setUserInput}
-                  onSendMessage={handleSendMessage}
-                  isLoading={isLoading}
-                  isUploading={isUploading}
-                  tavilySearchEnabled={tavilySearchEnabled}
-                  onTavilySearchToggle={() =>
-                    setTavilySearchEnabled(!tavilySearchEnabled)
-                  }
-                  tavilyExtractEnabled={tavilyExtractEnabled}
-                  onTavilyExtractToggle={() =>
-                    setTavilyExtractEnabled(!tavilyExtractEnabled)
-                  }
-                  perplexitySearchEnabled={perplexitySearchEnabled}
-                  onPerplexitySearchToggle={() =>
-                    setPerplexitySearchEnabled(!perplexitySearchEnabled)
-                  }
-                  perplexityDeepResearchEnabled={perplexityDeepResearchEnabled}
-                  onPerplexityDeepResearchToggle={() =>
-                    setPerplexityDeepResearchEnabled(
-                      !perplexityDeepResearchEnabled,
-                    )
-                  }
-                  onFileUploadTrigger={triggerFileUpload}
-                />
+                <div className="p-4">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={(e) => handleFileChange(e.target.files)}
+                    className="hidden"
+                    multiple
+                  />
+
+                  <ChatInputControls
+                    userInput={userInput}
+                    onUserInputChanges={setUserInput}
+                    onSendMessage={handleSendMessage}
+                    isLoading={isLoading}
+                    isUploading={isUploading}
+                    tavilySearchEnabled={tavilySearchEnabled}
+                    onTavilySearchToggle={() =>
+                      setTavilySearchEnabled(!tavilySearchEnabled)
+                    }
+                    tavilyExtractEnabled={tavilyExtractEnabled}
+                    onTavilyExtractToggle={() =>
+                      setTavilyExtractEnabled(!tavilyExtractEnabled)
+                    }
+                    perplexitySearchEnabled={perplexitySearchEnabled}
+                    onPerplexitySearchToggle={() =>
+                      setPerplexitySearchEnabled(!perplexitySearchEnabled)
+                    }
+                    perplexityDeepResearchEnabled={
+                      perplexityDeepResearchEnabled
+                    }
+                    onPerplexityDeepResearchToggle={() =>
+                      setPerplexityDeepResearchEnabled(
+                        !perplexityDeepResearchEnabled,
+                      )
+                    }
+                    context7ResolveLibraryIdEnabled={context7ResolveLibraryIdEnabled}
+                    context7GetLibraryDocsEnabled={context7GetLibraryDocsEnabled}
+                    onFileUploadTrigger={triggerFileUpload}
+                  />
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
         </div>
       </div>
-    </div>
     </TooltipProvider>
   );
 };
 
-export default LambdaChat;
+export default GenkitChat;

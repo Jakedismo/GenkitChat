@@ -27,6 +27,9 @@ export interface ChatInput {
   tavilyExtractEnabled?: boolean;
   perplexitySearchEnabled?: boolean;
   perplexityDeepResearchEnabled?: boolean;
+  // Context7 tools
+  context7ResolveLibraryIdEnabled?: boolean; 
+  context7GetLibraryDocsEnabled?: boolean;
 }
 
 // Output structure, matching what basic-chat/route.ts expects
@@ -105,6 +108,9 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
   if (input.tavilyExtractEnabled) enabledToolNames.push("tavilyExtract");
   if (input.perplexitySearchEnabled) enabledToolNames.push("perplexitySearch");
   if (input.perplexityDeepResearchEnabled) enabledToolNames.push("perplexityDeepResearch");
+  // Add context7 tools
+  if (input.context7ResolveLibraryIdEnabled) enabledToolNames.push("context7/resolve-library-id");
+  if (input.context7GetLibraryDocsEnabled) enabledToolNames.push("context7/get-library-docs");
   
   // Verify if API keys are set when tools are enabled and log warnings appropriately
   if ((input.tavilySearchEnabled || input.tavilyExtractEnabled) && !process.env.TAVILY_API_KEY) {
@@ -115,12 +121,19 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
     console.warn("Perplexity tools enabled but PERPLEXITY_API_KEY environment variable is not set");
   }
   
+  if ((input.context7ResolveLibraryIdEnabled || input.context7GetLibraryDocsEnabled)) {
+    console.log("Context7 tools enabled");
+  }
+  
   // Log which tools are being enabled
   if (enabledToolNames.length > 0) {
-    console.log(`Using tools: ${enabledToolNames.join(', ')}`);
+    console.log(`Using tools: ${enabledToolNames.join(', ')} with maxTokens: ${input.maxTokens}`);
   }
 
   try {
+    // Log the maxTokens parameter for debugging
+    console.log(`Preparing to generate with maxTokens: ${input.maxTokens}`);
+    
     // Check for missing API keys for enabled tools before making the API call
     if (input.tavilySearchEnabled && !process.env.TAVILY_API_KEY) {
       throw new Error("Tavily Search tool requires a TAVILY_API_KEY environment variable");
@@ -138,6 +151,12 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
       throw new Error("Perplexity Deep Research tool requires a PERPLEXITY_API_KEY environment variable");
     }
     
+    // Context7 tools don't need specific API keys as they're handled by the MCP client
+    
+    // Ensure maxTokens is a number and has a reasonable value
+    const maxOutputTokens = Math.max(100, Number(input.maxTokens) || 4096);
+    console.log(`Using model: ${input.modelId} with maxOutputTokens: ${maxOutputTokens}`);
+    
     // Call Genkit's generateStream function
     // This function returns an object immediately, which contains the stream and a response promise.
     const generationAPI = aiInstance.generateStream({
@@ -145,7 +164,7 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
       messages: messages,
       config: {
         temperature,
-        maxOutputTokens: input.maxTokens,
+        maxOutputTokens: maxOutputTokens, // Use validated maxTokens
       },
       tools: enabledToolNames.length > 0 ? enabledToolNames : undefined,
     });

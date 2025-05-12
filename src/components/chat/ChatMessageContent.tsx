@@ -22,6 +22,25 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   const [error, setError] = useState<Error | null>(null);
   const [renderedParts, setRenderedParts] = useState<JSX.Element[]>([]);
   
+  // Enhanced markdown components with better link handling
+  const enhancedComponents = {
+    ...components,
+    a: ({ node, href, children, ...props }) => {
+      // Open links in new tab and add proper security attributes
+      return (
+        <a 
+          href={href} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-blue-600 dark:text-blue-400 hover:underline" 
+          {...props}
+        >
+          {children}
+        </a>
+      );
+    },
+  };
+  
   useEffect(() => {
     try {
       // Immediately return empty array for empty/null text to avoid "No content" message
@@ -95,7 +114,12 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         .replace(/\\r/g, '\r')
         .replace(/\\t/g, '\t')
         .replace(/\\\\/g, '\\')
-        .replace(/\\+$/, '');
+        .replace(/\\+$/, '')
+        // Make sure markdown links are properly spaced
+        .replace(/\]\(/g, '] (')
+        .replace(/\] \((?!http)/g, '](') // Only add space between markdown links if they're not already URLs
+        .replace(/\n\*(.*?)\*/g, '\n* $1') // Fix bullet points
+        .replace(/\n\*\*(.*?)\*\*/g, '\n* **$1**'); // Fix bold bullet points
         
       const parts: JSX.Element[] = [];
       let lastIndex = 0;
@@ -116,7 +140,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
               key={`text-${partKey++}`}
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}
-              components={components} // Pass received components here
+              components={enhancedComponents} // Use enhanced components for better link handling
             >
               {textSegment}
             </ReactMarkdown>,
@@ -146,7 +170,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
             key={`text-${partKey++}`}
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeHighlight]}
-            components={components} // Pass received components here
+            components={enhancedComponents} // Use enhanced components for better link handling
           >
             {remainingText}
           </ReactMarkdown>,

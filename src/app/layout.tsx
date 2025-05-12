@@ -34,7 +34,7 @@ export default function RootLayout({
           <PdfWorkerSetup /> {/* Initialize PDF.js worker for client-side */}
           <div className="flex flex-col min-h-screen">
             <header className="flex items-center justify-between py-4 px-6">
-              <div>LambdaChat</div>
+              <div>GenkitChat</div>
               <ThemeToggleButton /> {/* Use the new component */}
             </header>
             <main className="flex-1">{children}</main>

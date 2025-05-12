@@ -23,6 +23,9 @@ export function useChatSettings() {
   const [tavilyExtractEnabled, setTavilyExtractEnabled] = useState(false);
   const [perplexitySearchEnabled, setPerplexitySearchEnabled] = useState(false);
   const [perplexityDeepResearchEnabled, setPerplexityDeepResearchEnabled] = useState(false);
+  // Context7 tools
+  const [context7ResolveLibraryIdEnabled, setContext7ResolveLibraryIdEnabled] = useState(false);
+  const [context7GetLibraryDocsEnabled, setContext7GetLibraryDocsEnabled] = useState(false);
 
   // Return state values and setters
   return {
@@ -47,5 +50,10 @@ export function useChatSettings() {
     setPerplexitySearchEnabled,
     perplexityDeepResearchEnabled,
     setPerplexityDeepResearchEnabled,
+    // Context7 tools
+    context7ResolveLibraryIdEnabled,
+    setContext7ResolveLibraryIdEnabled,
+    context7GetLibraryDocsEnabled,
+    setContext7GetLibraryDocsEnabled,
   };
 }

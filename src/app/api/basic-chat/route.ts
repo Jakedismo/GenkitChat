@@ -19,8 +19,10 @@ const InputSchema = z.object({
   sessionId: z.string().optional(),
   tavilySearchEnabled: z.boolean().optional().default(false),
   tavilyExtractEnabled: z.boolean().optional().default(false),
-  perplexitySearchEnabled: z.boolean().optional().default(false),     // Added
-  perplexityDeepResearchEnabled: z.boolean().optional().default(false), // Added
+  perplexitySearchEnabled: z.boolean().optional().default(false),
+  perplexityDeepResearchEnabled: z.boolean().optional().default(false),
+  context7ResolveLibraryIdEnabled: z.boolean().optional().default(false),
+  context7GetLibraryDocsEnabled: z.boolean().optional().default(false),
 });
 
 // Define type for the final_response event payload
@@ -40,28 +42,42 @@ function formatSSE(event: string, data: string): string {
     JSON.parse(safeData);
   } catch (e) {
     console.error(`Invalid JSON in formatSSE for event '${event}':`, e);
+    console.log("Problematic JSON data:", safeData.substring(0, 200) + "...");
 
-    // For final_response events, try to recover the JSON by re-escaping
+    // For final_response events, try a series of recovery methods
     if (event === 'final_response' && typeof data === 'string') {
       try {
-        // Try to sanitize the JSON data
+        // 1. Try to sanitize the JSON data
         const sanitizedData = data
           .replace(/\\"/g, '"')  // Replace escaped quotes
           .replace(/\\n/g, '\n') // Replace escaped newlines
           .replace(/\\r/g, '\r') // Replace escaped carriage returns
           .replace(/\\t/g, '\t') // Replace escaped tabs
-          .replace(/\\\\/g, '\\'); // Replace double backslashes
+          .replace(/\\\\/g, '\\') // Replace double backslashes
+          .replace(/\\+$/, ''); // Remove trailing backslashes
         
         try {
-          // Try to parse the sanitized data
+          // 2. Try to parse the sanitized data
           const parsedData = JSON.parse(sanitizedData);
+          console.log("Successfully sanitized and parsed JSON data");
           return `event: ${event}\ndata: ${JSON.stringify(parsedData)}\n\n`;
         } catch (sanitizeError) {
-          // If sanitized parsing fails, use fallback
-          console.error("Sanitized JSON parsing failed:", sanitizeError);
+          console.log("Sanitized JSON still failed parsing:", sanitizeError.message);
+          
+          // 3. Try extracting just the response field with regex if it exists
+          const responseMatch = sanitizedData.match(/"response"\s*:\s*"([^"]+)"/);
+          if (responseMatch && responseMatch[1]) {
+            console.log("Extracted response field via regex");
+            const extractedResponse = {
+              response: responseMatch[1],
+              toolInvocations: [],
+              sessionId: ""
+            };
+            return `event: ${event}\ndata: ${JSON.stringify(extractedResponse)}\n\n`;
+          }
         }
         
-        // Create a simpler valid JSON with just the essential data
+        // 4. Create a simpler valid JSON with just the essential data
         const fallbackData = JSON.stringify({
           response: "Response could not be properly formatted. Please try again.",
           toolInvocations: [],
@@ -70,7 +86,7 @@ function formatSSE(event: string, data: string): string {
         console.log(`Using fallback data for invalid JSON in ${event} event`);
         return `event: ${event}\ndata: ${fallbackData}\n\n`;
       } catch (fallbackError) {
-        console.error("Even fallback JSON creation failed:", fallbackError);
+        console.error("All JSON recovery methods failed:", fallbackError);
       }
     }
 
@@ -136,22 +152,33 @@ export async function POST(request: Request) {
 
               // Double-escape special characters in JSON to prevent parsing issues
               // Process text chunk for streaming
-              const safeTextChunk = textChunk
-                .replace(/\\/g, '\\\\')
-                .replace(/\n/g, '\\\\n')
-                .replace(/\r/g, '\\\\r');
-              
-              // Store full chunks for debugging
-              if (!finalResponseData.chunks) {
-                finalResponseData.chunks = [];
+              // Process text chunk for streaming, ensuring it's properly escaped
+              try {
+                const safeTextChunk = textChunk
+                  .replace(/\\/g, '\\\\')
+                  .replace(/\n/g, '\\\\n')
+                  .replace(/\r/g, '\\\\r');
+                
+                // Store full chunks for debugging
+                if (!finalResponseData.chunks) {
+                  finalResponseData.chunks = [];
+                }
+                finalResponseData.chunks.push(safeTextChunk);
+                
+                controller.enqueue(
+                  encoder.encode(
+                    formatSSE("chunk", JSON.stringify({ text: safeTextChunk }))
+                  )
+                );
+              } catch (chunkError) {
+                console.error("Error processing text chunk:", chunkError);
+                // Still try to send whatever we can, even if formatting fails
+                controller.enqueue(
+                  encoder.encode(
+                    formatSSE("chunk", JSON.stringify({ text: textChunk || "" }))
+                  )
+                );
               }
-              finalResponseData.chunks.push(safeTextChunk);
-              
-              controller.enqueue(
-                encoder.encode(
-                  formatSSE("chunk", JSON.stringify({ text: safeTextChunk }))
-                )
-              );
             }
           }
 
@@ -286,13 +313,20 @@ export async function POST(request: Request) {
 
           // Append formatted Tavily URLs if they exist
           if (tavilyUrls.length > 0) {
-            let sourcesText = "\\n\\n**Sources:**\\n";
+            let sourcesText = "\n\n**Sources:**\n";
             tavilyUrls.forEach((url, index) => {
-              // Basic formatting: Numbered list with clickable links
-              sourcesText += `${index + 1}. [${url}](${url})\\n`;
+              try {
+                // Clean URL to ensure it's properly formatted
+                const cleanUrl = url.trim();
+                // Basic formatting: Numbered list with clickable links
+                sourcesText += `${index + 1}. [${cleanUrl}](${cleanUrl})\n`;
+              } catch (urlError) {
+                console.error(`Error processing URL at index ${index}:`, urlError);
+                sourcesText += `${index + 1}. URL processing error\n`;
+              }
             });
             finalResponseData.response += sourcesText; // Append to the LLM's response
-            console.log("Appended formatted Tavily sources to response.");
+            console.log(`Appended ${tavilyUrls.length} formatted Tavily sources to response.`);
           }
 
           // Send final metadata (including session ID used/created)
