@@ -76,6 +76,22 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
 
   const messages: MessageData[] = [];
 
+  // --- Add System Prompts Based on Enabled Tools ---
+  let systemPromptContent = "";
+  if (input.perplexitySearchEnabled || input.perplexityDeepResearchEnabled) {
+    systemPromptContent += "When you receive output from the perplexitySearch or perplexityDeepResearch tools, your response must consist ONLY of the raw, unmodified text provided by the tool. Do not add any introduction, conclusion, summarization, or commentary. Preserve all original formatting, including markdown tables and citations. Respond ONLY with the tool's output and nothing else.";
+  }
+  if (input.tavilySearchEnabled) {
+    if (systemPromptContent) systemPromptContent += "\\n\\n"; // Add separator if other instructions exist
+    systemPromptContent += "When generating a response using information from the tavilySearch tool, focus on synthesizing the information. Do NOT include the source markers like '[Source N]' in your text, as a formatted list of sources will be appended later.";
+  }
+  
+  if (systemPromptContent) {
+    messages.push({ role: "system", content: [{ text: systemPromptContent }] });
+    console.log("System Prompt Added:", systemPromptContent);
+  }
+  // --- End System Prompts ---
+
   // Prepend history if provided
   if (input.history && input.history.length > 0) {
     messages.push(...input.history);

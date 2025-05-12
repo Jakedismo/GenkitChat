@@ -42,6 +42,7 @@ export interface UseChatManagerReturn {
   currentSessionId: string | undefined;
   handleSendMessage: () => Promise<void>;
   clearChat: () => void;
+  fixTruncatedMessage: (messageId?: string) => boolean; // Add method to fix truncated messages
   messagesEndRef: React.RefObject<HTMLDivElement>;
   scrollAreaRef: React.RefObject<HTMLDivElement>;
 }
@@ -69,6 +70,7 @@ export function useChatManager({
     addMultipleToolInvocationsToBotMessage,
     updateBotMessageFromFinalResponse,
     injectErrorIntoBotMessage,
+    fixTruncatedBotMessage,
     clearMessages,
   } = useChatMessages();
   const { userInput, setUserInput, clearUserInput } = useChatInputControls();
@@ -76,13 +78,32 @@ export function useChatManager({
   const { currentSessionId, setCurrentSessionId, startNewSession } =
     useChatSession();
   const { toast } = useToast();
+  const [finalizedMessageIds, setFinalizedMessageIds] = useState<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+    
+    // Check if last message is truncated
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.sender === "bot") {
+        const textLength = typeof lastMessage.text === 'string' ? lastMessage.text.length : 0;
+        console.log(`[useChatManager] Last message length: ${textLength} chars`);
+        
+        // Debug message contents if it's not too long
+        if (textLength > 0 && textLength < 2000) {
+          console.log(`[useChatManager] Last message preview:`, 
+            typeof lastMessage.text === 'string' 
+              ? `${lastMessage.text.substring(0, 50)}...${lastMessage.text.substring(Math.max(0, lastMessage.text.length - 50))}`
+              : lastMessage.text
+          );
+        }
+      }
+    }
+  }, [messages]);
 
   useEffect(() => {
     scrollToBottom();
@@ -94,7 +115,12 @@ export function useChatManager({
       if (lastMessage.sender === "bot") {
         console.log("DEBUG: Last bot message state:", {
           id: lastMessage.id,
-          textLength: lastMessage.text.length,
+          textLength: typeof lastMessage.text === 'string' ? lastMessage.text.length : 'non-string type',
+          textType: typeof lastMessage.text,
+          isTextArray: Array.isArray(lastMessage.text),
+          textStructure: Array.isArray(lastMessage.text) 
+            ? `Array with ${lastMessage.text.length} items` 
+            : (typeof lastMessage.text === 'object' ? 'Object' : 'Primitive'),
           hasToolInvocations: !!(
             lastMessage.toolInvocations &&
             lastMessage.toolInvocations.length > 0
@@ -104,6 +130,29 @@ export function useChatManager({
           hasSources: !!(lastMessage.sources && lastMessage.sources.length > 0),
           sourcesCount: lastMessage.sources?.length || 0,
         });
+        
+        // Check for potential truncation issues
+        if (typeof lastMessage.text === 'string') {
+          const suspiciousEndingPatterns = [
+            /[^.!?]\s*$/,  // Ends without proper punctuation
+            /\\$/,         // Ends with a backslash
+            /"\s*$/,       // Ends with a quote
+            /[{[]$/        // Ends with an opening brace/bracket
+          ];
+          
+          const potentialTruncation = suspiciousEndingPatterns.some(pattern => 
+            pattern.test(lastMessage.text.substring(lastMessage.text.length - 10))
+          );
+          
+          if (potentialTruncation) {
+            console.warn("DEBUG: Potential message truncation detected in last bot message!");
+            console.log("DEBUG: Last 100 chars:", lastMessage.text.substring(lastMessage.text.length - 100));
+          }
+        } else if (Array.isArray(lastMessage.text)) {
+          console.log("DEBUG: Bot message text is an array, might need to be joined:", 
+            lastMessage.text.map(chunk => typeof chunk === 'string' ? chunk.length : 'non-string').join(', '));
+        }
+        
         if (
           lastMessage.toolInvocations &&
           lastMessage.toolInvocations.length > 0
@@ -207,7 +256,22 @@ export function useChatManager({
       const reader = response.body.getReader();
       const streamEventCallbacks: StreamEventCallbacks = {
         onText: (textChunk: string) => {
-          updateBotMessageText(botMessagePlaceholderId, textChunk);
+          // Do not update text if the final response for this message has already been processed
+          if (finalizedMessageIds.has(botMessagePlaceholderId)) {
+            console.log(`[useChatManager] Ignoring text chunk for finalized message ID: ${botMessagePlaceholderId}`);
+            return;
+          }
+          
+          // Process text chunk, ensuring proper handling of special characters
+          const processedChunk = textChunk
+            .replace(/\\+$/, '') // Remove trailing backslashes that might cause issues
+            .replace(/\\\"/g, '\"') // Replace escaped quotes with actual quotes
+            .replace(/\\n/g, '\n') // Convert escaped newlines to actual newlines
+            .replace(/\\r/g, '\r') // Convert escaped carriage returns
+            .replace(/\\t/g, '\t'); // Convert escaped tabs
+
+          // Always append the incoming chunk
+          updateBotMessageText(botMessagePlaceholderId, processedChunk);
         },
         onSources: (sources: DocumentData[]) => {
           updateBotMessageSources(botMessagePlaceholderId, sources);
@@ -244,16 +308,32 @@ export function useChatManager({
               serverSessionId,
             );
           }
+          
+          // Debug the response structure before processing
+          console.log("[useChatManager] Final response data structure:", {
+            hasResponse: !!finalData.response,
+            responseType: typeof finalData.response,
+            responseLength: typeof finalData.response === 'string' ? finalData.response.length : 'non-string',
+            hasToolInvocations: Array.isArray(finalData.toolInvocations) && finalData.toolInvocations.length > 0,
+            responsePreview: typeof finalData.response === 'string' 
+              ? `${finalData.response.substring(0, 50)}...${finalData.response.substring(finalData.response.length - 50)}`
+              : JSON.stringify(finalData.response).substring(0, 100)
+          });
+          
           updateBotMessageFromFinalResponse(botMessagePlaceholderId, finalData);
           console.log(
             "[useChatManager] Final response processed via callback for message:",
             botMessagePlaceholderId,
           );
+          // Mark this message ID as finalized
+          setFinalizedMessageIds((prev) => new Set(prev).add(botMessagePlaceholderId));
         },
         onStreamError: (errorMessage: string) => {
           // Extract relevant error details for better user feedback
           let userFriendlyMessage = errorMessage;
           let detailedLog: Record<string, any> = { originalError: errorMessage };
+          let shouldHideError = false;
+          let shouldAttemptRecovery = false;
           
           // Handle JSON parsing errors more specifically
           if (errorMessage.includes("JSON") || errorMessage.includes("parse")) {
@@ -265,13 +345,17 @@ export function useChatManager({
               sessionId: sessionIdToUse
             };
             
+            // Always attempt to recover for parsing errors
+            shouldAttemptRecovery = true;
+            shouldHideError = true;
+            
             // Specific handling for common JSON parsing errors
             if (errorMessage.includes("Unterminated string")) {
-              userFriendlyMessage = "The AI response was truncated. We're working to fix this issue.";
-              // Continue showing what we received, rather than hiding it completely
-              updateBotMessageText(botMessagePlaceholderId, "⚠️ The response was cut off due to a technical issue. Here's what we received:\n\n");
-            } else if (errorMessage.includes("backslash")) {
-              userFriendlyMessage = "The response contained special characters that couldn't be processed correctly.";
+              userFriendlyMessage = "The AI response was truncated. We're showing what we received.";
+              // Continue showing what we received, don't change the content that was already streamed
+            } else if (errorMessage.includes("backslash") || errorMessage.includes("\\")) {
+              userFriendlyMessage = "The response contained special characters that were corrected.";
+              // For backslash errors, we can usually still display the content
             } else {
               userFriendlyMessage = "The AI response couldn't be properly processed. This has been reported.";
             }
@@ -286,15 +370,30 @@ export function useChatManager({
             });
           }
           
-          toast({
-            title: "Stream Error",
-            description: userFriendlyMessage,
-            variant: "destructive",
-          });
-          
-          // Update the message with the error
-          injectErrorIntoBotMessage(botMessagePlaceholderId, 
-            `Error: ${userFriendlyMessage}\n\nPlease try again or refresh the page if the issue persists.`);
+          // Only show a toast for errors that aren't related to content formatting
+          if (!shouldHideError) {
+            toast({
+              title: "Stream Error",
+              description: userFriendlyMessage,
+              variant: "destructive",
+            });
+            
+            // Update the message with the error
+            injectErrorIntoBotMessage(botMessagePlaceholderId, 
+              `Error: ${userFriendlyMessage}\n\nPlease try again or refresh the page if the issue persists.`);
+          } else if (shouldAttemptRecovery) {
+            // Add a note at the bottom of the message but preserve content
+            const recoveryNote = `\n\n_Note: Some content may have been truncated due to formatting issues._`;
+            
+            // Get current messages to find existing text
+            const currentMessage = messages.find(m => m.id === botMessagePlaceholderId);
+            if (currentMessage) {
+              // Don't add the note if we've already added it
+              if (!currentMessage.text.includes(recoveryNote)) {
+                updateBotMessageText(botMessagePlaceholderId, currentMessage.text + recoveryNote);
+              }
+            }
+          }
         },
         onStreamEnd: () => {
           console.log("[useChatManager] Stream ended (via callback).");
@@ -327,10 +426,19 @@ export function useChatManager({
       // Provide user-friendly error message with recovery options
       let userFriendlyMessage = errorMessage;
       let recoveryAttempted = false;
+      let suppressErrorDisplay = false;
       
       // Enhanced error classification and recovery
       if (errorMessage.includes("JSON") || errorMessage.includes("parse")) {
         errorLog.errorType = "json_parsing_error";
+        
+        // Get the current message content before attempting recovery
+        const currentMessage = messages.find(m => m.id === botMessagePlaceholderId);
+        const existingText = currentMessage ? currentMessage.text : "";
+        
+        // Always attempt to preserve content for JSON errors
+        suppressErrorDisplay = true;
+        recoveryAttempted = true;
         
         // Specific JSON error handling
         if (errorMessage.includes("Unterminated string")) {
@@ -338,17 +446,35 @@ export function useChatManager({
           
           // Try to recover partial content if possible - this helps users not lose their entire response
           try {
-            // Check if there's a pattern that indicates we got a substantial response before the error
-            if (botMessagePlaceholderId) {
-              updateBotMessageText(botMessagePlaceholderId, 
-                "⚠️ The response below was truncated due to a technical issue:\n\n");
-              recoveryAttempted = true;
+            if (botMessagePlaceholderId && existingText) {
+              // Keep the existing text but add a note about truncation
+              const noteText = "\n\n_Note: The response was truncated due to a technical issue._";
+              
+              // Only add the note if it's not already there
+              if (!existingText.includes(noteText)) {
+                updateBotMessageText(botMessagePlaceholderId, existingText + noteText);
+              }
             }
           } catch (recoveryError) {
             console.warn("Recovery attempt failed:", recoveryError);
           }
         } else if (errorMessage.includes("backslash") || errorMessage.includes("\\")) {
-          userFriendlyMessage = "The response contained special characters that couldn't be processed correctly.";
+          userFriendlyMessage = "The response contained special characters that were handled automatically.";
+          
+          // For backslash errors, try to fix the content
+          try {
+            if (botMessagePlaceholderId && existingText) {
+              // Fix common backslash issues in the existing text
+              const fixedText = existingText
+                .replace(/\\+$/, '') // Remove trailing backslashes
+                .replace(/\\"/g, '"') // Replace escaped quotes with actual quotes
+                .replace(/\\\\/g, '\\'); // Replace double backslashes with single ones
+                
+              updateBotMessageText(botMessagePlaceholderId, fixedText);
+            }
+          } catch (fixError) {
+            console.warn("Error fixing backslashes:", fixError);
+          }
         } else {
           userFriendlyMessage = "There was an error processing the AI response. Our team has been notified.";
         }
@@ -365,20 +491,37 @@ export function useChatManager({
       // Log the structured error
       console.error(errorLog);
       
-      // Update UI with error message if no recovery was attempted
-      if (botMessagePlaceholderId && !recoveryAttempted) {
+      // Update UI with error message if no recovery was attempted and error display isn't suppressed
+      if (botMessagePlaceholderId && !recoveryAttempted && !suppressErrorDisplay) {
         injectErrorIntoBotMessage(
           botMessagePlaceholderId, 
           `Error: ${userFriendlyMessage}\n\nTry again or refresh the page.`
         );
       }
       
-      // Show toast with error message
-      toast({
-        title: "Error",
-        description: userFriendlyMessage,
-        variant: "destructive",
-      });
+      // For JSON parsing errors where we've preserved content, add a subtle indicator
+      if (recoveryAttempted && suppressErrorDisplay && errorLog.errorType === "json_parsing_error") {
+        // Check if we need to show a toast (only for serious errors)
+        const shouldShowToast = !errorMessage.includes("backslash") && 
+                               !errorMessage.includes("\\") &&
+                               !errorMessage.includes("Unterminated");
+        
+        if (shouldShowToast) {
+          toast({
+            title: "Content Issue",
+            description: "Some formatting issues were automatically corrected.",
+            variant: "default",
+          });
+        }
+      }
+      // Show toast with error message only if we're not suppressing error display
+      else if (!suppressErrorDisplay) {
+        toast({
+          title: "Error",
+          description: userFriendlyMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       // Ensure loading state is always reset
       setIsLoading(false);
@@ -418,11 +561,31 @@ export function useChatManager({
     clearMessages();
     resetUploadedFiles();
     startNewSession();
+    setFinalizedMessageIds(new Set()); // Clear the finalized IDs on chat clear
     toast({
       title: "Chat Cleared",
       description: "Ready for a new conversation.",
     });
   }, [clearMessages, resetUploadedFiles, startNewSession, toast]);
+
+  // Function to fix truncated messages - defaults to fixing the last bot message if no ID provided
+  const fixTruncatedMessage = useCallback((messageId?: string): boolean => {
+    // If no messageId provided, try to fix the last bot message
+    if (!messageId && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.sender === 'bot') {
+        return fixTruncatedBotMessage(lastMessage.id);
+      }
+      return false;
+    }
+    
+    // Fix specific message if ID is provided
+    if (messageId) {
+      return fixTruncatedBotMessage(messageId);
+    }
+    
+    return false;
+  }, [messages, fixTruncatedBotMessage]);
 
   return {
     messages,
@@ -432,6 +595,7 @@ export function useChatManager({
     currentSessionId,
     handleSendMessage,
     clearChat,
+    fixTruncatedMessage,
     messagesEndRef,
     scrollAreaRef,
   };

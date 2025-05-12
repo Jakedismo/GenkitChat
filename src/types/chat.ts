@@ -51,7 +51,7 @@ export interface ToolInvocation {
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'bot';
-  text: string;
+  text: string | string[] | { text?: string; [key: string]: any } | any; // Support various response formats
   toolInvocations?: ToolInvocation[]; // Use the specific type
   sources?: DocumentData[]; // For RAG: stores the source documents used for this bot message
 }
@@ -101,10 +101,12 @@ export interface ParsedJsonData {
   // Based on event types processed
   sources?: ParsedSource[];         // From "sources" event
   error?: string;                   // From "error" event
-  response?: string;                // From "final_response" event text
+  response?: string | string[] | { text?: string; [key: string]: any } | any; // Support various response formats
   toolInvocations?: RawToolInvocation[]; // From "final_response" or "tool_invocations" event
   sessionId?: string;               // From "final_response" event
-  text?: string;                    // From "text" event (though typically handled differently now)
+  text?: string | string[] | { text?: string; [key: string]: any } | any; // Support various text formats
+  message?: { content?: any[]; [key: string]: any }; // Support raw message structure
+  custom?: { candidates?: any[]; [key: string]: any }; // Support custom response structure
   // Add any other properties received in SSE data payloads
   [key: string]: unknown;           // Allow flexibility
 }

@@ -50,6 +50,7 @@
     "date-fns": "^3.6.0",
     "destr": "^2.0.5",
     "firebase": "^11.3.0",
+    "flatted": "^3.3.3",
     "fs": "^0.0.1-security",
     "genkit": "^1.8.0",
     "genkitx-anthropic": "^0.22.0",

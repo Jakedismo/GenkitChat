@@ -2,84 +2,30 @@
 
 import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarProvider,
-  SidebarTrigger,
-  SidebarContext,
-} from "@/components/ui/sidebar/index"; // Explicitly point to index
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-// Removed direct imports for server-side functions
-// Keep type imports if needed elsewhere, though RagEndpoint/BedrockModel might be removable now
-// import type { RagEndpoint } from '@/services/rag';
-// import type { BedrockModel } from '@/services/bedrock';
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Code } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import ChatMessageContent from "@/components/chat/ChatMessageContent"; // Added import
-// import CitationPreviewSidebar from "@/components/CitationPreviewSidebar"; // Added import - Will be dynamically imported
-import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
-import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay"; // Added import
-import ChatInputControls from "@/components/chat/ChatInputControls"; // Added import
-import FileUploadManager from "@/components/chat/FileUploadManager"; // Added import
-import PdfWorkerSetup from "@/components/PdfWorkerSetup";
-import { useChatSettings } from "@/hooks/useChatSettings"; // Added hook import
-import { useFileUploads } from "@/hooks/useFileUploads"; // Added hook import
-import { useChatManager } from "@/hooks/useChatManager"; // Added hook import
-import {
-  DocumentData,
-  CitationPreviewData,
-  ConnectedServer,
-  DisplayTool,
-} from "@/types/chat"; // Import shared types
-// Removed ragAugmentedChatFlow import as it's no longer used
 import rehypeHighlight from "rehype-highlight";
+import ChatMessageContent from "@/components/chat/ChatMessageContent";
+import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
+import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
+import ChatInputControls from "@/components/chat/ChatInputControls";
+import FileUploadManager from "@/components/chat/FileUploadManager";
+import PdfWorkerSetup from "@/components/PdfWorkerSetup";
+import { useChatSettings } from "@/hooks/useChatSettings";
+import { useFileUploads } from "@/hooks/useFileUploads";
+import { useChatManager } from "@/hooks/useChatManager";
+import { ChatMode, ConnectedServer, CitationPreviewData, DocumentData, DisplayTool } from "@/types/chat";
 import "highlight.js/styles/github-dark.css";
 import mermaid from "mermaid";
-// Removed pdfjs-dist imports (static and dynamic)
 
-// Represents the structure of a document chunk's metadata and content, (Moved to types/chat.ts)
-// interface DocumentData { ... }
-
-// Interface ChatMessage moved to types/chat.ts
-// interface ChatMessage { ... }
-
-// File representation for upload (Moved to types/chat.ts)
-// ChatMode enum (Moved to types/chat.ts)
-
-// ServiceSelector might be removable if Bedrock models/RAG endpoints are fully gone
-// Keeping for now in case it's reused, but it's unused in the current state.
-// interface ServiceSelectorProps {
-//   label: string;
-//   items: { id: string; name: string }[];
-//   selectedId: string;
-//   onSelect: (id: string) => void;
-//   icon?: LucideIcon;
-//   disabled?: boolean;
-// }
-// const ServiceSelector: React.FC<ServiceSelectorProps> = ({...}) => {...};
-
-// Define types for UI display (Moved to types/chat.ts)
-// interface DisplayTool { ... }
-// interface ConnectedServer { ... }
-
-// Define OpenAI models for UI (Moved to @/ai/available-models.ts)
-// const availableOpenAIModels = [...] // No longer needed here, provided by hook
-
-// Temperature Preset type (Moved to types/chat.ts)
-
-// Initialize Mermaid on client mount
-mermaid.initialize({ startOnLoad: false }); // Don't run automatically on load
-
-// Interface for uploaded files with additional metadata (Moved to types/chat.ts)
-// interface UploadedFile { ... }
-
+// Dynamically import components that might have browser-only dependencies
 const CitationPreviewSidebar = dynamic(
   () => import("@/components/CitationPreviewSidebar"),
   { ssr: false },
@@ -92,15 +38,14 @@ const LambdaChat: React.FC = () => {
     setChatMode,
     selectedGeminiModelId,
     setSelectedGeminiModelId,
-    availableGeminiModels, // Provided by hook
+    availableGeminiModels,
     selectedOpenAIModelId,
     setSelectedOpenAIModelId,
-    availableOpenAIModels, // Provided by hook
+    availableOpenAIModels,
     temperaturePreset,
     setTemperaturePreset,
     maxTokens,
     setMaxTokens,
-    // Get tool toggle state and setters from the hook
     tavilySearchEnabled,
     setTavilySearchEnabled,
     tavilyExtractEnabled,
@@ -111,10 +56,13 @@ const LambdaChat: React.FC = () => {
     setPerplexityDeepResearchEnabled,
   } = useChatSettings();
 
-  // Need currentSessionId for useFileUploads, defined below
+  // Need currentSessionId for useFileUploads
   const [currentSessionIdForUpload, setCurrentSessionIdForUpload] = useState<
     string | undefined
   >(undefined);
+  
+  // State for UI refresh when needed
+  const [renderKey, setRenderKey] = useState<number>(Date.now());
 
   // File Upload state and logic managed by custom hook
   const {
@@ -124,33 +72,29 @@ const LambdaChat: React.FC = () => {
     handleFileChange,
     removeFile,
     triggerFileUpload,
-    resetUploadedFiles, // Function to clear the file list
-  } = useFileUploads(() => currentSessionIdForUpload); // Pass getter for currentSessionId
-
-  // Tool toggles state moved into useChatSettings hook
+    resetUploadedFiles,
+  } = useFileUploads(() => currentSessionIdForUpload);
 
   // Core chat state and logic managed by custom hook
   const {
     messages,
-    // setMessages, // Setter exposed if needed externally
     userInput,
     setUserInput,
-    isLoading, // Loading state for message sending
-    currentSessionId, // Session ID managed by chat manager now
-    // setCurrentSessionId, // Setter exposed if needed externally
+    isLoading,
+    currentSessionId,
     handleSendMessage,
-    clearChat, // Use clearChat from hook
-    messagesEndRef, // Use ref from hook
-    scrollAreaRef, // Use ref from hook
+    clearChat,
+    fixTruncatedMessage,
+    messagesEndRef,
+    scrollAreaRef,
   } = useChatManager({
-    // Pass dependencies from other hooks/state
     chatMode,
     selectedGeminiModelId,
     selectedOpenAIModelId,
     temperaturePreset,
     maxTokens,
-    uploadedFiles, // Pass current uploaded files state
-    resetUploadedFiles, // Pass reset function from useFileUploads
+    uploadedFiles,
+    resetUploadedFiles,
     tavilySearchEnabled,
     tavilyExtractEnabled,
     perplexitySearchEnabled,
@@ -162,35 +106,19 @@ const LambdaChat: React.FC = () => {
     setCurrentSessionIdForUpload(currentSessionId);
   }, [currentSessionId]);
 
-  const [connectedServers, setConnectedServers] = useState<ConnectedServer[]>(
-    [],
-  );
-  // const fileInputRef = useRef<HTMLInputElement>(null); // Moved to useFileUploads
-  const { toast } = useToast(); // toast is used by useChatManager (via useEffect/handleSendMessage)
+  const [connectedServers, setConnectedServers] = useState<ConnectedServer[]>([]);
+  const { toast } = useToast();
 
   // State for citation preview sidebar
-  // Assuming CitationPreviewData is imported from where it's defined (e.g., types/chat.ts or CitationPreviewSidebar.tsx)
-  // For this edit, we assume the type is correctly imported and matches the sidebar's expectation.
-  const [citationPreview, setCitationPreview] =
-    useState<CitationPreviewData | null>(null);
+  const [citationPreview, setCitationPreview] = useState<CitationPreviewData | null>(null);
   const [isCitationSidebarOpen, setIsCitationSidebarOpen] = useState(false);
 
-  // Effect for fetching tool info remains here
+  // Effect for fetching tool info
   useEffect(() => {
-    // Rest of the useEffect...
-    if (!selectedGeminiModelId && availableGeminiModels.length > 0) {
-      // This logic might be redundant if useChatSettings handles defaults
-      // setSelectedGeminiModelId(availableGeminiModels[0].id);
-    }
-    if (!selectedOpenAIModelId && availableOpenAIModels.length > 0) {
-      // This logic might be redundant if useChatSettings handles defaults
-      // setSelectedOpenAIModelId(availableOpenAIModels[0].id);
-    }
-
     // Fetch tools and update server status
     const fetchToolInfo = async () => {
       const initialServers: ConnectedServer[] = [
-        { name: "context7", status: "Pending", tools: [] }, // Assuming context7 is still relevant
+        { name: "context7", status: "Pending", tools: [] },
       ];
       setConnectedServers(initialServers);
 
@@ -211,8 +139,7 @@ const LambdaChat: React.FC = () => {
         console.error("Failed to fetch tool info:", error);
         toast({
           title: "Error",
-          description:
-            "Could not fetch tool information from connected servers.",
+          description: "Could not fetch tool information from connected servers.",
           variant: "destructive",
         });
         setConnectedServers((prev) =>
@@ -224,42 +151,15 @@ const LambdaChat: React.FC = () => {
     };
 
     fetchToolInfo();
-
-    // Dependencies for fetching tool info - check if model IDs are needed
-  }, [
-    toast,
-    availableGeminiModels.length,
-    availableOpenAIModels.length,
-    selectedGeminiModelId,
-    selectedOpenAIModelId,
-  ]); // Added missing dependencies
-
-  const handlePerplexitySearchToggle = () => {
-    const newPerplexityState = !perplexitySearchEnabled;
-    setPerplexitySearchEnabled(newPerplexityState);
-    if (newPerplexityState) {
-      setTavilySearchEnabled(false); // Disable Tavily if Perplexity is enabled
-    }
-  };
-
-  const handleTavilySearchToggle = () => {
-    const newTavilyState = !tavilySearchEnabled;
-    setTavilySearchEnabled(newTavilyState);
-    if (newTavilyState) {
-      setPerplexitySearchEnabled(false); // Disable Perplexity if Tavily is enabled
-    }
-  };
+  }, [toast, availableGeminiModels.length, availableOpenAIModels.length, selectedGeminiModelId, selectedOpenAIModelId]);
 
   // Citation click handler remains here as it controls local UI state
-  const handleCitationClick = (
-    messageId: string,
-    chunkIndexInSources: number,
-  ) => {
+  const handleCitationClick = (messageId: string, chunkIndexInSources: number) => {
     const message = messages.find((m) => m.id === messageId);
     if (message && message.sources && message.sources[chunkIndexInSources]) {
       const sourceChunk = message.sources[
         chunkIndexInSources
-      ] as DocumentData & { pageNumber?: number; textToHighlight?: string }; // Cast to include new optional fields
+      ] as DocumentData & { pageNumber?: number; textToHighlight?: string };
 
       // Ensure required fields for PDF preview are present
       if (
@@ -270,7 +170,7 @@ const LambdaChat: React.FC = () => {
       ) {
         setCitationPreview({
           fileName: sourceChunk.originalFileName,
-          pdfUrl: `/api/files/${encodeURIComponent(sourceChunk.documentId)}`, // Construct URL for PDF serving API
+          pdfUrl: `/api/files/${encodeURIComponent(sourceChunk.documentId)}`,
           pageNumber: sourceChunk.pageNumber,
           textToHighlight: sourceChunk.textToHighlight,
           documentId: sourceChunk.documentId,
@@ -278,38 +178,25 @@ const LambdaChat: React.FC = () => {
         });
         setIsCitationSidebarOpen(true);
       } else {
-        // Fallback for older data or if critical info is missing for PDF preview
-        // This could show the raw content as before, or a specific error.
-        console.warn(
-          `Source chunk for message ${messageId}, index ${chunkIndexInSources} is missing data for PDF preview. Got:`,
-          sourceChunk,
-        );
-        // Displaying raw content as a fallback:
+        // Fallback for older data or if critical info is missing
         setCitationPreview({
           fileName: sourceChunk.originalFileName || "Unknown File",
-          content:
-            sourceChunk.content ||
-            sourceChunk.textToHighlight ||
-            "No content available for preview.",
-          pdfUrl: "", // Invalid URL to indicate no PDF preview
-          pageNumber: 0, // Invalid page number
-          textToHighlight:
-            sourceChunk.textToHighlight || sourceChunk.content || "",
+          content: sourceChunk.content || sourceChunk.textToHighlight || "No content available for preview.",
+          pdfUrl: "",
+          pageNumber: 0,
+          textToHighlight: sourceChunk.textToHighlight || sourceChunk.content || "",
           documentId: sourceChunk.documentId,
           chunkId: sourceChunk.chunkId,
         });
         setIsCitationSidebarOpen(true);
         toast({
           title: "Citation Preview Issue",
-          description:
-            "Could not fully load PDF preview data. Displaying available content.",
+          description: "Could not fully load PDF preview data. Displaying available content.",
           variant: "default",
         });
       }
     } else {
-      console.warn(
-        `Could not find source for message ${messageId}, chunk index ${chunkIndexInSources}`,
-      );
+      console.warn(`Could not find source for message ${messageId}, chunk index ${chunkIndexInSources}`);
       toast({
         title: "Citation Error",
         description: "Could not load citation source.",
@@ -318,25 +205,14 @@ const LambdaChat: React.FC = () => {
     }
   };
 
-  // Shared components config for ReactMarkdown
+  // Shared components config for ReactMarkdown with arrow function syntax
   const markdownComponents = {
-    // টাইপ PropsWithChildren<P> মানে হল যে কম্পোনেন্টটি children prop গ্রহণ করতে পারে।
-    // React.HTMLAttributes<HTMLParagraphElement> মানে হল যে কম্পোনেন্টটি <p> ট্যাগের সকল স্ট্যান্ডার্ড HTML অ্যাট্রিবিউট গ্রহণ করতে পারে।
-    p: ({
-      children,
-      ...props
-    }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
-      // Helper function to recursively check for pre elements
+    p: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
       const hasPreElement = (children: React.ReactNode): boolean => {
         return React.Children.toArray(children).some((child) => {
           if (React.isValidElement(child)) {
-            // Check if this element is a pre
             if (child.type === "pre") return true;
-            
-            // Check if this element is a code (which might render a pre)
             if (child.type === "code") return true;
-            
-            // Check this element's children recursively
             if (child.props && child.props.children) {
               return hasPreElement(child.props.children);
             }
@@ -344,29 +220,18 @@ const LambdaChat: React.FC = () => {
           return false;
         });
       };
-
-      // Check for pre elements at any nesting level
       if (hasPreElement(children)) {
-        // If we found a pre element, just render the children directly
         return <>{children}</>;
       }
-      
-      // Otherwise, render as a normal paragraph
       return <p {...props}>{children}</p>;
     },
-    code({
-      className,
-      children,
-      inline,
-    }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) {
+
+    code: ({ className, children, inline }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
-      
-      // For inline code, don't use pre tags
       if (inline) {
         return <code className={className}>{children}</code>;
       }
-      
       if (language === "mermaid") {
         return (
           <div className="not-prose">
@@ -376,8 +241,6 @@ const LambdaChat: React.FC = () => {
           </div>
         );
       }
-      
-      // Wrap in div to isolate from paragraph context
       return (
         <div className="not-prose">
           <pre
@@ -389,63 +252,98 @@ const LambdaChat: React.FC = () => {
         </div>
       );
     },
+
+    table: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <div className="overflow-x-auto">
+        <table
+          className="my-4 w-full border-collapse border border-border text-sm"
+          {...props}
+        >
+          {children}
+        </table>
+      </div>
+    ),
+
+    thead: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <thead className="bg-muted" {...props}>
+        {children}
+      </thead>
+    ),
+
+    tbody: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <tbody {...props}>{children}</tbody>
+    ),
+
+    tr: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <tr className="border-b border-border" {...props}>
+        {children}
+      </tr>
+    ),
+
+    th: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <th
+        className="border-r border-border px-4 py-2 text-left font-medium text-muted-foreground last:border-r-0"
+        {...props}
+      >
+        {children}
+      </th>
+    ),
+
+    td: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <td
+        className="border-r border-border px-4 py-2 last:border-r-0"
+        {...props}
+      >
+        {children}
+      </td>
+    ),
   };
 
-  // handleSendMessage logic moved to useChatManager hook
-  // clearChat logic moved to useChatManager hook
-
-  // Access sidebar state
-  const sidebarContext = React.useContext(SidebarContext);
-  const isSidebarCollapsed = sidebarContext?.state === "collapsed";
-  
   return (
-    <SidebarProvider>
-      <PdfWorkerSetup />
-      <div className="flex h-screen w-full overflow-hidden">
+    <TooltipProvider delayDuration={0}>
+      <div className="relative h-screen overflow-hidden">
+        <PdfWorkerSetup />
+      <div key={`chat-container-${renderKey}`} className="flex h-full w-full">
         <CitationPreviewSidebar
           isOpen={isCitationSidebarOpen}
           onClose={() => setIsCitationSidebarOpen(false)}
           previewData={citationPreview}
         />
-        <Sidebar>
-          <SidebarTrigger />
-          <SidebarContent>
-            <ChatConfigSidebar
-              chatMode={chatMode}
-              onChatModeChange={setChatMode}
-              selectedGeminiModelId={selectedGeminiModelId}
-              onSelectedGeminiModelIdChange={setSelectedGeminiModelId}
-              availableGeminiModels={availableGeminiModels}
-              selectedOpenAIModelId={selectedOpenAIModelId}
-              onSelectedOpenAIModelIdChange={setSelectedOpenAIModelId}
-              availableOpenAIModels={availableOpenAIModels}
-              temperaturePreset={temperaturePreset}
-              onTemperaturePresetChange={setTemperaturePreset}
-              maxTokens={maxTokens}
-              onMaxTokensChange={setMaxTokens}
-            />
-            <ServerStatusDisplay connectedServers={connectedServers} />
-            <div className="p-2 mt-auto">
-              <Button variant="outline" className="w-full" onClick={clearChat}>
-                Clear Chat
-              </Button>
-            </div>
-          </SidebarContent>
-          <SidebarFooter>
+        <aside className="hidden md:flex md:flex-col md:w-[250px] border-r bg-muted/40 p-4 h-full overflow-y-auto">
+          <ChatConfigSidebar
+            chatMode={chatMode}
+            onChatModeChange={setChatMode}
+            selectedGeminiModelId={selectedGeminiModelId}
+            onSelectedGeminiModelIdChange={setSelectedGeminiModelId}
+            availableGeminiModels={availableGeminiModels}
+            selectedOpenAIModelId={selectedOpenAIModelId}
+            onSelectedOpenAIModelIdChange={setSelectedOpenAIModelId}
+            availableOpenAIModels={availableOpenAIModels}
+            temperaturePreset={temperaturePreset}
+            onTemperaturePresetChange={setTemperaturePreset}
+            maxTokens={maxTokens}
+            onMaxTokensChange={setMaxTokens}
+          />
+          <ServerStatusDisplay connectedServers={connectedServers} />
+          <div className="p-2 mt-auto">
+            <Button variant="outline" className="w-full" onClick={clearChat}>
+              Clear Chat
+            </Button>
+          </div>
+          <div className="mt-4 pt-2 border-t">
             <p className="text-center text-xs text-muted-foreground">
               Powered by GenkitChat
             </p>
-          </SidebarFooter>
-        </Sidebar>
-        <div className="flex-1 p-4 flex flex-col">
-          {/* Main content area */}
+          </div>
+        </aside>
+        <div className="flex-1 p-4 flex flex-col relative">
           <Card className="flex flex-1 flex-col overflow-hidden">
             <CardContent className="relative flex-1 p-0 overflow-hidden">
               <ScrollArea
                 className="h-full w-full pb-0"
                 ref={scrollAreaRef as React.RefObject<HTMLDivElement>}
               >
-                <div className="flex flex-col gap-4 p-4 pb-40">
+                <div className="flex flex-col gap-4 p-4 pb-48">
                   {messages.map((message) => (
                     <div
                       key={message.id}
@@ -463,46 +361,64 @@ const LambdaChat: React.FC = () => {
                             : "bg-secondary text-secondary-foreground",
                         )}
                       >
-                        {message.sender === "bot" &&
-                        message.sources &&
-                        message.sources.length > 0 &&
-                        message.text.includes("[Source:") ? (
-                          <ChatMessageContent
-                            text={message.text}
-                            onCitationClick={(chunkIndex) =>
-                              handleCitationClick(message.id, chunkIndex)
-                            }
-                            components={markdownComponents}
-                          />
-                        ) : (
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeHighlight]}
-                            components={markdownComponents}
-                          >
-                            {message.text}
-                          </ReactMarkdown>
+                        {process.env.NODE_ENV === 'development' && message.sender === 'bot' && (
+                          <div className="text-xs text-muted-foreground mb-2 border-b border-muted pb-1">
+                            <span>Text type: {typeof message.text}</span>
+                            {Array.isArray(message.text) && (
+                              <span> (Array with {message.text.length} items)</span>
+                            )}
+                            {typeof message.text === 'object' && message.text !== null && !Array.isArray(message.text) && (
+                              <span> (Object with keys: {Object.keys(message.text || {}).join(', ')})</span>
+                            )}
+                          </div>
                         )}
+                        
+                        <div className="relative">
+                          {message.sender === "bot" &&
+                          message.sources &&
+                          message.sources.length > 0 &&
+                          (typeof message.text === 'string' && message.text.includes("[Source:")) ? (
+                            <ChatMessageContent
+                              text={message.text}
+                              onCitationClick={(chunkIndex) =>
+                                handleCitationClick(message.id, chunkIndex)
+                              }
+                              components={markdownComponents}
+                            />
+                          ) : (
+                            <ChatMessageContent
+                              text={message.text}
+                              onCitationClick={() => {}} // Empty handler for non-citation text
+                              components={markdownComponents}
+                            />
+                          )}
+                          
+                          {message.sender === "bot" && (
+                            <button
+                              onClick={() => fixTruncatedMessage(message.id)}
+                              className="absolute top-0 right-0 p-1 text-xs text-muted-foreground opacity-0 hover:opacity-100 focus:opacity-100 bg-muted/50 rounded transition-opacity"
+                              title="Fix message formatting"
+                            >
+                              <span className="sr-only">Fix message</span>
+                              <span className="h-4 w-4 inline-block">⟳</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      {/* Tool Invocation Display */}
                       {message.sender === "bot" &&
                         message.toolInvocations &&
                         message.toolInvocations.length > 0 && (
                           <div className="mt-2 w-full max-w-[80%] rounded-md border border-border bg-muted p-3 text-xs">
                             <p className="mb-2 flex items-center gap-1 font-medium text-muted-foreground">
-                              <Code size={14} /> Tool Calls:
+                              <Code size={14} /> Tool Calls: <span className="ml-1 text-xs text-muted-foreground">({message.toolInvocations.length})</span>
                             </p>
                             {message.toolInvocations.map(
-                              (
-                                inv,
-                                index: number, // Added types
-                              ) => (
+                              (inv, index: number) => (
                                 <details key={index} className="mb-2 last:mb-0">
                                   <summary className="cursor-pointer hover:underline">
                                     {inv.toolName}
                                   </summary>
                                   <div className="mt-1 pl-4 space-y-1">
-                                    {/* ... rest of the code ... */}
                                     <div>
                                       <span className="font-semibold">
                                         Input:
@@ -511,7 +427,7 @@ const LambdaChat: React.FC = () => {
                                         {JSON.stringify(inv.input, null, 2)}
                                       </pre>
                                     </div>
-                                    {inv.output && ( // Conditionally render output
+                                    {inv.output && (
                                       <div>
                                         <span className="font-semibold">
                                           Output:
@@ -530,7 +446,6 @@ const LambdaChat: React.FC = () => {
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
-                  {/* Loading indicator using isLoading from useChatManager */}
                   {isLoading && (
                     <div className="flex w-full flex-col items-start">
                       <div className="max-w-[80%] rounded-lg px-4 py-2 whitespace-pre-wrap bg-secondary text-secondary-foreground opacity-70 animate-pulse">
@@ -538,39 +453,54 @@ const LambdaChat: React.FC = () => {
                       </div>
                     </div>
                   )}
+                  {!isLoading && messages.length > 0 && process.env.NODE_ENV === 'development' && (
+                    <div className="flex w-full flex-col items-center mt-2">
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => setRenderKey(Date.now())} 
+                          className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
+                          title="Force UI refresh if message appears truncated"
+                        >
+                          Refresh UI
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const fixed = fixTruncatedMessage();
+                            setRenderKey(Date.now());
+                          }} 
+                          className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
+                          title="Fix message formatting and refresh UI"
+                        >
+                          Refresh Messages
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
             </CardContent>
             
-            <div className={cn(
-              "fixed bottom-0 z-10 bg-card shadow-md border-t transition-all duration-300",
-              isSidebarCollapsed
-                ? "left-14 right-4" // Collapsed sidebar width (56px)
-                : "left-[275px] right-4", // Full sidebar width
-              "md:left-[275px] md:w-[calc(100%-291px)]" // Adjust for desktop view
-            )}>
-                <FileUploadManager
-                  uploadedFiles={uploadedFiles}
-                  onRemoveFile={removeFile}
-                />
+            <div className="fixed bottom-0 z-10 bg-card shadow-md border-t transition-all duration-300 w-full left-0 md:left-[250px] md:w-[calc(100%-250px)]" key="input-container">
+              <FileUploadManager
+                uploadedFiles={uploadedFiles}
+                onRemoveFile={removeFile}
+              />
               
-                <div className="p-4">
-                {/* Hidden file input uses ref/handler from useFileUploads */}
+              <div className="p-4">
                 <input
                   type="file"
-                  ref={fileInputRef} // Use ref from hook
-                  onChange={(e) => handleFileChange(e.target.files)} // Use handler from hook
+                  ref={fileInputRef}
+                  onChange={(e) => handleFileChange(e.target.files)}
                   className="hidden"
-                  multiple // Allow multiple files
+                  multiple
                 />
 
-                {/* Chat input controls use state/handlers from hooks */}
                 <ChatInputControls
                   userInput={userInput}
                   onUserInputChanges={setUserInput}
                   onSendMessage={handleSendMessage}
-                  isLoading={isLoading} // from useChatManager
-                  isUploading={isUploading} // from useFileUploads
+                  isLoading={isLoading}
+                  isUploading={isUploading}
                   tavilySearchEnabled={tavilySearchEnabled}
                   onTavilySearchToggle={() =>
                     setTavilySearchEnabled(!tavilySearchEnabled)
@@ -591,12 +521,13 @@ const LambdaChat: React.FC = () => {
                   }
                   onFileUploadTrigger={triggerFileUpload}
                 />
-                </div>
+              </div>
             </div>
           </Card>
         </div>
       </div>
-    </SidebarProvider>
+    </div>
+    </TooltipProvider>
   );
 };
 
