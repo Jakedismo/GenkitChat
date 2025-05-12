@@ -62,7 +62,7 @@ This project is a web-based chat interface built with Next.js and powered by Goo
 
     ```bash
     git clone <repository-url>
-    cd studio-master
+    cd <repo>
     ```
 
 2. Install dependencies:
@@ -88,9 +88,15 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 # Required for OpenAI Plugin
 OPENAI_API_KEY=your_openai_api_key_here
+
+# Required for Tavily Search and Extract Tools
+TAVILY_API_KEY=your_tavily_api_key_here
+
+# Required for Perplexity Search and Deep Research Tools
+PERPLEXITY_API_KEY=your_perplexity_api_key_here
 ```
 
-**Important:** Never commit your `.env.local` file to version control.
+**Important:** Never commit your `.env.local` file to version control. `.env` files are in `.gitignore` by default.
 
 ### Running the Application
 
