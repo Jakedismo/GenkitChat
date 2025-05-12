@@ -4,7 +4,7 @@ import type {
   MessageData,
   GenerateResponseChunk, // Represents a chunk from ai.generateStream().stream
 } from "genkit/beta";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 
 // This interface is used by the calling API route (basic-chat/route.ts)
 // to structure tool invocation data extracted from the final response.
@@ -28,7 +28,7 @@ export interface ChatInput {
   perplexitySearchEnabled?: boolean;
   perplexityDeepResearchEnabled?: boolean;
   // Context7 tools
-  context7ResolveLibraryIdEnabled?: boolean; 
+  context7ResolveLibraryIdEnabled?: boolean;
   context7GetLibraryDocsEnabled?: boolean;
 }
 
@@ -42,38 +42,65 @@ export interface ChatStreamOutput {
 // Maps descriptive temperature presets to numerical values
 function mapTemperature(preset: "precise" | "normal" | "creative"): number {
   switch (preset) {
-    case "precise": return 0.2;
-    case "normal": return 0.7;
-    case "creative": return 1.0;
-    default: return 0.7; // Default to normal
+    case "precise":
+      return 0.2;
+    case "normal":
+      return 0.7;
+    case "creative":
+      return 1.0;
+    default:
+      return 0.7; // Default to normal
   }
 }
 
 // Adapts Genkit's GenerateResponseChunk to simple { text: string } chunks
-async function* adaptGenkitStream(genkitStream: AsyncIterable<GenerateResponseChunk<unknown>>): AsyncIterable<{ text: string }> {
+async function* adaptGenkitStream(
+  genkitStream: AsyncIterable<GenerateResponseChunk<unknown>>
+): AsyncIterable<{ text: string }> {
   try {
     for await (const chunk of genkitStream) {
-      // GenerateResponseChunk typically has a 'text' field for the textual content of the chunk.
-      // It can also contain other information like tool calls, which are handled by the
-      // full responsePromise in the API route.
-      // We use chunk.text, following common Genkit stream examples.
-      if (chunk.text) {
-        yield { text: chunk.text };
+      // Handle multiple message content parts (Gemini-specific format)
+      // Use type assertion since the Genkit types don't fully reflect the actual structure
+      const anyChunk = chunk as any;
+      
+      if (anyChunk.message?.content) {
+        const content = anyChunk.message.content;
+        if (Array.isArray(content)) {
+          // Content is an array of parts, each potentially with text
+          for (const part of content) {
+            if (part.text) {
+              yield { text: part.text };
+              console.log(`Yielding text from message.content part: ${part.text.substring(0, 50)}...`);
+            }
+          }
+        }
       }
       
+      // Standard text field (common in most models)
+      else if (chunk.text) {
+        yield { text: chunk.text };
+        console.log(`Yielding text from chunk.text: ${chunk.text.substring(0, 50)}...`);
+      }
+
       // Handle tool-related chunks if present
-      if (chunk.toolInvocation) {
-        console.log(`Tool invocation: ${JSON.stringify(chunk.toolInvocation)}`);
+      if (anyChunk.toolRequests) {
+        console.log(`Tool requests: ${JSON.stringify(anyChunk.toolRequests)}`);
       }
     }
   } catch (error) {
     console.error("Error processing stream chunks:", error);
-    yield { text: `Error in stream processing: ${error instanceof Error ? error.message : String(error)}` };
+    yield {
+      text: `Error in stream processing: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
   }
 }
 
 // Main function to initiate a chat stream
-export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOutput> {
+export async function initiateChatStream(
+  input: ChatInput
+): Promise<ChatStreamOutput> {
   const currentSessionId = input.sessionId || uuidv4();
   const temperature = mapTemperature(input.temperaturePreset);
 
@@ -82,13 +109,15 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
   // --- Add System Prompts Based on Enabled Tools ---
   let systemPromptContent = "";
   if (input.perplexitySearchEnabled || input.perplexityDeepResearchEnabled) {
-    systemPromptContent += "When you receive output from the perplexitySearch or perplexityDeepResearch tools, your response must consist ONLY of the raw, unmodified text provided by the tool. Do not add any introduction, conclusion, summarization, or commentary. Preserve all original formatting, including markdown tables and citations. Respond ONLY with the tool's output and nothing else.";
+    systemPromptContent +=
+      "When you receive output from the perplexitySearch or perplexityDeepResearch tools, your response must consist ONLY of the raw, unmodified text provided by the tool. Do not add any introduction, conclusion, summarization, or commentary. Preserve all original formatting, including markdown tables and citations. Respond ONLY with the tool's output and nothing else.";
   }
   if (input.tavilySearchEnabled) {
     if (systemPromptContent) systemPromptContent += "\\n\\n"; // Add separator if other instructions exist
-    systemPromptContent += "When generating a response using information from the tavilySearch tool, focus on synthesizing the information. Do NOT include the source markers like '[Source N]' in your text, as a formatted list of sources will be appended later.";
+    systemPromptContent +=
+      "When generating a response using information from the tavilySearch tool, focus on synthesizing the information. Do NOT include the source markers like '[Source N]' in your text, as a formatted list of sources will be appended later.";
   }
-  
+
   if (systemPromptContent) {
     messages.push({ role: "system", content: [{ text: systemPromptContent }] });
     console.log("System Prompt Added:", systemPromptContent);
@@ -107,56 +136,89 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
   if (input.tavilySearchEnabled) enabledToolNames.push("tavilySearch");
   if (input.tavilyExtractEnabled) enabledToolNames.push("tavilyExtract");
   if (input.perplexitySearchEnabled) enabledToolNames.push("perplexitySearch");
-  if (input.perplexityDeepResearchEnabled) enabledToolNames.push("perplexityDeepResearch");
+  if (input.perplexityDeepResearchEnabled)
+    enabledToolNames.push("perplexityDeepResearch");
   // Add context7 tools
-  if (input.context7ResolveLibraryIdEnabled) enabledToolNames.push("context7/resolve-library-id");
-  if (input.context7GetLibraryDocsEnabled) enabledToolNames.push("context7/get-library-docs");
-  
+  if (input.context7ResolveLibraryIdEnabled)
+    enabledToolNames.push("context7/resolve-library-id");
+  if (input.context7GetLibraryDocsEnabled)
+    enabledToolNames.push("context7/get-library-docs");
+
   // Verify if API keys are set when tools are enabled and log warnings appropriately
-  if ((input.tavilySearchEnabled || input.tavilyExtractEnabled) && !process.env.TAVILY_API_KEY) {
-    console.warn("Tavily tools enabled but TAVILY_API_KEY environment variable is not set");
+  if (
+    (input.tavilySearchEnabled || input.tavilyExtractEnabled) &&
+    !process.env.TAVILY_API_KEY
+  ) {
+    console.warn(
+      "Tavily tools enabled but TAVILY_API_KEY environment variable is not set"
+    );
   }
-  
-  if ((input.perplexitySearchEnabled || input.perplexityDeepResearchEnabled) && !process.env.PERPLEXITY_API_KEY) {
-    console.warn("Perplexity tools enabled but PERPLEXITY_API_KEY environment variable is not set");
+
+  if (
+    (input.perplexitySearchEnabled || input.perplexityDeepResearchEnabled) &&
+    !process.env.PERPLEXITY_API_KEY
+  ) {
+    console.warn(
+      "Perplexity tools enabled but PERPLEXITY_API_KEY environment variable is not set"
+    );
   }
-  
-  if ((input.context7ResolveLibraryIdEnabled || input.context7GetLibraryDocsEnabled)) {
+
+  if (
+    input.context7ResolveLibraryIdEnabled ||
+    input.context7GetLibraryDocsEnabled
+  ) {
     console.log("Context7 tools enabled");
   }
-  
+
   // Log which tools are being enabled
   if (enabledToolNames.length > 0) {
-    console.log(`Using tools: ${enabledToolNames.join(', ')} with maxTokens: ${input.maxTokens}`);
+    console.log(
+      `Using tools: ${enabledToolNames.join(", ")} with maxTokens: ${
+        input.maxTokens
+      }`
+    );
   }
 
   try {
     // Log the maxTokens parameter for debugging
     console.log(`Preparing to generate with maxTokens: ${input.maxTokens}`);
-    
+
     // Check for missing API keys for enabled tools before making the API call
     if (input.tavilySearchEnabled && !process.env.TAVILY_API_KEY) {
-      throw new Error("Tavily Search tool requires a TAVILY_API_KEY environment variable");
+      throw new Error(
+        "Tavily Search tool requires a TAVILY_API_KEY environment variable"
+      );
     }
-    
+
     if (input.tavilyExtractEnabled && !process.env.TAVILY_API_KEY) {
-      throw new Error("Tavily Extract tool requires a TAVILY_API_KEY environment variable");
+      throw new Error(
+        "Tavily Extract tool requires a TAVILY_API_KEY environment variable"
+      );
     }
-    
+
     if (input.perplexitySearchEnabled && !process.env.PERPLEXITY_API_KEY) {
-      throw new Error("Perplexity Search tool requires a PERPLEXITY_API_KEY environment variable");
+      throw new Error(
+        "Perplexity Search tool requires a PERPLEXITY_API_KEY environment variable"
+      );
     }
-    
-    if (input.perplexityDeepResearchEnabled && !process.env.PERPLEXITY_API_KEY) {
-      throw new Error("Perplexity Deep Research tool requires a PERPLEXITY_API_KEY environment variable");
+
+    if (
+      input.perplexityDeepResearchEnabled &&
+      !process.env.PERPLEXITY_API_KEY
+    ) {
+      throw new Error(
+        "Perplexity Deep Research tool requires a PERPLEXITY_API_KEY environment variable"
+      );
     }
-    
+
     // Context7 tools don't need specific API keys as they're handled by the MCP client
-    
+
     // Ensure maxTokens is a number and has a reasonable value
     const maxOutputTokens = Math.max(100, Number(input.maxTokens) || 4096);
-    console.log(`Using model: ${input.modelId} with maxOutputTokens: ${maxOutputTokens}`);
-    
+    console.log(
+      `Using model: ${input.modelId} with maxOutputTokens: ${maxOutputTokens}`
+    );
+
     // Call Genkit's generateStream function
     // This function returns an object immediately, which contains the stream and a response promise.
     const generationAPI = aiInstance.generateStream({
@@ -170,13 +232,16 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
     });
 
     // Get the stream of `GenerateResponseChunk` objects
-    const rawStream: AsyncIterable<GenerateResponseChunk<unknown>> = generationAPI.stream;
+    // Add type assertion to fix TypeScript error with potential never[] type
+    const rawStream: AsyncIterable<GenerateResponseChunk<unknown>> =
+      generationAPI.stream as AsyncIterable<GenerateResponseChunk<unknown>>;
 
     // Adapt the raw Genkit stream to the { text: string } format expected by the route
     const adaptedStream = adaptGenkitStream(rawStream);
 
     // Get the promise for the full GenerateResponseData
-    const responsePromise: Promise<GenerateResponseData> = generationAPI.response;
+    const responsePromise: Promise<GenerateResponseData> =
+      generationAPI.response;
 
     return {
       stream: adaptedStream,
@@ -185,40 +250,65 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
     };
   } catch (error) {
     console.error("Error initializing chat stream:", error);
-    
+
     // Format error message based on error type
-    let errorMessage = `Error: ${error instanceof Error ? error.message : String(error)}`;
-    
+    let errorMessage = `Error: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+
     // Check for specific tool-related errors
     const errorString = String(error);
-    if (errorString.includes("Tavily Search tool") || errorString.includes("Tavily Extract tool") || errorString.includes("TAVILY_API_KEY")) {
-      errorMessage = "Error: The Tavily tool requires an API key. Please add your TAVILY_API_KEY to the environment variables.";
-    } else if (errorString.includes("Perplexity Search tool") || errorString.includes("Perplexity Deep Research tool") || errorString.includes("PERPLEXITY_API_KEY")) {
-      errorMessage = "Error: The Perplexity tool requires an API key. Please add your PERPLEXITY_API_KEY to the environment variables.";
+    if (
+      errorString.includes("Tavily Search tool") ||
+      errorString.includes("Tavily Extract tool") ||
+      errorString.includes("TAVILY_API_KEY")
+    ) {
+      errorMessage =
+        "Error: The Tavily tool requires an API key. Please add your TAVILY_API_KEY to the environment variables.";
+    } else if (
+      errorString.includes("Perplexity Search tool") ||
+      errorString.includes("Perplexity Deep Research tool") ||
+      errorString.includes("PERPLEXITY_API_KEY")
+    ) {
+      errorMessage =
+        "Error: The Perplexity tool requires an API key. Please add your PERPLEXITY_API_KEY to the environment variables.";
     } else if (errorString.includes("Unable to determine type of of tool:")) {
-      if (errorString.includes("tavilySearch") || errorString.includes("tavilyExtract")) {
-        errorMessage = "Error: The Tavily tool is not properly configured. Please make sure TAVILY_API_KEY is set in your environment variables.";
-      } else if (errorString.includes("perplexitySearch") || errorString.includes("perplexityDeepResearch")) {
-        errorMessage = "Error: The Perplexity tool is not properly configured. Please make sure PERPLEXITY_API_KEY is set in your environment variables.";
+      if (
+        errorString.includes("tavilySearch") ||
+        errorString.includes("tavilyExtract")
+      ) {
+        errorMessage =
+          "Error: The Tavily tool is not properly configured. Please make sure TAVILY_API_KEY is set in your environment variables.";
+      } else if (
+        errorString.includes("perplexitySearch") ||
+        errorString.includes("perplexityDeepResearch")
+      ) {
+        errorMessage =
+          "Error: The Perplexity tool is not properly configured. Please make sure PERPLEXITY_API_KEY is set in your environment variables.";
       }
     }
-    
+
     // Create a custom error stream that will return the error to the client
     const errorStream = (async function* () {
       // Clean up the error message for client display
-      const clientErrorMessage = errorMessage.replace(/^Error: /, '');
+      const clientErrorMessage = errorMessage.replace(/^Error: /, "");
       yield { text: clientErrorMessage };
     })();
-    
+
     // Create a rejected promise that includes error details
     const errorPromise = Promise.reject(
-      new Error(`Failed to initialize chat: ${error instanceof Error ? error.message : String(error)}`)
+      new Error(
+        `Failed to initialize chat: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
     );
-    
-    // Still return a valid ChatStreamOutput structure so the UI can display the error
+
+    // Return a valid ChatStreamOutput structure with proper types
+    // The TypeScript error occurs because the return type needs explicit typing
     return {
-      stream: errorStream,
-      responsePromise: errorPromise,
+      stream: errorStream as AsyncIterable<{ text: string }>,  // Add proper type assertion
+      responsePromise: errorPromise as Promise<GenerateResponseData>,  // Add proper type assertion
       sessionId: currentSessionId,
     };
   }

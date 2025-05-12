@@ -14,8 +14,6 @@ import {
   Sparkles,
   BrainCircuit,
   Paperclip,
-  Book,
-  Library,
 } from "lucide-react";
 
 interface ChatInputControlsProps {
@@ -34,10 +32,6 @@ interface ChatInputControlsProps {
   perplexityDeepResearchEnabled: boolean;
   onPerplexityDeepResearchToggle: () => void;
   
-  // Context7 tools
-  context7ResolveLibraryIdEnabled?: boolean;
-  context7GetLibraryDocsEnabled?: boolean;
-
   onFileUploadTrigger: () => void; // To trigger the hidden file input in parent
 }
 
@@ -55,8 +49,6 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
   onPerplexitySearchToggle,
   perplexityDeepResearchEnabled,
   onPerplexityDeepResearchToggle,
-  context7ResolveLibraryIdEnabled = false,
-  context7GetLibraryDocsEnabled = false,
   onFileUploadTrigger,
 }) => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -179,52 +171,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
               </p>
             </TooltipContent>
           </Tooltip>
-          {/* Context7 Library ID Resolver */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                disabled={isLoading || isUploading}
-              >
-                <Library
-                  className={cn(
-                    "h-4 w-4",
-                    context7ResolveLibraryIdEnabled
-                      ? "text-cyan-500"
-                      : "text-muted-foreground",
-                  )}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Context7 Library ID Resolver</p>
-            </TooltipContent>
-          </Tooltip>
-          {/* Context7 Library Docs */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                disabled={isLoading || isUploading}
-              >
-                <Book
-                  className={cn(
-                    "h-4 w-4",
-                    context7GetLibraryDocsEnabled
-                      ? "text-emerald-500"
-                      : "text-muted-foreground",
-                  )}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Context7 Library Documentation</p>
-            </TooltipContent>
-          </Tooltip>
+
         </div>
       </TooltipProvider>
 

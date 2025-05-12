@@ -31,7 +31,7 @@ if (typeof window === "undefined") {
 // API Key Check (ensure GEMINI_API_KEY or GOOGLE_API_KEY is set in the environment)
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
   console.error(
-    "FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set. Genkit cannot start.",
+    "FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set. Genkit cannot start."
   );
   // Throw an error to prevent Genkit from starting incorrectly
   // Note: The googleAI plugin itself might throw, but being explicit here is safer.
@@ -51,7 +51,7 @@ function getContext7Client() {
   } catch (e) {
     console.warn(
       "Failed to initialize Context7 MCP client, will continue without it:",
-      e,
+      e
     );
     return null;
   }
@@ -83,7 +83,7 @@ function getPlugins() {
           indexName: "documentRagStore",
           embedder: textEmbedding004,
         },
-      ]),
+      ])
     );
   } catch (e) {
     console.warn("Failed to initialize vectorstore plugin:", e);
@@ -95,7 +95,7 @@ function getPlugins() {
         projectId: PROJECT_ID,
         location: LOCATION,
         rerankers: ["vertexai/reranker"],
-      }),
+      })
     );
   } catch (e) {
     console.warn("Failed to initialize reranker plugin:", e);
@@ -123,7 +123,7 @@ export const aiInstance = (function () {
         console.log("Tavily plugin initialized successfully");
       } else {
         console.warn(
-          "TAVILY_API_KEY not found in environment variables. Tavily tools will not be available.",
+          "TAVILY_API_KEY not found in environment variables. Tavily tools will not be available."
         );
       }
     } catch (e) {
@@ -137,7 +137,7 @@ export const aiInstance = (function () {
         console.log("Perplexity plugin initialized successfully");
       } else {
         console.warn(
-          "PERPLEXITY_API_KEY not found in environment variables. Perplexity tools will not be available.",
+          "PERPLEXITY_API_KEY not found in environment variables. Perplexity tools will not be available."
         );
       }
     } catch (e) {
@@ -151,13 +151,13 @@ export const aiInstance = (function () {
     return {
       generate: () => {
         console.error(
-          "Genkit instance failed to initialize. Operations will fail.",
+          "Genkit instance failed to initialize. Operations will fail."
         );
         return Promise.reject(new Error("Genkit not initialized"));
       },
       generateStream: () => {
         console.error(
-          "Genkit instance failed to initialize. Operations will fail.",
+          "Genkit instance failed to initialize. Operations will fail."
         );
         return {
           stream: [],
@@ -211,7 +211,7 @@ export async function startGenkitServer() {
     // API Key Check
     if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
       console.error(
-        "FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set.",
+        "FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set."
       );
       throw new Error("Missing Google AI API Key environment variable.");
     }
@@ -236,10 +236,10 @@ export async function startGenkitServer() {
     });
 
     console.log(
-      `Genkit server started on port 3400 with ${flowsToRegister.length} flow(s) registered.`,
+      `Genkit server started on port 3400 with ${flowsToRegister.length} flow(s) registered.`
     );
     console.log(
-      "Genkit Developer UI should be available at http://localhost:4000",
+      "Genkit Developer UI should be available at http://localhost:4000"
     );
   } catch (e) {
     console.error("Failed to start Genkit server:", e);

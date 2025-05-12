@@ -146,9 +146,15 @@ function processSseEvent(
   if (eventTypeToProcess === "text" || eventTypeToProcess === "chunk") {
     let textContent = "";
     let parsedSuccessfully = false;
-
-    // Log chunk details for debugging
+    
     console.log(`[useChatStreaming] Processing ${eventTypeToProcess} event, length: ${joinedDataPayload.length}`);
+    
+    // For very short text chunks, just pass them directly without complex parsing
+    if (joinedDataPayload.length < 30 && !joinedDataPayload.includes('{') && !joinedDataPayload.includes('"text"')) {
+      console.log(`[useChatStreaming] Short, non-JSON chunk detected, passing through directly`);
+      callbacks.onText(joinedDataPayload);
+      return;
+    }
     
     // First, handle backslashes and special characters to prevent JSON parsing issues
     const safePayload = joinedDataPayload
@@ -166,7 +172,17 @@ function processSseEvent(
     if (isPotentialJsonTextContainer) {
       try {
         // First attempt with sanitized payload
-        const parsedAsJson = safeDestr<{ text?: string; parts?: {text?: string}[] }>(safePayload);
+        interface FlexibleJsonResponse {
+          text?: string;
+          parts?: Array<{text?: string} | string | any>;
+          content?: {text?: string} | string;
+          message?: {content?: any; text?: string};
+          data?: {text?: string};
+          response?: any;
+          output?: any;
+          value?: string;
+        }
+        const parsedAsJson = safeDestr<FlexibleJsonResponse>(safePayload);
         
         // Handle different JSON structures we might receive
         if (parsedAsJson && typeof parsedAsJson.text === "string") {
@@ -181,6 +197,13 @@ function processSseEvent(
           for (const part of parsedAsJson.parts) {
             if (part && typeof part.text === 'string') {
               combinedText += part.text;
+            } else if (part && typeof part === 'string') {
+              // Handle case where part is directly a string
+              combinedText += part;
+            } else if (part && typeof part === 'object') {
+              // Try to extract text from nested objects
+              const extractedText = part.content || part.value || part.data || JSON.stringify(part);
+              combinedText += typeof extractedText === 'string' ? extractedText : JSON.stringify(extractedText);
             }
           }
           
@@ -189,12 +212,41 @@ function processSseEvent(
             parsedSuccessfully = true;
             console.log(`[useChatStreaming] Combined ${parsedAsJson.parts.length} text parts, total length: ${textContent.length}`);
           }
+        } else if (parsedAsJson && typeof parsedAsJson === 'object') {
+          // Try other common response formats
+          const textFromCommonPaths = 
+            (parsedAsJson.content && typeof parsedAsJson.content === 'object' ? parsedAsJson.content.text : undefined) || 
+            (parsedAsJson.message && typeof parsedAsJson.message === 'object' ? parsedAsJson.message.content : undefined) || 
+            (parsedAsJson.message && typeof parsedAsJson.message === 'object' ? parsedAsJson.message.text : undefined) ||
+            (parsedAsJson.data && typeof parsedAsJson.data === 'object' ? parsedAsJson.data.text : undefined) ||
+            parsedAsJson.response ||
+            parsedAsJson.output;
+            
+          if (textFromCommonPaths) {
+            if (typeof textFromCommonPaths === 'string') {
+              textContent = textFromCommonPaths;
+              parsedSuccessfully = true;
+            } else if (Array.isArray(textFromCommonPaths)) {
+              textContent = textFromCommonPaths.map(part => 
+                typeof part === 'string' ? part : 
+                part && typeof part === 'object' && part.text ? part.text : 
+                JSON.stringify(part)
+              ).join('');
+              parsedSuccessfully = true;
+            }
+          }
         }
       } catch (e) {
         // JSON parsing failed with sanitized payload
         try {
           // Try broader regex pattern for extraction as a fallback
-          const matches = safePayload.matchAll(/"(?:text|content)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g);
+          // Using regular exec instead of matchAll for ES2015 compatibility
+          const regex = /"(?:text|content)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+          let matches = [];
+          let match;
+          while ((match = regex.exec(safePayload)) !== null) {
+            matches.push(match);
+          }
           let allMatches = "";
           
           for (const match of matches) {
@@ -230,12 +282,20 @@ function processSseEvent(
         try {
           // Extract ALL content between text:" patterns
           let extractedText = "";
-          const regex = /"text":"(.*?)(?<!\\)(?:"|$)/gs;
+          // Simplified regex for ES2015 compatibility
+          const regex = /"text":"([^"]*)"/g;
           let match;
           
           while ((match = regex.exec(joinedDataPayload)) !== null) {
             if (match[1]) {
-              extractedText += match[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+              // Handle escaped quotes in the content
+              const unescapedText = match[1]
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, '\\')
+                .replace(/\\n/g, '\n')
+                .replace(/\\r/g, '\r')
+                .replace(/\\t/g, '\t');
+              extractedText += unescapedText;
             }
           }
           
@@ -376,26 +436,53 @@ function processSseEvent(
             }
           } else {
             // Simple termination
-            sanitizedPayload = sanitizedPayload + '","toolInvocations":[],"sessionId":""}';
+            sanitizedPayload = sanitizedPayload + '","toolInvocations":[],"sessionId":""}';  
           }
         }
       }
       
-      // Apply comprehensive character escaping
-      sanitizedPayload = sanitizedPayload
-        .replace(/\\/g, '\\\\')    // Must come first to avoid double-escaping
-        .replace(/\n/g, '\\n')     // Newlines
-        .replace(/\r/g, '\\r')     // Carriage returns
-        .replace(/\t/g, '\\t')     // Tabs
-        .replace(/[\u0000-\u001F]/g, match => `\\u${match.charCodeAt(0).toString(16).padStart(4, '0')}`); // Control chars
+      // Declare jsonData at the top of the scope to avoid reference errors
+      let jsonData: any;
+      
+      // Special handling for Context7 responses which often have complex escape sequences
+      if (eventTypeToProcess === 'final_response' && joinedDataPayload.includes('Context7')) {
+        console.log('[useChatStreaming] Detected Context7 response, using specialized parsing logic');
         
-      // Log the sanitized payload for debugging
-      if (eventTypeToProcess === 'final_response') {
-        console.log(`[useChatStreaming] Sanitized payload for JSON parsing (first 100 chars): ${sanitizedPayload.slice(0, 100)}...`);
+        try {
+          // Try to manually extract the response content to avoid escaping issues
+          // Use a compatible regex without the 's' flag by using [\s\S]* instead of [^]*
+          const responseMatch = joinedDataPayload.match(/"response":"([\s\S]*?[^\\])(?:\\\\)*"/);  
+          if (responseMatch && responseMatch[1]) {
+            const extractedContent = responseMatch[1]
+              .replace(/\\n/g, '\n')
+              .replace(/\\r/g, '\r')
+              .replace(/\\t/g, '\t')
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, '\\');
+              
+            // Create a sanitized JSON object directly
+            jsonData = {
+              response: extractedContent,
+              toolInvocations: [],
+              sessionId: ""
+            };
+            console.log(`[useChatStreaming] Successfully extracted Context7 response content (${extractedContent.length} chars)`);
+            
+            // Skip normal parsing
+            if (jsonData) {
+              switch (eventTypeToProcess) {
+                case "final_response":
+                  callbacks.onFinalResponse(jsonData as ParsedJsonData);
+                  break;
+              }
+              return;
+            }
+          }
+        } catch (context7Error) {
+          console.error(`[useChatStreaming] Context7 specialized parsing failed: ${context7Error}`);
+          // Fall through to normal parsing as a backup
+        }
       }
-        
-      // Attempt to parse the sanitized JSON
-      let jsonData;
       try {
         jsonData = safeDestr<any>(sanitizedPayload);
       } catch (parseError) {
@@ -507,7 +594,8 @@ function processSseEvent(
                 try {
                   // More robust pattern matching for complete response content
                   // This regex captures the entire content between response:" and the next unescaped quote
-                  const responsePattern = /"response":"((?:\\.|[^"\\])*)(?<!\\)"/s;
+                  // Using [\s\S]* instead of s flag for compatibility with older ES versions
+                  const responsePattern = /"response":"((?:\\.|[^"\\])*[^\\])"/;
                   const responseMatch = joinedDataPayload.match(responsePattern);
                   const sessionIdMatch = joinedDataPayload.match(/"sessionId":"([^"]+)"/);
                   
@@ -907,7 +995,8 @@ function processSseEvent(
             }
           } else if (joinedDataPayload.includes('"text":"') || joinedDataPayload.includes('"content":"')) {
             // Try to extract from alternate field names
-            const altPattern = /"(?:text|content)":"((?:\\.|[^"\\])*)(?:"|$)/s;
+            // Using [\s\S]* instead of s flag for compatibility with older ES versions
+            const altPattern = /"(?:text|content)":"((?:\\.|[^"\\])*)(?:"|$)/;
             const altMatch = joinedDataPayload.match(altPattern);
             
             if (altMatch && altMatch[1]) {

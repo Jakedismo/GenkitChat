@@ -47,7 +47,7 @@ const ServerStatusDisplay: React.FC<ServerStatusDisplayProps> = ({
           </div>
         ))}
         {connectedServers.length === 0 && (
-          <p className="text-xs text-muted-foreground p-2">No MCP servers configured.</p>
+          <p className="text-xs text-muted-foreground p-2">No servers connected.</p>
         )}
       </div>
     </SidebarGroup>

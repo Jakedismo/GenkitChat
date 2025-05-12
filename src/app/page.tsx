@@ -152,6 +152,12 @@ const GenkitChat: React.FC = () => {
               : s,
           ),
         );
+        
+        // Automatically enable Context7 tools when server is connected
+        if (fetchedTools.length > 0) {
+          setContext7ResolveLibraryIdEnabled(true);
+          setContext7GetLibraryDocsEnabled(true);
+        }
       } catch (error) {
         console.error("Failed to fetch tool info:", error);
         toast({
@@ -367,31 +373,15 @@ const GenkitChat: React.FC = () => {
             />
             <ServerStatusDisplay connectedServers={connectedServers} />
             
-            {/* Context7 Tool Controls */}
-            {connectedServers.some(s => s.name === "context7" && s.status === "Connected") && (
-              <div className="mt-4 space-y-2 border-t pt-4">
-                <h3 className="text-sm font-medium">Context7 Tools</h3>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs">Library ID Resolver</span>
-                  <Switch 
-                    checked={context7ResolveLibraryIdEnabled}
-                    onCheckedChange={setContext7ResolveLibraryIdEnabled}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs">Library Docs</span>
-                  <Switch 
-                    checked={context7GetLibraryDocsEnabled}
-                    onCheckedChange={setContext7GetLibraryDocsEnabled}
-                  />
-                </div>
-              </div>
-            )}
-            
             <div className="p-2 mt-auto">
-              <Button variant="outline" className="w-full" onClick={clearChat}>
-                Clear Chat
-              </Button>
+              <div className="flex space-x-2 w-full">
+                  <Button variant="outline" className="flex-1" onClick={clearChat}>
+                      Clear Chat
+                  </Button>
+                  <Button variant="outline" className="flex-none" onClick={() => setRenderKey(Date.now())} title="Refresh UI">
+                      Refresh
+                  </Button>
+              </div>
             </div>
             <div className="mt-4 pt-2 border-t">
               <p className="text-center text-xs text-muted-foreground">
@@ -400,16 +390,17 @@ const GenkitChat: React.FC = () => {
             </div>
           </aside>
           <div className="flex-1 p-4 flex flex-col relative">
-            <Card className="flex flex-1 flex-col overflow-hidden">
-              <CardContent className="relative flex-1 p-0 overflow-hidden">
-                <ScrollArea
-                  className="h-full w-full pb-0"
-                  ref={scrollAreaRef as React.RefObject<HTMLDivElement>}
-                >
-                  <div
-                    className="flex flex-col gap-4 p-4 pb-48"
-                    key={`messages-${renderKey}`}
-                  >
+                <Card className="flex flex-1 flex-col overflow-hidden">
+                  <CardContent className="relative flex-1 p-0 overflow-hidden">
+                    <ScrollArea
+                      className="h-full w-full pb-0"
+                      ref={scrollAreaRef as React.RefObject<HTMLDivElement>}
+                    >
+                      <div
+                        className="flex flex-col gap-4 p-4 pb-48"
+                        key={`messages-${renderKey}`}
+                        data-messages-container="true"
+                      >
                     {messages.map((message) => (
                       <div
                         key={message.id}
@@ -419,6 +410,8 @@ const GenkitChat: React.FC = () => {
                             ? "items-end"
                             : "items-start",
                         )}
+                        data-message-id={message.id}
+                        data-message-type={message.sender}
                       >
                         <div
                           className={cn(
@@ -458,6 +451,13 @@ const GenkitChat: React.FC = () => {
                                       )
                                     </span>
                                   )}
+                                <span className="block mt-1">
+                                  Length: {typeof message.text === "string" 
+                                    ? message.text.length 
+                                    : Array.isArray(message.text)
+                                      ? message.text.join('').length
+                                      : JSON.stringify(message.text).length} chars
+                                </span>
                               </div>
                             )}
 
@@ -473,27 +473,21 @@ const GenkitChat: React.FC = () => {
                                   ? message.text
                                   : String(message.text || "")}
                               </ReactMarkdown>
-                            ) : message.text &&
-                              (typeof message.text !== "string" ||
-                                message.text.trim() !== "") ? (
-                              message.sources &&
-                              message.sources.length > 0 &&
-                              typeof message.text === "string" &&
-                              message.text.includes("[Source:") ? (
-                                <ChatMessageContent
-                                  text={message.text}
-                                  onCitationClick={(chunkIndex) =>
-                                    handleCitationClick(message.id, chunkIndex)
-                                  }
-                                  components={markdownComponents}
-                                />
-                              ) : (
-                                <ChatMessageContent
-                                  text={message.text}
-                                  onCitationClick={() => {}} // Empty handler for non-citation text
-                                  components={markdownComponents}
-                                />
-                              )
+                            ) : message.text ? (
+                              // Always use ChatMessageContent for bot messages
+                              // This handles both citation and non-citation messages
+                              // and normalizes different text formats
+                              <ChatMessageContent
+                                text={message.text}
+                                onCitationClick={
+                                  message.sources && 
+                                  message.sources.length > 0 && 
+                                  (typeof message.text === "string" && message.text.includes("[Source:"))
+                                    ? (chunkIndex) => handleCitationClick(message.id, chunkIndex)
+                                    : () => {} // Empty handler for non-citation text
+                                }
+                                components={markdownComponents}
+                              />
                             ) : null}
 
                             {message.sender === "bot" && (
@@ -588,6 +582,30 @@ const GenkitChat: React.FC = () => {
                             >
                               Refresh Messages
                             </button>
+                            <button
+                              onClick={() => {
+                                // Show message lengths
+                                const messageStats = messages
+                                  .filter(m => m.sender === 'bot')
+                                  .map(m => ({
+                                    id: m.id.substring(0, 6),
+                                    type: typeof m.text,
+                                    length: typeof m.text === 'string' 
+                                      ? m.text.length 
+                                      : JSON.stringify(m.text).length
+                                  }));
+                                console.table(messageStats);
+                                toast({
+                                  title: "Message Stats",
+                                  description: `${messages.length} messages, logged to console`,
+                                  variant: "default",
+                                });
+                              }}
+                              className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
+                              title="Log message stats to console"
+                            >
+                              Debug Stats
+                            </button>
                           </div>
                         </div>
                       )}
@@ -639,8 +657,6 @@ const GenkitChat: React.FC = () => {
                         !perplexityDeepResearchEnabled,
                       )
                     }
-                    context7ResolveLibraryIdEnabled={context7ResolveLibraryIdEnabled}
-                    context7GetLibraryDocsEnabled={context7GetLibraryDocsEnabled}
                     onFileUploadTrigger={triggerFileUpload}
                   />
                 </div>

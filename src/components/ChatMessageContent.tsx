@@ -5,11 +5,49 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight'; // Assuming consistency with page.tsx
 
 interface ChatMessageContentProps {
-  text: string;
+  text: string | string[] | { text?: string; content?: string } | any;
   // Callback when a citation is clicked.
   // `chunkIndexInSources` is the index within the message's `sources` array.
   onCitationClick: (chunkIndexInSources: number) => void;
+  components?: Record<string, React.ComponentType<any>>;
 }
+
+// Helper function to normalize different text formats into a single string
+const normalizeText = (text: ChatMessageContentProps['text']): string => {
+  if (typeof text === 'string') {
+    return text;
+  }
+  
+  if (Array.isArray(text)) {
+    return text.map(item => 
+      typeof item === 'string' ? item : 
+      (item && typeof item === 'object' && (item.text || item.content)) 
+        ? (item.text || item.content) 
+        : JSON.stringify(item)
+    ).join('');
+  }
+  
+  if (text && typeof text === 'object') {
+    if ('text' in text && typeof text.text === 'string') {
+      return text.text;
+    }
+    if ('content' in text && typeof text.content === 'string') {
+      return text.content;
+    }
+    // Handle arrays within objects
+    if ('parts' in text && Array.isArray(text.parts)) {
+      return text.parts.map((part: any) => 
+        typeof part === 'string' ? part : 
+        (part && typeof part === 'object' && (part.text || part.content)) 
+          ? (part.text || part.content) 
+          : JSON.stringify(part)
+      ).join('');
+    }
+    return JSON.stringify(text);
+  }
+  
+  return String(text || '');
+};
 
 // Regex to find citations like [Source: annual_report.pdf, Chunk: 0]
 // It captures:
@@ -20,7 +58,11 @@ const citationRegex = /\[Source: (.*?), Chunk: (\d+)]/g;
 const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   text,
   onCitationClick,
+  components = {},
 }) => {
+  // Normalize the text into a string format
+  const normalizedText = normalizeText(text);
+  
   const parts: JSX.Element[] = [];
   let lastIndex = 0;
   let match;
@@ -28,14 +70,16 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
 
   // Reset regex state for global regex
   citationRegex.lastIndex = 0;
+  
+  console.log(`[ChatMessageContent] Processing text (${typeof text}), normalized length: ${normalizedText.length}`);
 
-  while ((match = citationRegex.exec(text)) !== null) {
+  while ((match = citationRegex.exec(normalizedText)) !== null) {
     const [fullMatch, fileName, chunkIndexStr] = match;
     const chunkIndex = parseInt(chunkIndexStr, 10);
 
     // Add text segment before the current citation match, rendered with ReactMarkdown
     if (match.index > lastIndex) {
-      const textSegment = text.substring(lastIndex, match.index);
+      const textSegment = normalizedText.substring(lastIndex, match.index);
       parts.push(
         <ReactMarkdown
           key={`text-${partKey++}`}
@@ -69,14 +113,14 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   }
 
   // Add any remaining text after the last citation, rendered with ReactMarkdown
-  if (lastIndex < text.length) {
-    const remainingText = text.substring(lastIndex);
+  if (lastIndex < normalizedText.length) {
+    const remainingText = normalizedText.substring(lastIndex);
     parts.push(
       <ReactMarkdown
         key={`text-${partKey++}`}
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={{
+        components={components || {
             // Example: disable headings if they shouldn't appear in segments
             // h1: 'p', h2: 'p', h3: 'p', h4: 'p', h5: 'p', h6: 'p',
         }}
@@ -89,6 +133,19 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   // Render the parts. Each part is a ReactMarkdown component or a button.
   // Using a span to allow these to flow inline if used within a larger text block.
   // If block behavior is desired, a <div> could be used.
+  // If no parts were created (no citations found), render the entire text at once
+  if (parts.length === 0 && normalizedText.trim()) {
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={components}
+      >
+        {normalizedText}
+      </ReactMarkdown>
+    );
+  }
+
   return (
     <span className="inline leading-relaxed"> {/* `leading-relaxed` or similar for better line height with mixed content */}
       {parts.map((part) => part)}

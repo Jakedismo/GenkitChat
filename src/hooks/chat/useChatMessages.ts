@@ -169,48 +169,88 @@ export function useChatMessages(): UseChatMessagesReturn {
             const updatedMsg = { ...msg };
             let foundContent = false;
             
+            // Helper function to extract text from any part object
+            const extractTextFromPart = (part: any): string => {
+              if (typeof part === 'string') return part;
+              if (part === null || part === undefined) return '';
+              if (part && typeof part === 'object') {
+                // Check common text fields
+                if (typeof part.text === 'string') return part.text;
+                if (typeof part.content === 'string') return part.content;
+                if (typeof part.value === 'string') return part.value;
+                
+                // Handle nested arrays
+                if (Array.isArray(part.text)) {
+                  return part.text.map(extractTextFromPart).join('');
+                }
+                if (Array.isArray(part.content)) {
+                  return part.content.map(extractTextFromPart).join('');
+                }
+                if (Array.isArray(part.parts)) {
+                  return part.parts.map(extractTextFromPart).join('');
+                }
+              }
+              // Last resort: try to stringify (but handle circular references)
+              try {
+                return JSON.stringify(part);
+              } catch (e) {
+                return `[Complex Object]`;
+              }
+            };
+            
+            // Get the existing message text to compare with the final response
+            const existingText = typeof msg.text === 'string' ? msg.text : '';
+            
             try {
               // First priority: Check for Google/Gemini message.content array
               if (finalResponse.message?.content && Array.isArray(finalResponse.message.content)) {
                 console.log(`[useChatMessages] Processing message.content array with ${finalResponse.message.content.length} items`);
                 
-                const contentParts = finalResponse.message.content.map((part: any) => {
-                  if (typeof part === 'string') return part;
-                  if (part && typeof part === 'object' && part.text) return part.text;
-                  return JSON.stringify(part);
-                });
-                
+                const contentParts = finalResponse.message.content.map(extractTextFromPart);
                 const fullText = contentParts.join('');
                 console.log(`[useChatMessages] Joined message.content into text (${fullText.length} chars)`);
                 
                 if (fullText.trim()) {
-                  updatedMsg.text = fullText;
+                  // Only replace the text if we haven't streamed any content yet
+                  // or if the streamed content is incomplete
+                  if (!existingText || (fullText.length > existingText.length && fullText.includes(existingText.substring(0, 50)))) {
+                    console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with final message (${fullText.length} chars)`);
+                    updatedMsg.text = fullText;
+                  } else {
+                    console.log(`[useChatMessages] Keeping existing streamed content (${existingText.length} chars)`);
+                  }
                   foundContent = true;
                 }
               }
               
               // Second priority: Check for custom.candidates structure
-              if (!foundContent && finalResponse.custom?.candidates?.length > 0) {
+              if (!foundContent && finalResponse.custom?.candidates && finalResponse.custom.candidates.length > 0) {
                 const candidate = finalResponse.custom.candidates[0];
                 
                 if (candidate.content?.parts && Array.isArray(candidate.content.parts)) {
                   console.log(`[useChatMessages] Processing candidate.content.parts with ${candidate.content.parts.length} items`);
                   
-                  const contentParts = candidate.content.parts.map((part: any) => {
-                    if (typeof part === 'string') return part;
-                    if (part && typeof part === 'object' && part.text) return part.text;
-                    return JSON.stringify(part);
-                  });
-                  
+                  const contentParts = candidate.content.parts.map(extractTextFromPart);
                   const fullText = contentParts.join('');
                   console.log(`[useChatMessages] Joined candidate.content.parts into text (${fullText.length} chars)`);
                   
                   if (fullText.trim()) {
-                    updatedMsg.text = fullText;
+                    // Only replace the text if we haven't streamed any content yet
+                    // or if the streamed content is incomplete
+                    if (!existingText || (fullText.length > existingText.length && fullText.includes(existingText.substring(0, 50)))) {
+                      console.log(`[useChatMessages] Replacing streamed text with candidate parts`);
+                      updatedMsg.text = fullText;
+                    }
                     foundContent = true;
                   }
                 } else if (typeof candidate.content?.text === 'string') {
-                  updatedMsg.text = candidate.content.text;
+                  const fullText = candidate.content.text;
+                  // Only replace the text if we haven't streamed any content yet
+                  // or if the streamed content is incomplete
+                  if (!existingText || (fullText.length > existingText.length && fullText.includes(existingText.substring(0, 50)))) {
+                    console.log(`[useChatMessages] Replacing streamed text with candidate text`);
+                    updatedMsg.text = fullText;
+                  }
                   foundContent = true;
                 }
               }
@@ -219,37 +259,38 @@ export function useChatMessages(): UseChatMessagesReturn {
               if (!foundContent && finalResponse.response) {
                 if (Array.isArray(finalResponse.response)) {
                   // Array response
-                  const fullText = finalResponse.response
-                    .map(chunk => {
-                      if (typeof chunk === 'string') return chunk;
-                      if (chunk && typeof chunk === 'object' && chunk.text) return chunk.text;
-                      return JSON.stringify(chunk);
-                    })
-                    .join('');
+                  const fullText = finalResponse.response.map(extractTextFromPart).join('');
                   
                   if (fullText.trim()) {
-                    updatedMsg.text = fullText;
+                    // Only replace if necessary
+                    if (!existingText || (fullText.length > existingText.length && fullText.includes(existingText.substring(0, 50)))) {
+                      console.log(`[useChatMessages] Replacing streamed text with array response`);
+                      updatedMsg.text = fullText;
+                    }
                     foundContent = true;
                   }
                 } else if (typeof finalResponse.response === 'string') {
                   // String response
-                  if (finalResponse.response.trim()) {
-                    updatedMsg.text = finalResponse.response;
+                  const fullText = finalResponse.response;
+                  if (fullText.trim()) {
+                    // Only replace if necessary
+                    if (!existingText || (fullText.length > existingText.length && fullText.includes(existingText.substring(0, 50)))) {
+                      console.log(`[useChatMessages] Replacing streamed text with string response`);
+                      updatedMsg.text = fullText;
+                    }
                     foundContent = true;
                   }
                 } else if (finalResponse.response && typeof finalResponse.response === 'object') {
                   // Object response, might contain nested content
                   if (finalResponse.response.content && Array.isArray(finalResponse.response.content)) {
-                    const fullText = finalResponse.response.content
-                      .map((chunk: any) => {
-                        if (typeof chunk === 'string') return chunk;
-                        if (chunk && typeof chunk === 'object' && chunk.text) return chunk.text;
-                        return JSON.stringify(chunk);
-                      })
-                      .join('');
+                    const fullText = finalResponse.response.content.map(extractTextFromPart).join('');
                     
                     if (fullText.trim()) {
-                      updatedMsg.text = fullText;
+                      // Only replace if necessary
+                      if (!existingText || (fullText.length > existingText.length && fullText.includes(existingText.substring(0, 50)))) {
+                        console.log(`[useChatMessages] Replacing streamed text with object content response`);
+                        updatedMsg.text = fullText;
+                      }
                       foundContent = true;
                     }
                   }
