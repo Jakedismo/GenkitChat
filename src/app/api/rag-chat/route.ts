@@ -3,11 +3,12 @@ import fs from 'fs/promises'; // Add fs/promises
 import path from 'path';     // Add path
 // Removed unused import 'ai/rsc'
 import {
-  generateRagResponseStream,
+  documentQaStreamFlow,
   generateRagSessionId,
   processFileWithOfficeParser,
   MAX_UPLOAD_SIZE // Need this back for server-side size check
 } from "@/services/rag";
+import { withGenkitServer } from "@/lib/server"; // Import server initialization wrapper
 // Tool imports are no longer needed here as tools are accessed via aiInstance by name
 // Removed incorrect Tool type import
 
@@ -15,6 +16,7 @@ const UPLOADS_DIR = path.join(process.cwd(), 'uploads'); // Define base uploads 
 
 // Handle file uploads
 export async function POST(request: NextRequest) {
+  return withGenkitServer(async () => {
   try {
     // Check content type to differentiate file upload vs chat
     const contentType = request.headers.get("content-type") || "";
@@ -162,7 +164,7 @@ export async function POST(request: NextRequest) {
       // Add other tools based on their flags here...
       
       // Generate RAG response stream, passing tool names
-      const stream = await generateRagResponseStream(query, sessionId, modelId, toolNamesToUse);
+      const { stream } = documentQaStreamFlow.stream({ query, sessionId, modelId, tools: toolNamesToUse });
       
       // Return the stream using StreamingTextResponse or similar
       // Adapting based on typical 'ai' package usage
@@ -173,7 +175,7 @@ export async function POST(request: NextRequest) {
          async start(controller) {
            const encoder = new TextEncoder();
            try {
-             for await (const event of stream) { // event from generateRagResponseStream
+             for await (const event of stream) { // event from documentQaStreamFlow.stream()
                let sseEventString = "";
                switch (event.type) {
                  case 'sources':
@@ -251,10 +253,12 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+  });
 }
 
 // Handle clear chat requests
 export async function DELETE(request: NextRequest) {
+  return withGenkitServer(async () => {
   try {
     // Extract session ID from query parameters
     const { searchParams } = new URL(request.url);
@@ -285,4 +289,5 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
+  });
 }

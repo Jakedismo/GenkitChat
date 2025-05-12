@@ -8,6 +8,7 @@ import {
   SidebarFooter,
   SidebarProvider,
   SidebarTrigger,
+  SidebarContext,
 } from "@/components/ui/sidebar/index"; // Explicitly point to index
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -369,10 +370,14 @@ const LambdaChat: React.FC = () => {
   // handleSendMessage logic moved to useChatManager hook
   // clearChat logic moved to useChatManager hook
 
+  // Access sidebar state
+  const sidebarContext = React.useContext(SidebarContext);
+  const isSidebarCollapsed = sidebarContext?.state === "collapsed";
+  
   return (
     <SidebarProvider>
       <PdfWorkerSetup />
-      <div className="flex h-screen">
+      <div className="flex h-screen w-full overflow-hidden">
         <CitationPreviewSidebar
           isOpen={isCitationSidebarOpen}
           onClose={() => setIsCitationSidebarOpen(false)}
@@ -408,16 +413,15 @@ const LambdaChat: React.FC = () => {
             </p>
           </SidebarFooter>
         </Sidebar>
-        <div className="flex-1 p-4">
-          {" "}
+        <div className="flex-1 p-4 flex flex-col">
           {/* Main content area */}
-          <Card className="flex h-full flex-col">
-            <CardContent className="relative flex-1">
+          <Card className="flex flex-1 flex-col overflow-hidden">
+            <CardContent className="relative flex-1 p-0 overflow-hidden">
               <ScrollArea
-                className="h-full w-full"
+                className="h-full w-full pb-0"
                 ref={scrollAreaRef as React.RefObject<HTMLDivElement>}
               >
-                <div className="flex flex-col gap-4 p-4">
+                <div className="flex flex-col gap-4 p-4 pb-40">
                   {messages.map((message) => (
                     <div
                       key={message.id}
@@ -513,48 +517,57 @@ const LambdaChat: React.FC = () => {
                 </div>
               </ScrollArea>
             </CardContent>
-            <FileUploadManager
-              uploadedFiles={uploadedFiles}
-              onRemoveFile={removeFile}
-            />
+            
+            <div className={cn(
+              "fixed bottom-0 z-10 bg-card shadow-md border-t transition-all duration-300",
+              isSidebarCollapsed
+                ? "left-14 right-4" // Collapsed sidebar width (56px)
+                : "left-[275px] right-4", // Full sidebar width
+              "md:left-[275px] md:w-[calc(100%-291px)]" // Adjust for desktop view
+            )}>
+                <FileUploadManager
+                  uploadedFiles={uploadedFiles}
+                  onRemoveFile={removeFile}
+                />
+              
+                <div className="p-4">
+                {/* Hidden file input uses ref/handler from useFileUploads */}
+                <input
+                  type="file"
+                  ref={fileInputRef} // Use ref from hook
+                  onChange={(e) => handleFileChange(e.target.files)} // Use handler from hook
+                  className="hidden"
+                  multiple // Allow multiple files
+                />
 
-            <div className="border-t p-4">
-              {/* Hidden file input uses ref/handler from useFileUploads */}
-              <input
-                type="file"
-                ref={fileInputRef} // Use ref from hook
-                onChange={(e) => handleFileChange(e.target.files)} // Use handler from hook
-                className="hidden"
-                multiple // Allow multiple files
-              />
-
-              {/* Chat input controls use state/handlers from hooks */}
-              <ChatInputControls
-                userInput={userInput}
-                onUserInputChanges={setUserInput}
-                onSendMessage={handleSendMessage}
-                isLoading={isLoading} // from useChatManager
-                isUploading={isUploading} // from useFileUploads
-                tavilySearchEnabled={tavilySearchEnabled}
-                onTavilySearchToggle={() =>
-                  setTavilySearchEnabled(!tavilySearchEnabled)
-                }
-                tavilyExtractEnabled={tavilyExtractEnabled}
-                onTavilyExtractToggle={() =>
-                  setTavilyExtractEnabled(!tavilyExtractEnabled)
-                }
-                perplexitySearchEnabled={perplexitySearchEnabled}
-                onPerplexitySearchToggle={() =>
-                  setPerplexitySearchEnabled(!perplexitySearchEnabled)
-                }
-                perplexityDeepResearchEnabled={perplexityDeepResearchEnabled}
-                onPerplexityDeepResearchToggle={() =>
-                  setPerplexityDeepResearchEnabled(
-                    !perplexityDeepResearchEnabled,
-                  )
-                }
-                onFileUploadTrigger={triggerFileUpload}
-              />
+                {/* Chat input controls use state/handlers from hooks */}
+                <ChatInputControls
+                  userInput={userInput}
+                  onUserInputChanges={setUserInput}
+                  onSendMessage={handleSendMessage}
+                  isLoading={isLoading} // from useChatManager
+                  isUploading={isUploading} // from useFileUploads
+                  tavilySearchEnabled={tavilySearchEnabled}
+                  onTavilySearchToggle={() =>
+                    setTavilySearchEnabled(!tavilySearchEnabled)
+                  }
+                  tavilyExtractEnabled={tavilyExtractEnabled}
+                  onTavilyExtractToggle={() =>
+                    setTavilyExtractEnabled(!tavilyExtractEnabled)
+                  }
+                  perplexitySearchEnabled={perplexitySearchEnabled}
+                  onPerplexitySearchToggle={() =>
+                    setPerplexitySearchEnabled(!perplexitySearchEnabled)
+                  }
+                  perplexityDeepResearchEnabled={perplexityDeepResearchEnabled}
+                  onPerplexityDeepResearchToggle={() =>
+                    setPerplexityDeepResearchEnabled(
+                      !perplexityDeepResearchEnabled,
+                    )
+                  }
+                  onFileUploadTrigger={triggerFileUpload}
+                />
+                </div>
             </div>
           </Card>
         </div>

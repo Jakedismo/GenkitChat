@@ -1,5 +1,5 @@
 // src/genkit-server.ts
-// This file is the entry point for the 'genkit start' command.
+// This file exports the aiInstance and server initialization functions
 
 import { genkit } from "genkit/beta"; // Align with lib/genkit-instance, removed Genkit type
 import { logger } from "genkit/logging"; // Added for log level
@@ -11,19 +11,20 @@ import {
 } from "@genkit-ai/dev-local-vectorstore";
 import { vertexAIRerankers } from "@genkit-ai/vertexai/rerankers"; // Added for Vertex AI Reranker
 import { mcpClient } from "genkitx-mcp";
+import { tavily } from "@genkit-ai/tavily"; // Import Tavily Search plugin
 import { startFlowServer } from "@genkit-ai/express"; // For serving flows
 
-// Import your flows
-import { multiAgentResearchFlow } from "./ai/research-agents/research.flow";
-import { documentQaStreamFlow } from "./services/rag";
-// Import other flows as needed:
-// import { someOtherFlow } from './path/to/otherFlow';
+// Lazy-import flows to avoid circular dependencies
+let documentQaStreamFlow: any;
 
 // TODO: Replace with your actual Google Cloud Project ID and Location
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || "your-gcp-project-id";
 const LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
 
-console.log("Starting Genkit server initialization...");
+// Only log in server context to avoid client-side errors
+if (typeof window === 'undefined') {
+  console.log("Initializing Genkit configuration...");
+}
 
 // API Key Check (ensure GEMINI_API_KEY or GOOGLE_API_KEY is set in the environment)
 if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
@@ -35,70 +36,174 @@ if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
   throw new Error("Missing Google AI API Key environment variable.");
 }
 
-// Configure the Context7 MCP client
-const context7Client = mcpClient({
-  name: "context7",
-  serverProcess: {
-    command: "npx",
-    args: ["-y", "@upstash/context7-mcp@latest"],
-  },
-});
+// Function to safely configure Context7 MCP client
+function getContext7Client() {
+  try {
+    return mcpClient({
+      name: "context7",
+      serverProcess: {
+        command: "npx",
+        args: ["-y", "@upstash/context7-mcp@latest"],
+      },
+    });
+  } catch (e) {
+    console.warn("Failed to initialize Context7 MCP client, will continue without it:", e);
+    return null;
+  }
+}
 
-// Initialize Genkit
-export const aiInstance = genkit({
-  // Type for aiInstance will be inferred
-  promptDir: "src/ai/prompts",
-  plugins: [
-    googleAI(),
-    context7Client,
-    devLocalVectorstore([
+// Initialize plugins safely with fallbacks
+function getPlugins() {
+  const plugins = [];
+  
+  try {
+    plugins.push(googleAI());
+  } catch (e) {
+    console.warn("Failed to initialize Google AI plugin:", e);
+  }
+  
+  const context7 = getContext7Client();
+  if (context7) plugins.push(context7);
+  
+  try {
+    plugins.push(devLocalVectorstore([
       {
-        indexName: "documentRagStore", // Same name as used in lib/genkit-instance.ts
+        indexName: "documentRagStore",
         embedder: textEmbedding004,
       },
-    ]),
-    vertexAIRerankers({
-      // Added Vertex AI Reranker plugin
+    ]));
+  } catch (e) {
+    console.warn("Failed to initialize vectorstore plugin:", e);
+  }
+  
+  try {
+    plugins.push(vertexAIRerankers({
       projectId: PROJECT_ID,
       location: LOCATION,
       rerankers: ["vertexai/reranker"],
-      // You can specify which reranker models to enable, e.g., ['vertexai/reranker']
-      // If not specified, it might default or require explicit model names in ai.rerank() options.
-      // For simplicity, leaving it to default or explicit call-site specification for now.
-    }),
-  ],
-  // logLevel removed from here
-  // enableTracingAndMetrics removed as it's not a direct GenkitOption in beta or is enabled by default
-});
+    }));
+  } catch (e) {
+    console.warn("Failed to initialize reranker plugin:", e);
+  }
+  
+  // Add Tavily Search plugin
+  try {
+    const tavilyApiKey = process.env.TAVILY_API_KEY;
+    if (tavilyApiKey) {
+      plugins.push(tavily({
+        apiKey: tavilyApiKey,
+        tools: ["tavilySearch", "tavilyExtract"]
+      }));
+      console.log("Tavily Search plugin initialized successfully");
+    } else {
+      console.warn("TAVILY_API_KEY not found in environment variables. Tavily Search will not be available.");
+    }
+  } catch (e) {
+    console.warn("Failed to initialize Tavily Search plugin:", e);
+  }
+  
+  return plugins;
+}
 
-// Set log level using the imported logger
-logger.setLogLevel("debug");
+// Initialize Genkit with error handling
+export const aiInstance = (function() {
+  try {
+    const instance = genkit({
+      promptDir: "src/ai/prompts",
+      plugins: getPlugins(),
+    });
+    return instance;
+  } catch (e) {
+    console.error("Failed to initialize Genkit instance:", e);
+    // Return a stub object that won't break imports but logs errors when used
+    return {
+      generate: () => {
+        console.error("Genkit instance failed to initialize. Operations will fail.");
+        return Promise.reject(new Error("Genkit not initialized"));
+      },
+      generateStream: () => {
+        console.error("Genkit instance failed to initialize. Operations will fail.");
+        return {
+          stream: [],
+          response: Promise.reject(new Error("Genkit not initialized"))
+        };
+      }
+    };
+  }
+})();
 
-// Define and export RAG references
-const RAG_INDEX_NAME = "documentRagStore";
-export const ragIndexerRef = devLocalIndexerRef(RAG_INDEX_NAME);
-export const ragRetrieverRef = devLocalRetrieverRef(RAG_INDEX_NAME);
+// Set log level in server context only
+if (typeof window === 'undefined') {
+  try {
+    logger.setLogLevel("debug");
+  } catch (e) {
+    console.warn("Failed to set logger level:", e);
+  }
+}
 
-// Note: We don't need to export models like gemini20FlashExp from here,
-// as they are registered by the googleAI plugin and accessible via their string names.
+// Define and export RAG references with error handling
+export const ragIndexerRef = (function() {
+  try {
+    const RAG_INDEX_NAME = "documentRagStore";
+    return devLocalIndexerRef(RAG_INDEX_NAME);
+  } catch (e) {
+    console.warn("Failed to initialize RAG indexer ref:", e);
+    return null;
+  }
+})();
 
-console.log("Genkit instance initialized with plugins.");
+export const ragRetrieverRef = (function() {
+  try {
+    const RAG_INDEX_NAME = "documentRagStore";
+    return devLocalRetrieverRef(RAG_INDEX_NAME);
+  } catch (e) {
+    console.warn("Failed to initialize RAG retriever ref:", e);
+    return null;
+  }
+})();
 
-// Register flows and start the server
-const flowsToRegister = [
-  multiAgentResearchFlow,
-  documentQaStreamFlow,
-  // Add other imported flows here:
-  // someOtherFlow,
-];
+// Function to start the flow server - NOT automatically executed
+export async function startGenkitServer() {
+  if (typeof window !== 'undefined') {
+    console.warn("Cannot start Genkit server in browser context");
+    return;
+  }
+  
+  try {
+    console.log("Starting Genkit server initialization...");
+    
+    // API Key Check
+    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
+      console.error("FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set.");
+      throw new Error("Missing Google AI API Key environment variable.");
+    }
+    
+    console.log("Genkit instance initialized with plugins.");
+    
+    // Lazy-load flows to avoid circular dependencies
+    const rag = await import("./services/rag");
+    documentQaStreamFlow = rag.documentQaStreamFlow;
+    
+    // Register flows and start the server
+    const flowsToRegister = [
+      documentQaStreamFlow,
+      // Add other imported flows here:
+      // someOtherFlow,
+    ];
+    
+    await startFlowServer({
+      flows: flowsToRegister,
+      port: 3400,
+      cors: { origin: "*" },
+    });
+    
+    console.log(
+      `Genkit server started on port 3400 with ${flowsToRegister.length} flow(s) registered.`,
+    );
+    console.log("Genkit Developer UI should be available at http://localhost:4000");
+  } catch (e) {
+    console.error("Failed to start Genkit server:", e);
+  }
+}
 
-startFlowServer({
-  flows: flowsToRegister,
-  port: 3400, // Default Genkit port, adjust if needed
-  cors: { origin: "*" }, // Adjust CORS for your needs
-});
-
-console.log(
-  `Genkit server started on port 3400 with ${flowsToRegister.length} flow(s) registered.`,
-);
-console.log("Genkit Developer UI should be available at http://localhost:4000");
+// Don't auto-start the server - it will be started explicitly when needed

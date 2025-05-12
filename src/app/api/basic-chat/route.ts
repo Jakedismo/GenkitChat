@@ -1,4 +1,5 @@
-import { runBasicChatFlowStream, ToolInvocation } from "@/lib/genkit-instance"; // Use streaming version, import ToolInvocation
+import { initiateChatStream, ToolInvocation, ChatInput } from "@/lib/chat-utils"; // Use streaming version, import types
+import { withGenkitServer } from "@/lib/server"; // Import server initialization wrapper
 import { NextResponse } from "next/server";
 import { z } from "zod";
 // Import necessary types from @genkit-ai/ai
@@ -35,6 +36,7 @@ function formatSSE(event: string, data: string): string {
 
 // Restore manual POST handler
 export async function POST(request: Request) {
+  return withGenkitServer(async () => {
   try {
     const json = await request.json();
     console.log("SERVER_RECEIVED_PAYLOAD:", JSON.stringify(json, null, 2)); // Add this line
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
         stream,
         responsePromise,
         sessionId: usedSessionId,
-      } = await runBasicChatFlowStream(validatedInput.data);
+      } = await initiateChatStream(validatedInput.data as ChatInput);
 
       const readableStream = new ReadableStream({
         async start(controller) {
@@ -74,6 +76,16 @@ export async function POST(request: Request) {
           for await (const chunk of stream) {
             const textChunk = chunk.text;
             if (textChunk) {
+              // Check if the text chunk contains an error message (from chat-utils.ts)
+              if (textChunk.startsWith("Error:") || textChunk.startsWith("Error in stream processing:")) {
+                controller.enqueue(
+                  encoder.encode(
+                    formatSSE("error", JSON.stringify({ error: textChunk }))
+                  )
+                );
+                continue;
+              }
+              
               controller.enqueue(
                 encoder.encode(
                   formatSSE("chunk", JSON.stringify({ text: textChunk }))
@@ -83,11 +95,18 @@ export async function POST(request: Request) {
           }
 
           // Wait for the final response
-          const finalResponse = await responsePromise;
-          console.log(
-            "Raw Final Response Object:",
-            JSON.stringify(finalResponse, null, 2)
-          );
+          let finalResponse;
+          try {
+            finalResponse = await responsePromise;
+            console.log(
+              "Raw Final Response Object:",
+              JSON.stringify(finalResponse, null, 2)
+            );
+          } catch (responseError) {
+            console.error("Error getting final response:", responseError);
+            // We already handled streaming errors, so just return early
+            return;
+          }
           // Cast to GenerateResponse to access properties safely
           finalResponseData.response = (finalResponse as GenerateResponse)?.text ?? ""; // Store final text
 
@@ -163,15 +182,23 @@ export async function POST(request: Request) {
           );
         } catch (streamError) {
           console.error("Error during stream processing:", streamError);
+            
+          // Check for tool-related errors
+          const errorStr = String(streamError);
+          let errorMessage = streamError instanceof Error ? streamError.message : "An error occurred during streaming.";
+            
+          if (errorStr.includes("Unable to determine type of of tool:") || 
+              errorStr.includes("tavilySearch") ||
+              errorStr.includes("tavily")) {
+            errorMessage = "The Tavily Search tool is not properly configured. Please make sure TAVILY_API_KEY is set in your environment variables.";
+          }
+            
           controller.enqueue(
             encoder.encode(
               formatSSE(
                 "error",
                 JSON.stringify({
-                  error:
-                    streamError instanceof Error
-                      ? streamError.message
-                      : "An error occurred during streaming.",
+                  error: errorMessage
                 })
               )
             )
@@ -192,6 +219,22 @@ export async function POST(request: Request) {
     } catch (genkitError) {
       console.error("SERVER_ERROR_CALLING_GENKIT_FLOW:", genkitError);
       const errorMessage = genkitError instanceof Error ? genkitError.message : "Genkit flow failed";
+      
+      // Check for specific tool-related errors
+      const errorStr = String(genkitError);
+      if (errorStr.includes("Unable to determine type of of tool:") || 
+          errorStr.includes("tavilySearch") ||
+          errorStr.includes("tavily")) {
+        const toolError = "The Tavily Search tool is not properly configured. Please make sure TAVILY_API_KEY is set in your environment variables.";
+        console.error("TOOL_CONFIGURATION_ERROR:", toolError);
+        const errorPayload = JSON.stringify({ error: toolError });
+        const sseError = `event: error\ndata: ${errorPayload}\n\n`;
+        return new NextResponse(sseError, {
+          status: 500,
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+        });
+      }
+      
       // Send an SSE-formatted error back to the client.
       // Note: This assumes the error happens *before* the readableStream is returned.
       // If it happens after, the error handling within the stream itself should catch it.
@@ -214,4 +257,5 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+  });
 }
