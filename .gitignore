@@ -50,3 +50,5 @@ memory-bank/
 .roo
 .zed
 uploads/
+.db/
+.genkit_sessions/
