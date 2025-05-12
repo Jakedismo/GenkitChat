@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import dynamic from 'next/dynamic';
+import dynamic from "next/dynamic";
 import {
   Sidebar,
   SidebarContent,
@@ -79,7 +79,10 @@ mermaid.initialize({ startOnLoad: false }); // Don't run automatically on load
 // Interface for uploaded files with additional metadata (Moved to types/chat.ts)
 // interface UploadedFile { ... }
 
-const CitationPreviewSidebar = dynamic(() => import('@/components/CitationPreviewSidebar'), { ssr: false });
+const CitationPreviewSidebar = dynamic(
+  () => import("@/components/CitationPreviewSidebar"),
+  { ssr: false },
+);
 
 const LambdaChat: React.FC = () => {
   // Use the custom hook for chat settings state
@@ -401,7 +404,7 @@ const LambdaChat: React.FC = () => {
           </SidebarContent>
           <SidebarFooter>
             <p className="text-center text-xs text-muted-foreground">
-              Powered by Firebase Studio
+              Powered by GenkitChat
             </p>
           </SidebarFooter>
         </Sidebar>
