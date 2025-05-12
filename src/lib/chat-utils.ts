@@ -1,13 +1,10 @@
-// Import types separately to avoid circular dependencies
+import { aiInstance } from "@/genkit-server";
 import type {
   GenerateResponseData,
   MessageData,
   GenerateResponseChunk, // Represents a chunk from ai.generateStream().stream
 } from "genkit/beta";
 import { v4 as uuidv4 } from 'uuid';
-
-// Dynamically import the aiInstance to break potential circular dependencies
-let aiInstanceModule: any = null;
 
 // This interface is used by the calling API route (basic-chat/route.ts)
 // to structure tool invocation data extracted from the final response.
@@ -93,9 +90,13 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
   if (input.perplexitySearchEnabled) enabledToolNames.push("perplexitySearch");
   if (input.perplexityDeepResearchEnabled) enabledToolNames.push("perplexityDeepResearch");
   
-  // Verify if Tavily API key is set when Tavily tools are enabled
+  // Verify if API keys are set when tools are enabled and log warnings appropriately
   if ((input.tavilySearchEnabled || input.tavilyExtractEnabled) && !process.env.TAVILY_API_KEY) {
     console.warn("Tavily tools enabled but TAVILY_API_KEY environment variable is not set");
+  }
+  
+  if ((input.perplexitySearchEnabled || input.perplexityDeepResearchEnabled) && !process.env.PERPLEXITY_API_KEY) {
+    console.warn("Perplexity tools enabled but PERPLEXITY_API_KEY environment variable is not set");
   }
   
   // Log which tools are being enabled
@@ -104,6 +105,23 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
   }
 
   try {
+    // Check for missing API keys for enabled tools before making the API call
+    if (input.tavilySearchEnabled && !process.env.TAVILY_API_KEY) {
+      throw new Error("Tavily Search tool requires a TAVILY_API_KEY environment variable");
+    }
+    
+    if (input.tavilyExtractEnabled && !process.env.TAVILY_API_KEY) {
+      throw new Error("Tavily Extract tool requires a TAVILY_API_KEY environment variable");
+    }
+    
+    if (input.perplexitySearchEnabled && !process.env.PERPLEXITY_API_KEY) {
+      throw new Error("Perplexity Search tool requires a PERPLEXITY_API_KEY environment variable");
+    }
+    
+    if (input.perplexityDeepResearchEnabled && !process.env.PERPLEXITY_API_KEY) {
+      throw new Error("Perplexity Deep Research tool requires a PERPLEXITY_API_KEY environment variable");
+    }
+    
     // Call Genkit's generateStream function
     // This function returns an object immediately, which contains the stream and a response promise.
     const generationAPI = aiInstance.generateStream({
@@ -133,9 +151,28 @@ export async function initiateChatStream(input: ChatInput): Promise<ChatStreamOu
   } catch (error) {
     console.error("Error initializing chat stream:", error);
     
+    // Format error message based on error type
+    let errorMessage = `Error: ${error instanceof Error ? error.message : String(error)}`;
+    
+    // Check for specific tool-related errors
+    const errorString = String(error);
+    if (errorString.includes("Tavily Search tool") || errorString.includes("Tavily Extract tool") || errorString.includes("TAVILY_API_KEY")) {
+      errorMessage = "Error: The Tavily tool requires an API key. Please add your TAVILY_API_KEY to the environment variables.";
+    } else if (errorString.includes("Perplexity Search tool") || errorString.includes("Perplexity Deep Research tool") || errorString.includes("PERPLEXITY_API_KEY")) {
+      errorMessage = "Error: The Perplexity tool requires an API key. Please add your PERPLEXITY_API_KEY to the environment variables.";
+    } else if (errorString.includes("Unable to determine type of of tool:")) {
+      if (errorString.includes("tavilySearch") || errorString.includes("tavilyExtract")) {
+        errorMessage = "Error: The Tavily tool is not properly configured. Please make sure TAVILY_API_KEY is set in your environment variables.";
+      } else if (errorString.includes("perplexitySearch") || errorString.includes("perplexityDeepResearch")) {
+        errorMessage = "Error: The Perplexity tool is not properly configured. Please make sure PERPLEXITY_API_KEY is set in your environment variables.";
+      }
+    }
+    
     // Create a custom error stream that will return the error to the client
     const errorStream = (async function* () {
-      yield { text: `Error: ${error instanceof Error ? error.message : String(error)}` };
+      // Clean up the error message for client display
+      const clientErrorMessage = errorMessage.replace(/^Error: /, '');
+      yield { text: clientErrorMessage };
     })();
     
     // Create a rejected promise that includes error details

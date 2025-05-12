@@ -25,13 +25,26 @@ const InputSchema = z.object({
 // Define type for the final_response event payload
 interface FinalResponseData {
   response: string;
-  toolInvocations?: ToolInvocation[];
+  toolInvocations: ToolInvocation[]; // Always include this array, even if empty
   sessionId: string;
 }
 
 // Helper to format Server-Sent Events (SSE)
 function formatSSE(event: string, data: string): string {
-  return `event: ${event}\\ndata: ${data}\\n\\n`;
+  // Verify data is a valid string to prevent serialization issues
+  const safeData = typeof data === 'string' ? data : JSON.stringify({error: "Invalid data format"});
+  
+  try {
+    // Validate JSON by parsing and re-stringifying to catch any serialization issues
+    JSON.parse(safeData);
+  } catch (e) {
+    console.error(`Invalid JSON in formatSSE for event '${event}':`, e);
+    // If JSON is invalid, return a valid fallback
+    return `event: ${event}\ndata: ${JSON.stringify({error: `Invalid JSON data for ${event} event`})}\n\n`;
+  }
+  
+  // Ensure SSE format is correct with actual newlines, not escaped ones
+  return `event: ${event}\ndata: ${safeData}\n\n`;
 }
 
 // Restore manual POST handler
@@ -86,9 +99,11 @@ export async function POST(request: Request) {
                 continue;
               }
               
+              // Double-escape special characters in JSON to prevent parsing issues
+              const safeTextChunk = textChunk.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
               controller.enqueue(
                 encoder.encode(
-                  formatSSE("chunk", JSON.stringify({ text: textChunk }))
+                  formatSSE("chunk", JSON.stringify({ text: safeTextChunk }))
                 )
               );
             }
@@ -175,11 +190,84 @@ export async function POST(request: Request) {
 
           // Send final metadata (including session ID used/created)
           finalResponseData.sessionId = usedSessionId;
-          controller.enqueue(
-            encoder.encode(
-              formatSSE("final_response", JSON.stringify(finalResponseData))
-            )
-          );
+          
+          // Process the response text to ensure it can be safely included in JSON
+          // First convert to string if it's not already
+          let safeResponse = String(finalResponseData.response || "");
+          
+          // Handle trailing backslashes which often cause JSON parsing errors
+          if (safeResponse.endsWith('\\')) {
+            console.warn("Response ends with backslash, adding extra escaping");
+            // Count the number of trailing backslashes
+            let trailingCount = 0;
+            for (let i = safeResponse.length - 1; i >= 0; i--) {
+              if (safeResponse[i] === '\\') {
+                trailingCount++;
+              } else {
+                break;
+              }
+            }
+            // For odd number of trailing backslashes, add one more to properly escape
+            if (trailingCount % 2 !== 0) {
+              safeResponse += '\\';
+            }
+          }
+          
+          // Apply comprehensive character escaping
+          safeResponse = safeResponse
+            .replace(/\\/g, '\\\\') // Must come first to avoid double-escaping
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t')
+            .replace(/"/g, '\\"');
+          
+          // Create a safe copy of the data with the properly escaped response
+          const safeResponseData = {
+            ...finalResponseData,
+            response: safeResponse
+          };
+          
+          try {
+            // Use a more controlled approach to JSON serialization
+            // First stringify each field separately for better error isolation
+            const responseField = JSON.stringify(safeResponse);
+            const toolInvocationsField = JSON.stringify(safeResponseData.toolInvocations || []);
+            const sessionIdField = JSON.stringify(safeResponseData.sessionId || "");
+            
+            // Build the JSON manually to ensure proper formatting
+            const jsonString = `{"response":${responseField},"toolInvocations":${toolInvocationsField},"sessionId":${sessionIdField}}`;
+            
+            // Verify the constructed JSON is valid
+            JSON.parse(jsonString);
+            
+            controller.enqueue(
+              encoder.encode(
+                formatSSE("final_response", jsonString)
+              )
+            );
+            console.log("Successfully sent final_response event");
+          } catch (jsonError) {
+            console.error("Error serializing final_response to JSON:", jsonError);
+            console.error("JSON serialization error details:", jsonError);
+            
+            // Try to identify specific issues in the response for debugging
+            if (safeResponse.includes('\\')) {
+              console.warn("Response contains backslashes which may cause serialization issues:", 
+                Array.from(safeResponse).map(c => c === '\\' ? '\\\\' : c).join(''));
+            }
+            
+            // Send a simplified fallback response if JSON serialization fails
+            const fallbackResponse = {
+              response: "The server encountered an error formatting the response. This may be due to special characters in the text.",
+              toolInvocations: [],
+              sessionId: usedSessionId
+            };
+            controller.enqueue(
+              encoder.encode(
+                formatSSE("final_response", JSON.stringify(fallbackResponse))
+              )
+            );
+          }
         } catch (streamError) {
           console.error("Error during stream processing:", streamError);
             
@@ -191,14 +279,25 @@ export async function POST(request: Request) {
               errorStr.includes("tavilySearch") ||
               errorStr.includes("tavily")) {
             errorMessage = "The Tavily Search tool is not properly configured. Please make sure TAVILY_API_KEY is set in your environment variables.";
+          } else if (errorStr.includes("perplexitySearch") || 
+              errorStr.includes("perplexityDeepResearch") ||
+              errorStr.includes("Perplexity")) {
+            errorMessage = "The Perplexity tool is not properly configured. Please make sure PERPLEXITY_API_KEY is set in your environment variables.";
           }
             
+          // Process error message for safe JSON encoding with comprehensive character escaping
+          const safeErrorMessage = errorMessage
+            .replace(/\\/g, '\\\\') // Must come first to avoid double-escaping
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t')
+            .replace(/"/g, '\\"');
           controller.enqueue(
             encoder.encode(
               formatSSE(
                 "error",
                 JSON.stringify({
-                  error: errorMessage
+                  error: safeErrorMessage
                 })
               )
             )
@@ -227,8 +326,31 @@ export async function POST(request: Request) {
           errorStr.includes("tavily")) {
         const toolError = "The Tavily Search tool is not properly configured. Please make sure TAVILY_API_KEY is set in your environment variables.";
         console.error("TOOL_CONFIGURATION_ERROR:", toolError);
-        const errorPayload = JSON.stringify({ error: toolError });
-        const sseError = `event: error\ndata: ${errorPayload}\n\n`;
+        const safeToolError = toolError
+          .replace(/\\/g, '\\\\') // Must come first to avoid double-escaping
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t')
+          .replace(/"/g, '\\"');
+        const errorPayload = JSON.stringify({ error: safeToolError });
+        const sseError = formatSSE("error", errorPayload);
+        return new NextResponse(sseError, {
+          status: 500,
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+        });
+      } else if (errorStr.includes("perplexitySearch") || 
+          errorStr.includes("perplexityDeepResearch") ||
+          errorStr.includes("Perplexity")) {
+        const toolError = "The Perplexity tool is not properly configured. Please make sure PERPLEXITY_API_KEY is set in your environment variables.";
+        console.error("TOOL_CONFIGURATION_ERROR:", toolError);
+        const safeToolError = toolError
+          .replace(/\\/g, '\\\\') // Must come first to avoid double-escaping
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t')
+          .replace(/"/g, '\\"');
+        const errorPayload = JSON.stringify({ error: safeToolError });
+        const sseError = formatSSE("error", errorPayload);
         return new NextResponse(sseError, {
           status: 500,
           headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
@@ -238,9 +360,15 @@ export async function POST(request: Request) {
       // Send an SSE-formatted error back to the client.
       // Note: This assumes the error happens *before* the readableStream is returned.
       // If it happens after, the error handling within the stream itself should catch it.
-      const errorPayload = JSON.stringify({ error: `Genkit Flow Error: ${errorMessage}` });
-      // Manually construct an SSE response string for the error.
-      const sseError = `event: error\ndata: ${errorPayload}\n\n`;
+      const safeErrorMessage = errorMessage
+        .replace(/\\/g, '\\\\') // Must come first to avoid double-escaping
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t')
+        .replace(/"/g, '\\"');
+      const errorPayload = JSON.stringify({ error: `Genkit Flow Error: ${safeErrorMessage}` });
+      // Use the formatSSE helper for consistency
+      const sseError = formatSSE("error", errorPayload);
        return new NextResponse(sseError, {
          status: 500, // Or an appropriate error status
          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },

@@ -1,136 +1,153 @@
+// studio-master/src/ai/plugins/tavily-plugin.ts
 import { z } from "genkit/beta";
-import { tavily } from "@tavily/core";
-// import { Plugin } from "@genkit-ai/core"; // Plugin type not used in this structure
 import { Genkit } from "genkit";
+import { TavilyClient } from "tavily";
 
-// Define interfaces for Tavily options and responses to avoid 'any'
-interface TavilySearchOptions {
-  search_depth?: "basic" | "advanced";
-  max_results?: number;
-}
-
-interface TavilyExtractOptions {
-  extract_depth?: "basic" | "advanced";
-}
-
-interface TavilyExtractResultItem {
-  url?: string;
-  content?: string;
-}
-
-interface TavilyExtractFailedResultItem {
-  url?: string;
-  error?: string;
-}
-
-interface TavilyExtractResponse {
-  results?: TavilyExtractResultItem[];
-  failedResults?: TavilyExtractFailedResultItem[];
-}
-
-// Define the Tavily Plugin
+/**
+ * Creates and registers Tavily tools with a Genkit instance
+ * - tavilySearch: Standard web search
+ * - tavilyExtract: Extract structured data
+ */
 export const tavilyPlugin = (ai: Genkit): void => {
-  // 'ai' is the genkit instance
+  if (!process.env.TAVILY_API_KEY) {
+    console.warn(
+      "[tavily-plugin] TAVILY_API_KEY environment variable not set. Tavily tools will not function."
+    );
+  }
 
-  const tvly = tavily({
-        apiKey: process.env.TAVILY_API_KEY ?? "",
-      });
+  // Define Tavily Search Tool
+  ai.defineTool(
+    {
+      name: "tavilySearch",
+      description:
+        "Searches the web for relevant information. Use this tool to get current information on topics or recent events.",
+      inputSchema: z.object({
+        query: z.string().describe("The search query."),
+        search_depth: z
+          .enum(["basic", "advanced"])
+          .optional()
+          .describe("The depth of the search, either 'basic' or 'advanced'."),
+        include_domains: z
+          .array(z.string())
+          .optional()
+          .describe("Array of domains to include in the search."),
+        exclude_domains: z
+          .array(z.string())
+          .optional()
+          .describe("Array of domains to exclude from the search."),
+        include_answer: z
+          .boolean()
+          .optional()
+          .describe("Whether to include an answer in the response."),
+      }),
+      outputSchema: z.object({
+        result: z.string().describe("The search result."),
+        urls: z.array(z.string()).describe("The URLs of the search results."),
+      }),
+    },
+    async (input) => {
+      const apiKey = process.env.TAVILY_API_KEY;
+      if (!apiKey)
+        throw new Error("Tavily API key missing (TAVILY_API_KEY).");
 
-      if (!process.env.TAVILY_API_KEY) {
-        console.warn(
-          "[tavily-plugin] TAVILY_API_KEY environment variable not set.",
-        );
-      }
+      try {
+        const client = new TavilyClient({ apiKey });
+        const response = await client.search({
+          query: input.query,
+          search_depth: input.search_depth,
+          include_domains: input.include_domains,
+          exclude_domains: input.exclude_domains,
+          include_answer: input.include_answer,
+        });
 
-      // Define Tavily Search Tool
-      ai.defineTool(
-        {
-          name: "tavilySearch",
-          description:
-            "Searches the web using Tavily. Returns relevant snippets.",
-          inputSchema: z.object({
-            query: z.string().describe("Search query."),
-            search_depth: z
-              .enum(["basic", "advanced"])
-              .optional()
-              .describe("Search depth."),
-            max_results: z
-              .number()
-              .min(5)
-              .max(20)
-              .optional()
-              .describe("Max results."),
-          }),
-          outputSchema: z.array(
-            z.object({
-              title: z.string(),
-              url: z.string().url(),
-              content: z.string(),
-              score: z.number(),
-            }),
-          ),
-        },
-        async (input: {
-          query: string;
-          search_depth?: "basic" | "advanced";
-          max_results?: number;
-        }) => {
-          if (!process.env.TAVILY_API_KEY)
-            throw new Error("Tavily API key missing (TAVILY_API_KEY)."); // Corrected error message
-          const { query, ...options } = input;
-          // Cast options to the defined interface
-          const response = await tvly.search(query, options as TavilySearchOptions);
-          // Assuming response.results matches the expected output schema
-          return response.results || [];
-        },
-      );
+        if (response && response.results) {
+          // Format the result into more readable text
+          let formattedResults = "";
+          
+          // Include the answer if available
+          if (response.answer) {
+            formattedResults += `Answer: ${response.answer}\n\n`;
+          }
+          
+          // Format individual search results
+          formattedResults += response.results
+            .map((result, index) => {
+              return `[Source ${index + 1}]: ${result.title}\n${result.content}\n${result.url}`;
+            })
+            .join("\n\n");
 
-      // Define Tavily Extract Tool
-      ai.defineTool(
-        {
-          name: "tavilyExtract",
-          description: "Extracts content from URLs using Tavily.",
-          inputSchema: z.object({
-            urls: z.array(z.string().url()).min(1).describe("List of URLs."),
-            extract_depth: z
-              .enum(["basic", "advanced"])
-              .optional()
-              .describe("Extraction depth."),
-          }),
-          outputSchema: z.object({
-            results: z.array(
-              z.object({ url: z.string().url(), content: z.string() }),
-            ),
-            failed_results: z.array(
-              z.object({ url: z.string().url(), error: z.string() }),
-            ),
-          }),
-        },
-        async (input: {
-          urls: string[];
-          extract_depth?: "basic" | "advanced";
-        }) => {
-          if (!process.env.TAVILY_API_KEY)
-            throw new Error("Tavily API key missing (TAVILY_API_KEY)."); // Corrected error message
-          const { urls, ...options } = input;
-          // Cast options and response to defined interfaces
-          const response = await tvly.extract(urls, options as TavilyExtractOptions) as TavilyExtractResponse;
           return {
-            results: Array.isArray(response.results)
-              ? response.results.map((r: TavilyExtractResultItem) => ({ // Type the map parameter
-                  url: r.url || "",
-                  content: r.content || "",
-                }))
-              : [],
-            failed_results: Array.isArray(response.failedResults)
-              ? response.failedResults.map((f: TavilyExtractFailedResultItem) => ({ // Type the map parameter
-                  url: f.url || "",
-                  error: f.error || "Unknown error",
-                }))
-              : [],
+            result: formattedResults,
+            urls: response.results.map(result => result.url),
           };
-        },
-      );
+        } else {
+          throw new Error("Tavily API returned an invalid response structure.");
+        }
+      } catch (error: unknown) {
+        console.error("Error calling Tavily API (Search):", error);
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to execute Tavily Search: ${message}`);
+      }
+    }
+  );
 
-      console.log("[tavily-plugin] Tavily tools configured.");
+  // Define Tavily Extract Tool
+  ai.defineTool(
+    {
+      name: "tavilyExtract",
+      description:
+        "Extracts content from a website URL. Use this tool to get detailed information from a specific webpage.",
+      inputSchema: z.object({
+        url: z.string().describe("The URL of the web page to extract content from."),
+        query: z.string().optional().describe("Optional question to ask about the webpage content."),
+      }),
+      outputSchema: z.object({
+        content: z.string().describe("The extracted content from the URL."),
+        metadata: z.object({
+          url: z.string().describe("The URL that was processed."),
+          title: z.string().optional().describe("The title of the webpage if available."),
+        }),
+      }),
+    },
+    async (input) => {
+      const apiKey = process.env.TAVILY_API_KEY;
+      if (!apiKey)
+        throw new Error("Tavily API key missing (TAVILY_API_KEY).");
+
+      try {
+        const client = new TavilyClient({ apiKey });
+        
+        // Use search API with include_domains to focus on the specific URL
+        const response = await client.search({
+          query: input.query || `Extract and summarize the main content from ${input.url}`,
+          include_domains: [input.url],
+          search_depth: "advanced",
+          include_answer: true,
+          max_results: 3
+        });
+
+        if (response && response.results && response.results.length > 0) {
+          // Combine the relevant content from the results
+          const extractedContent = response.answer || 
+            response.results.map(result => result.content).join("\n\n");
+          
+          return {
+            content: extractedContent,
+            metadata: {
+              url: input.url,
+              title: response.results[0]?.title || "Unknown title"
+            }
+          };
+        } else {
+          throw new Error("Could not extract content from the provided URL.");
+        }
+      } catch (error: unknown) {
+        console.error("Error calling Tavily API (Extract):", error);
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to execute Tavily Extract: ${message}`);
+      }
+    }
+  );
+
+  console.log("[tavily-plugin] Tavily tools configured.");
 };

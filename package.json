@@ -17,7 +17,6 @@
     "@genkit-ai/express": "^1.7.0",
     "@genkit-ai/googleai": "^1.8.0",
     "@genkit-ai/next": "^1.7.0",
-    "@genkit-ai/tavily": "^1.7.0",
     "@genkit-ai/vertexai": "^1.7.0",
     "@hookform/resolvers": "^4.1.3",
     "@opentelemetry/exporter-jaeger": "^2.0.0",
@@ -75,6 +74,7 @@
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
+    "tavily": "^1.0.2",
     "tls": "^0.0.1",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"

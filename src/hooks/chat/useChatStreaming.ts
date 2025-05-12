@@ -127,11 +127,31 @@ function processSseEvent(
   console.log(
     `[useChatStreaming] Processing SSE Event: Type='${eventTypeToProcess}', Payload='${joinedDataPayload}'`,
   );
+      
+  // For debugging problematic payloads
+  if (eventTypeToProcess === 'final_response') {
+    console.log(
+      `[useChatStreaming] Final response payload (char by char): ${
+        Array.from(joinedDataPayload).map(c => 
+          c === '\\' ? '\\\\' : 
+          c === '\n' ? '\\n' : 
+          c === '\r' ? '\\r' : 
+          c === '\t' ? '\\t' : c
+        ).join('')
+      }`
+    );
+  }
 
   // MODIFICATION: Treat 'chunk' like 'text'
   if (eventTypeToProcess === "text" || eventTypeToProcess === "chunk") {
     let textContent = "";
     let parsedSuccessfully = false;
+
+    // Sanitize the payload to prevent common parsing errors
+    // This is for attempted JSON parse only - we'll still have the original for manual methods
+    const sanitizedPayload = joinedDataPayload
+      .replace(/\n/g, '\\n')  // Replace literal newlines with \n escape sequence
+      .replace(/\r/g, '\\r'); // Replace literal carriage returns with \r escape sequence
 
     // Check if it's likely a JSON-like structure intended to contain text
     // A simple check: starts with '{' and includes "text" substring
@@ -140,25 +160,35 @@ function processSseEvent(
 
     if (isPotentialJsonTextContainer) {
       try {
-        // Attempt to parse as {"text": "..."}
-        const parsedAsJson = safeDestr<{ text?: string }>(joinedDataPayload);
+        // First attempt with sanitized payload
+        const parsedAsJson = safeDestr<{ text?: string }>(sanitizedPayload);
         if (parsedAsJson && typeof parsedAsJson.text === "string") {
           textContent = parsedAsJson.text;
           parsedSuccessfully = true;
         }
       } catch (e) {
-        console.error(
-          `[useChatStreaming] safeDestr failed for ${eventTypeToProcess} event payload: ${(e as Error).message}. Payload: '${joinedDataPayload}'`,
-        );
-        // Fall through to manual extraction or raw text handling
+        // JSON parsing failed with sanitized payload
+        try {
+          // Try manual JSON parsing as a fallback
+          const match = sanitizedPayload.match(/\{\s*"text"\s*:\s*"([^"]*)"\s*\}/);
+          if (match && match[1]) {
+            textContent = match[1].replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+            parsedSuccessfully = true;
+          }
+        } catch (e2) {
+          console.error(
+            `[useChatStreaming] Both JSON parsing methods failed for ${eventTypeToProcess} event payload: ${(e as Error).message}. Payload: '${joinedDataPayload}'`,
+          );
+          // Fall through to manual extraction or raw text handling
+        }
       }
     }
 
     if (!parsedSuccessfully) {
       // This block is reached if:
       // 1. It wasn't considered potential JSON text container OR
-      // 2. safeDestr failed OR
-      // 3. safeDestr parsed but didn't match {"text": "string"}
+      // 2. Both parsing methods failed OR
+      // 3. Parsing succeeded but didn't match {"text": "string"}
 
       if (joinedDataPayload.startsWith('{\"text\":\"')) {
         // Existing manual extraction for {\"text\":\"...\"}
@@ -216,12 +246,50 @@ function processSseEvent(
   } else {
     // Handle other event types that expect well-formed JSON
     try {
-      const jsonData = safeDestr<any>(joinedDataPayload);
+      // First try to sanitize the payload to handle common JSON issues
+      let sanitizedPayload = joinedDataPayload;
+      
+      // Handle trailing backslashes which cause JSON parsing errors
+      // If the string ends with an odd number of backslashes, it will escape the closing quote
+      if (sanitizedPayload.match(/\\+$/)) {
+        console.warn(
+          `[useChatStreaming] Detected trailing backslash(es) in ${eventTypeToProcess} event, handling special case`
+        );
+        
+        // Count trailing backslashes to ensure proper escaping
+        const trailingBackslashMatch = sanitizedPayload.match(/\\+$/);
+        if (trailingBackslashMatch) {
+          const trailingBackslashes = trailingBackslashMatch[0];
+          // Add an extra backslash to properly escape each one
+          sanitizedPayload = sanitizedPayload + '\\'.repeat(trailingBackslashes.length);
+        }
+      }
+      
+      // If it looks like we're getting a truncated JSON string, try to repair it
+      if (sanitizedPayload.includes('"response":"') && 
+          !sanitizedPayload.includes('"}') && 
+          !sanitizedPayload.endsWith('"')) {
+        console.warn(
+          `[useChatStreaming] Possible truncated JSON detected in ${eventTypeToProcess} event, attempting repair`
+        );
+        sanitizedPayload = sanitizedPayload + '"}';
+      }
+      
+      // Apply additional escaping for problematic characters
+      sanitizedPayload = sanitizedPayload
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
+        
+      let jsonData = safeDestr<any>(sanitizedPayload);
+      
       if (jsonData === undefined && joinedDataPayload.trim().length > 0) {
         // If safeDestr returns undefined for a non-empty payload, it means parsing failed.
-        // This is more explicit than just checking if jsonData is falsy.
+        console.error(
+          `[useChatStreaming] JSON parsing failed for ${eventTypeToProcess} event with payload: ${joinedDataPayload}`
+        );
         throw new Error(
-          `Parsing failed: safeDestr returned undefined for non-empty payload.`,
+          `Parsing failed: Could not parse ${eventTypeToProcess} data. The response may be incomplete.`,
         );
       }
 
@@ -303,10 +371,56 @@ function processSseEvent(
           callbacks.onStreamError(errorMsg);
           break;
         case "final_response":
-          callbacks.onFinalResponse(
-            jsonData as ParsedJsonData,
-            (jsonData as ParsedJsonData).sessionId,
-          );
+          try {
+            // Additional validation and safety checks for final_response
+            if (!jsonData) {
+              console.error("[useChatStreaming] final_response contained null or undefined jsonData");
+              
+              // Last-attempt manual parsing for common patterns
+              if (joinedDataPayload.includes('"response":"')) {
+                try {
+                  const responseMatch = joinedDataPayload.match(/"response":"(.*?)(?<!\\)"/);
+                  const sessionIdMatch = joinedDataPayload.match(/"sessionId":"([^"]+)"/);
+                  
+                  if (responseMatch && responseMatch[1]) {
+                    jsonData = {
+                      response: responseMatch[1].replace(/\\"/g, '"'),
+                      sessionId: sessionIdMatch ? sessionIdMatch[1] : "",
+                      toolInvocations: []
+                    };
+                    console.log('[useChatStreaming] Recovered final_response data via manual parsing');
+                  } else {
+                    throw new Error("Manual parsing failed");
+                  }
+                } catch (manualParseError) {
+                  throw new Error("Invalid response data received and manual parsing failed");
+                }
+              } else {
+                throw new Error("Invalid response data received");
+              }
+            }
+            
+            // Ensure response is a string if present
+            if (jsonData.response !== undefined && typeof jsonData.response !== 'string') {
+              jsonData.response = String(jsonData.response);
+            }
+            
+            // Ensure toolInvocations exists to prevent undefined errors
+            if (!jsonData.toolInvocations) {
+              jsonData.toolInvocations = [];
+            }
+            
+            callbacks.onFinalResponse(
+              jsonData as ParsedJsonData,
+              (jsonData as ParsedJsonData).sessionId,
+            );
+          } catch (finalResponseError) {
+            console.error(
+              `[useChatStreaming] Error processing final_response data: ${finalResponseError}`,
+              { payload: joinedDataPayload, parsedData: jsonData }
+            );
+            callbacks.onStreamError(`Error processing final response: ${finalResponseError}`);
+          }
           break;
         default:
           console.warn(

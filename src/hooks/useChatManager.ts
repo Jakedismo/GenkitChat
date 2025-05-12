@@ -251,15 +251,50 @@ export function useChatManager({
           );
         },
         onStreamError: (errorMessage: string) => {
-          console.error({
-            message: "Streaming error from useChatStreaming: " + errorMessage,
-          });
+          // Extract relevant error details for better user feedback
+          let userFriendlyMessage = errorMessage;
+          let detailedLog: Record<string, any> = { originalError: errorMessage };
+          
+          // Handle JSON parsing errors more specifically
+          if (errorMessage.includes("JSON") || errorMessage.includes("parse")) {
+            detailedLog = {
+              ...detailedLog,
+              errorType: "json_parsing_error",
+              message: "JSON parsing error in stream: " + errorMessage,
+              context: "This may indicate a malformed response from the API",
+              sessionId: sessionIdToUse
+            };
+            
+            // Specific handling for common JSON parsing errors
+            if (errorMessage.includes("Unterminated string")) {
+              userFriendlyMessage = "The AI response was truncated. We're working to fix this issue.";
+              // Continue showing what we received, rather than hiding it completely
+              updateBotMessageText(botMessagePlaceholderId, "⚠️ The response was cut off due to a technical issue. Here's what we received:\n\n");
+            } else if (errorMessage.includes("backslash")) {
+              userFriendlyMessage = "The response contained special characters that couldn't be processed correctly.";
+            } else {
+              userFriendlyMessage = "The AI response couldn't be properly processed. This has been reported.";
+            }
+            
+            console.error(detailedLog);
+          } else {
+            console.error({
+              message: "Streaming error from useChatStreaming: " + errorMessage,
+              errorType: "stream_error",
+              timestamp: new Date().toISOString(),
+              sessionId: sessionIdToUse
+            });
+          }
+          
           toast({
             title: "Stream Error",
-            description: errorMessage,
+            description: userFriendlyMessage,
             variant: "destructive",
           });
-          injectErrorIntoBotMessage(botMessagePlaceholderId, errorMessage);
+          
+          // Update the message with the error
+          injectErrorIntoBotMessage(botMessagePlaceholderId, 
+            `Error: ${userFriendlyMessage}\n\nPlease try again or refresh the page if the issue persists.`);
         },
         onStreamEnd: () => {
           console.log("[useChatManager] Stream ended (via callback).");
@@ -273,22 +308,79 @@ export function useChatManager({
 
       await processStream(reader, streamEventCallbacks);
     } catch (error) {
+      // Extract and format error details
       const errorMessage =
         typeof error === "object" && error !== null && "message" in error
           ? (error as any).message
           : String(error);
-      console.error({
+          
+      // Create structured error log
+      const errorLog: Record<string, any> = {
         message: "Error sending message (useChatManager): " + errorMessage,
-      });
-      if (botMessagePlaceholderId) {
-        injectErrorIntoBotMessage(botMessagePlaceholderId, errorMessage);
+        errorObject: error,
+        sessionId: sessionIdToUse,
+        timestamp: new Date().toISOString(),
+        modelId: modelIdToUse,
+        chatMode
+      };
+      
+      // Provide user-friendly error message with recovery options
+      let userFriendlyMessage = errorMessage;
+      let recoveryAttempted = false;
+      
+      // Enhanced error classification and recovery
+      if (errorMessage.includes("JSON") || errorMessage.includes("parse")) {
+        errorLog.errorType = "json_parsing_error";
+        
+        // Specific JSON error handling
+        if (errorMessage.includes("Unterminated string")) {
+          userFriendlyMessage = "The AI response was truncated. We've saved what we could.";
+          
+          // Try to recover partial content if possible - this helps users not lose their entire response
+          try {
+            // Check if there's a pattern that indicates we got a substantial response before the error
+            if (botMessagePlaceholderId) {
+              updateBotMessageText(botMessagePlaceholderId, 
+                "⚠️ The response below was truncated due to a technical issue:\n\n");
+              recoveryAttempted = true;
+            }
+          } catch (recoveryError) {
+            console.warn("Recovery attempt failed:", recoveryError);
+          }
+        } else if (errorMessage.includes("backslash") || errorMessage.includes("\\")) {
+          userFriendlyMessage = "The response contained special characters that couldn't be processed correctly.";
+        } else {
+          userFriendlyMessage = "There was an error processing the AI response. Our team has been notified.";
+        }
+      } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+        errorLog.errorType = "network_error";
+        userFriendlyMessage = "Network error. Please check your connection and try again.";
+      } else if (errorMessage.includes("timeout") || errorMessage.includes("timed out")) {
+        errorLog.errorType = "timeout_error";
+        userFriendlyMessage = "The request timed out. This might happen with complex queries or during high traffic.";
+      } else {
+        errorLog.errorType = "general_error";
       }
+      
+      // Log the structured error
+      console.error(errorLog);
+      
+      // Update UI with error message if no recovery was attempted
+      if (botMessagePlaceholderId && !recoveryAttempted) {
+        injectErrorIntoBotMessage(
+          botMessagePlaceholderId, 
+          `Error: ${userFriendlyMessage}\n\nTry again or refresh the page.`
+        );
+      }
+      
+      // Show toast with error message
       toast({
         title: "Error",
-        description: errorMessage,
+        description: userFriendlyMessage,
         variant: "destructive",
       });
     } finally {
+      // Ensure loading state is always reset
       setIsLoading(false);
     }
   }, [

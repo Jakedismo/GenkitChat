@@ -22,6 +22,11 @@ export const perplexityPlugin = (ai: Genkit): void => {
     }),
     outputSchema: z.object({
       response: z.string().describe("The answer from Perplexity AI."),
+      sources: z.array(z.object({
+        title: z.string().optional(),
+        url: z.string().optional(),
+        snippet: z.string().optional(),
+      })).optional(),
     }),
   },
   async (input: { query: string }) => {
@@ -38,8 +43,12 @@ export const perplexityPlugin = (ai: Genkit): void => {
           Accept: "application/json",
         },
         body: JSON.stringify({
-          model: "sonar",
+          model: "sonar-small-online",
           messages: [{ role: "user", content: input.query }],
+          options: {
+            search_focus: true,
+            include_citations: true
+          },
         }),
       });
 
@@ -53,7 +62,23 @@ export const perplexityPlugin = (ai: Genkit): void => {
       const data = await response.json();
       const content =
         data.choices?.[0]?.message?.content || "No response content found.";
-      return { response: content };
+      
+      // Extract source information if available
+      const sources = [];
+      if (data.choices?.[0]?.message?.context?.citations) {
+        for (const citation of data.choices[0].message.context.citations) {
+          sources.push({
+            title: citation.title || "",
+            url: citation.url || "",
+            snippet: citation.snippet || "",
+          });
+        }
+      }
+      
+      return { 
+        response: content,
+        sources: sources.length > 0 ? sources : undefined
+      };
     } catch (error: unknown) {
       console.error("Error calling Perplexity API (Search):", error);
       const message = error instanceof Error ? error.message : String(error);
@@ -67,12 +92,17 @@ export const perplexityPlugin = (ai: Genkit): void => {
   {
     name: "perplexityDeepResearch",
     description:
-      "Performs deep research using Perplexity AI's research model (sonar-deep-research).",
+      "Performs deep research using Perplexity AI's research model (sonar-medium-online).",
     inputSchema: z.object({
       query: z.string().describe("The research query."),
     }),
     outputSchema: z.object({
       response: z.string().describe("The research answer from Perplexity AI."),
+      sources: z.array(z.object({
+        title: z.string().optional(),
+        url: z.string().optional(),
+        snippet: z.string().optional(),
+      })).optional(),
     }),
   },
   async (input: { query: string }) => {
@@ -89,8 +119,13 @@ export const perplexityPlugin = (ai: Genkit): void => {
           Accept: "application/json",
         },
         body: JSON.stringify({
-          model: "sonar-deep-research",
+          model: "sonar-medium-online",
           messages: [{ role: "user", content: input.query }],
+          options: {
+            quality: "high",
+            search_focus: true,
+            include_citations: true
+          },
         }),
       });
 
@@ -104,7 +139,23 @@ export const perplexityPlugin = (ai: Genkit): void => {
       const data = await response.json();
       const content =
         data.choices?.[0]?.message?.content || "No response content found.";
-      return { response: content };
+      
+      // Extract source information if available
+      const sources = [];
+      if (data.choices?.[0]?.message?.context?.citations) {
+        for (const citation of data.choices[0].message.context.citations) {
+          sources.push({
+            title: citation.title || "",
+            url: citation.url || "",
+            snippet: citation.snippet || "",
+          });
+        }
+      }
+      
+      return { 
+        response: content,
+        sources: sources.length > 0 ? sources : undefined
+      };
     } catch (error: unknown) {
       console.error("Error calling Perplexity API (Deep Research):", error);
       const message = error instanceof Error ? error.message : String(error);

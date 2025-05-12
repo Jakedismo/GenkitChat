@@ -326,43 +326,67 @@ const LambdaChat: React.FC = () => {
       children,
       ...props
     }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
-      // Check the React children being passed to this <p> component.
-      // If any of them is a <pre> tag (which our custom code renderer produces for block code),
-      // then we should not wrap these children with an actual <p> DOM element.
-      const containsPreElement = React.Children.toArray(children).some(
-        // টাইপ গার্ড ব্যবহার করে child এলিমেন্টটি একটি ReactElement এবং তার 'type' প্রপার্টি আছে কিনা তা পরীক্ষা করা হচ্ছে।
-        (child): child is React.ReactElement =>
-          React.isValidElement(child) && child.type === "pre",
-      );
+      // Helper function to recursively check for pre elements
+      const hasPreElement = (children: React.ReactNode): boolean => {
+        return React.Children.toArray(children).some((child) => {
+          if (React.isValidElement(child)) {
+            // Check if this element is a pre
+            if (child.type === "pre") return true;
+            
+            // Check if this element is a code (which might render a pre)
+            if (child.type === "code") return true;
+            
+            // Check this element's children recursively
+            if (child.props && child.props.children) {
+              return hasPreElement(child.props.children);
+            }
+          }
+          return false;
+        });
+      };
 
-      if (containsPreElement) {
-        // If children include a <pre> element, render them in a fragment
-        // to avoid <p><pre>...</pre></p> nesting.
+      // Check for pre elements at any nesting level
+      if (hasPreElement(children)) {
+        // If we found a pre element, just render the children directly
         return <>{children}</>;
       }
-      // Otherwise, render as a normal paragraph.
+      
+      // Otherwise, render as a normal paragraph
       return <p {...props}>{children}</p>;
     },
     code({
       className,
       children,
+      inline,
     }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
+      
+      // For inline code, don't use pre tags
+      if (inline) {
+        return <code className={className}>{children}</code>;
+      }
+      
       if (language === "mermaid") {
         return (
-          <pre className="mermaid" key={crypto.randomUUID()}>
-            {String(children).replace(/\n$/, "")}
-          </pre>
+          <div className="not-prose">
+            <pre className="mermaid" key={crypto.randomUUID()}>
+              {String(children).replace(/\n$/, "")}
+            </pre>
+          </div>
         );
       }
+      
+      // Wrap in div to isolate from paragraph context
       return (
-        <pre
-          className={className || ""}
-          style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}
-        >
-          <code className={className}>{children}</code>
-        </pre>
+        <div className="not-prose">
+          <pre
+            className={className || ""}
+            style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}
+          >
+            <code className={className}>{children}</code>
+          </pre>
+        </div>
       );
     },
   };

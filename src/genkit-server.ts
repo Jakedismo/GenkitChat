@@ -11,8 +11,9 @@ import {
 } from "@genkit-ai/dev-local-vectorstore";
 import { vertexAIRerankers } from "@genkit-ai/vertexai/rerankers"; // Added for Vertex AI Reranker
 import { mcpClient } from "genkitx-mcp";
-import { tavily } from "@genkit-ai/tavily"; // Import Tavily Search plugin
+import { tavilyPlugin } from "./ai/plugins/tavily-plugin"; // Import custom Tavily plugin
 import { startFlowServer } from "@genkit-ai/express"; // For serving flows
+import { perplexityPlugin } from "./ai/plugins/perplexity-plugin"; // Import local Perplexity plugin
 
 // Lazy-import flows to avoid circular dependencies
 let documentQaStreamFlow: any;
@@ -86,21 +87,9 @@ function getPlugins() {
     console.warn("Failed to initialize reranker plugin:", e);
   }
   
-  // Add Tavily Search plugin
-  try {
-    const tavilyApiKey = process.env.TAVILY_API_KEY;
-    if (tavilyApiKey) {
-      plugins.push(tavily({
-        apiKey: tavilyApiKey,
-        tools: ["tavilySearch", "tavilyExtract"]
-      }));
-      console.log("Tavily Search plugin initialized successfully");
-    } else {
-      console.warn("TAVILY_API_KEY not found in environment variables. Tavily Search will not be available.");
-    }
-  } catch (e) {
-    console.warn("Failed to initialize Tavily Search plugin:", e);
-  }
+  // Tavily and Perplexity plugins will be initialized after the Genkit instance is created
+  
+  // Perplexity plugin will be initialized after the Genkit instance is created
   
   return plugins;
 }
@@ -112,6 +101,31 @@ export const aiInstance = (function() {
       promptDir: "src/ai/prompts",
       plugins: getPlugins(),
     });
+    
+    // Initialize Tavily plugin with the aiInstance
+    try {
+      if (process.env.TAVILY_API_KEY) {
+        tavilyPlugin(instance);
+        console.log("Tavily plugin initialized successfully");
+      } else {
+        console.warn("TAVILY_API_KEY not found in environment variables. Tavily tools will not be available.");
+      }
+    } catch (e) {
+      console.warn("Failed to initialize Tavily plugin:", e);
+    }
+    
+    // Initialize Perplexity plugin with the aiInstance
+    try {
+      if (process.env.PERPLEXITY_API_KEY) {
+        perplexityPlugin(instance);
+        console.log("Perplexity plugin initialized successfully");
+      } else {
+        console.warn("PERPLEXITY_API_KEY not found in environment variables. Perplexity tools will not be available.");
+      }
+    } catch (e) {
+      console.warn("Failed to initialize Perplexity plugin:", e);
+    }
+    
     return instance;
   } catch (e) {
     console.error("Failed to initialize Genkit instance:", e);
