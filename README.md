@@ -2,7 +2,7 @@
 
 ![Chat Studio UI](docs/image.png)
 
-This project is a web-based chat interface built with Next.js and powered by Google's Genkit framework. It serves as a demonstration and development environment for interacting with various Large Language Models (LLMs) through different configurations, including direct chat, Retrieval-Augmented Generation (RAG - partially implemented), and integration with external tools via the Model Context Protocol (MCP).
+This project is a web-based chat interface built with Next.js and powered by Google's Genkit framework. It serves as a demonstration and development environment for interacting with various Large Language Models (LLMs) through different configurations, including direct chat, Retrieval-Augmented Generation (Two-Step with Reranking), and integration with external tools via the Model Context Protocol (MCP).
 
 ## Features
 
@@ -12,7 +12,7 @@ This project is a web-based chat interface built with Next.js and powered by Goo
   * Note: Amazon Bedrock models are listed in the UI but not currently configured in Genkit.
 * **Multiple Chat Modes:**
   * **Direct Chat:** Interact directly with selected Gemini or OpenAI models.
-  * **RAG Chat:** Upload PDF documents and query their content using Retrieval-Augmented Generation. Features two-stage retrieval with simulated reranking.
+  * **RAG Chat:** Upload PDF documents and query their content using Retrieval-Augmented Generation. Features two-stage retrieval with Google reranking model.
 * **PDF Processing:** Uses `officeparser` on the backend to extract text from uploaded PDF files.
 * **DotPrompt Management:** System prompts are managed using Genkit's DotPrompt format (`.prompt` files) located in `src/ai/prompts/`, allowing for easier iteration and versioning of prompts.
 * **Genkit Framework:** Core logic managed by Genkit flows defined in `src/lib/genkit-instance.ts`. This includes configuration for DotPrompt loading.

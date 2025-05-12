@@ -343,7 +343,7 @@ const LambdaChat: React.FC = () => {
                 className="h-full w-full pb-0"
                 ref={scrollAreaRef as React.RefObject<HTMLDivElement>}
               >
-                <div className="flex flex-col gap-4 p-4 pb-48">
+                <div className="flex flex-col gap-4 p-4 pb-48" key={`messages-${renderKey}`}>
                   {messages.map((message) => (
                     <div
                       key={message.id}
@@ -361,7 +361,11 @@ const LambdaChat: React.FC = () => {
                             : "bg-secondary text-secondary-foreground",
                         )}
                       >
-                        {process.env.NODE_ENV === 'development' && message.sender === 'bot' && (
+                        {/* Debug info for message text structure - only shown in development */}
+                        {process.env.NODE_ENV === 'development' && message.sender === 'bot' && 
+                          message.text && 
+                          message.text !== 'No content to display' && 
+                          !(typeof message.text === 'string' && message.text.trim() === '') && (
                           <div className="text-xs text-muted-foreground mb-2 border-b border-muted pb-1">
                             <span>Text type: {typeof message.text}</span>
                             {Array.isArray(message.text) && (
@@ -374,24 +378,27 @@ const LambdaChat: React.FC = () => {
                         )}
                         
                         <div className="relative">
-                          {message.sender === "bot" &&
-                          message.sources &&
-                          message.sources.length > 0 &&
-                          (typeof message.text === 'string' && message.text.includes("[Source:")) ? (
-                            <ChatMessageContent
-                              text={message.text}
-                              onCitationClick={(chunkIndex) =>
-                                handleCitationClick(message.id, chunkIndex)
-                              }
-                              components={markdownComponents}
-                            />
-                          ) : (
-                            <ChatMessageContent
-                              text={message.text}
-                              onCitationClick={() => {}} // Empty handler for non-citation text
-                              components={markdownComponents}
-                            />
-                          )}
+                          {message.sender === "bot" && 
+                            (message.text && (typeof message.text !== 'string' || message.text.trim() !== '')) ?
+                            (message.sources &&
+                            message.sources.length > 0 &&
+                            (typeof message.text === 'string' && message.text.includes("[Source:"))) ? (
+                              <ChatMessageContent
+                                text={message.text}
+                                onCitationClick={(chunkIndex) =>
+                                  handleCitationClick(message.id, chunkIndex)
+                                }
+                                components={markdownComponents}
+                              />
+                            ) : (
+                              <ChatMessageContent
+                                text={message.text}
+                                onCitationClick={() => {}} // Empty handler for non-citation text
+                                components={markdownComponents}
+                              />
+                            )
+                            : null
+                          }
                           
                           {message.sender === "bot" && (
                             <button

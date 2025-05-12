@@ -24,8 +24,6 @@ export interface UseChatMessagesReturn {
   injectErrorIntoBotMessage: (botMessageId: string, error: string) => void;
   fixTruncatedBotMessage: (botMessageId: string) => boolean; // Returns true if fixed, false if no fix needed
   clearMessages: () => void;
-  // Expose setMessages directly if needed for complex/direct manipulations not covered by helpers
-  // setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>; 
 }
 
 export function useChatMessages(): UseChatMessagesReturn {
@@ -56,63 +54,63 @@ export function useChatMessages(): UseChatMessagesReturn {
   }, []);
 
   const updateBotMessageText = useCallback(
-      (botMessageId: string, textChunk: string, options?: { replace?: boolean }) => {
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) => {
-            if (msg.id === botMessageId) {
-              // Process the text chunk to handle any escaped characters
-              const processedChunk = textChunk
-                .replace(/\\"/g, '"')
-                .replace(/\\n/g, '\n')
-                .replace(/\\r/g, '\r')
-                .replace(/\\t/g, '\t')
-                .replace(/\\\\/g, '\\')
-                .replace(/\\+$/, ''); // Remove trailing backslashes
+    (botMessageId: string, textChunk: string, options?: { replace?: boolean }) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => {
+          if (msg.id === botMessageId) {
+            // Process the text chunk to handle any escaped characters
+            const processedChunk = textChunk
+              .replace(/\\"/g, '"')
+              .replace(/\\n/g, '\n')
+              .replace(/\\r/g, '\r')
+              .replace(/\\t/g, '\t')
+              .replace(/\\\\/g, '\\')
+              .replace(/\\+$/, ''); // Remove trailing backslashes
             
-              console.log(`[useChatMessages] Processing chunk for message ${msg.id} (${processedChunk.length} chars)`);
+            console.log(`[useChatMessages] Processing chunk for message ${msg.id} (${processedChunk.length} chars)`);
             
-              // If replacing the text, ensure the new content isn't empty
-              if (options?.replace && processedChunk.trim()) {
-                return { 
-                  ...msg, 
-                  text: processedChunk 
-                };
-              } 
-            
-              // Otherwise append the text (default behavior)
-              // Handle different text types when appending
-              let updatedText: string;
-            
-              if (typeof msg.text === 'string') {
-                // Simple string append
-                updatedText = msg.text + processedChunk;
-              } else if (Array.isArray(msg.text)) {
-                // If text is an array, convert to string and append
-                updatedText = msg.text.map(chunk => 
-                  typeof chunk === 'string' ? chunk : 
-                  (chunk && typeof chunk === 'object' && chunk.text) ? chunk.text : 
-                  JSON.stringify(chunk)
-                ).join('') + processedChunk;
-              } else if (msg.text && typeof msg.text === 'object') {
-                // If text is an object, try to extract content
-                const existingText = msg.text.text || msg.text.content || JSON.stringify(msg.text);
-                updatedText = (typeof existingText === 'string' ? existingText : JSON.stringify(existingText)) + processedChunk;
-              } else {
-                // Fallback for other types
-                updatedText = String(msg.text || '') + processedChunk;
-              }
-            
+            // If replacing the text, ensure the new content isn't empty
+            if (options?.replace && processedChunk.trim()) {
               return { 
                 ...msg, 
-                text: updatedText
+                text: processedChunk 
               };
+            } 
+            
+            // Otherwise append the text (default behavior)
+            // Handle different text types when appending
+            let updatedText: string;
+            
+            if (typeof msg.text === 'string') {
+              // Simple string append
+              updatedText = msg.text + processedChunk;
+            } else if (Array.isArray(msg.text)) {
+              // If text is an array, convert to string and append
+              updatedText = msg.text.map(chunk => 
+                typeof chunk === 'string' ? chunk : 
+                (chunk && typeof chunk === 'object' && chunk.text) ? chunk.text : 
+                JSON.stringify(chunk)
+              ).join('') + processedChunk;
+            } else if (msg.text && typeof msg.text === 'object') {
+              // If text is an object, try to extract content
+              const existingText = msg.text.text || msg.text.content || JSON.stringify(msg.text);
+              updatedText = (typeof existingText === 'string' ? existingText : JSON.stringify(existingText)) + processedChunk;
+            } else {
+              // Fallback for other types
+              updatedText = String(msg.text || '') + processedChunk;
             }
-            return msg;
-          }),
-        );
-      },
-      [],
-    );
+            
+            return { 
+              ...msg, 
+              text: updatedText
+            };
+          }
+          return msg;
+        }),
+      );
+    },
+    [],
+  );
 
   const updateBotMessageSources = useCallback(
     (botMessageId: string, sources: DocumentData[]) => {
@@ -151,7 +149,7 @@ export function useChatMessages(): UseChatMessagesReturn {
           msg.id === botMessageId
             ? {
                 ...msg,
-                toolInvocations: [ // Can decide to append or replace based on desired behavior
+                toolInvocations: [
                   ...(msg.toolInvocations || []), 
                   ...toolInvocations
                 ],
@@ -169,63 +167,106 @@ export function useChatMessages(): UseChatMessagesReturn {
         prevMessages.map((msg) => {
           if (msg.id === botMessageId) {
             const updatedMsg = { ...msg };
+            let foundContent = false;
             
-            // Handle potentially complex response structures
-            if (finalResponse.response) {
-              let processedResponse = '';
+            try {
+              // First priority: Check for Google/Gemini message.content array
+              if (finalResponse.message?.content && Array.isArray(finalResponse.message.content)) {
+                console.log(`[useChatMessages] Processing message.content array with ${finalResponse.message.content.length} items`);
+                
+                const contentParts = finalResponse.message.content.map((part: any) => {
+                  if (typeof part === 'string') return part;
+                  if (part && typeof part === 'object' && part.text) return part.text;
+                  return JSON.stringify(part);
+                });
+                
+                const fullText = contentParts.join('');
+                console.log(`[useChatMessages] Joined message.content into text (${fullText.length} chars)`);
+                
+                if (fullText.trim()) {
+                  updatedMsg.text = fullText;
+                  foundContent = true;
+                }
+              }
               
-              // Handle response that's an array of text chunks (common in streaming responses)
-              if (Array.isArray(finalResponse.response)) {
-                console.log(`[useChatMessages] Processing array response with ${finalResponse.response.length} chunks`);
-                processedResponse = finalResponse.response
-                  .map(chunk => {
-                    // Handle different chunk formats
-                    if (typeof chunk === 'string') return chunk;
-                    if (typeof chunk === 'object' && chunk !== null) {
-                      // Extract text property if it exists
-                      return chunk.text || JSON.stringify(chunk);
-                    }
-                    return String(chunk || '');
-                  })
-                  .join('');
-              } else if (typeof finalResponse.response === 'object' && finalResponse.response !== null) {
-                // Handle response that's an object with nested content
-                if (finalResponse.response.content && Array.isArray(finalResponse.response.content)) {
-                  console.log(`[useChatMessages] Processing object response with ${finalResponse.response.content.length} content chunks`);
-                  processedResponse = finalResponse.response.content
+              // Second priority: Check for custom.candidates structure
+              if (!foundContent && finalResponse.custom?.candidates?.length > 0) {
+                const candidate = finalResponse.custom.candidates[0];
+                
+                if (candidate.content?.parts && Array.isArray(candidate.content.parts)) {
+                  console.log(`[useChatMessages] Processing candidate.content.parts with ${candidate.content.parts.length} items`);
+                  
+                  const contentParts = candidate.content.parts.map((part: any) => {
+                    if (typeof part === 'string') return part;
+                    if (part && typeof part === 'object' && part.text) return part.text;
+                    return JSON.stringify(part);
+                  });
+                  
+                  const fullText = contentParts.join('');
+                  console.log(`[useChatMessages] Joined candidate.content.parts into text (${fullText.length} chars)`);
+                  
+                  if (fullText.trim()) {
+                    updatedMsg.text = fullText;
+                    foundContent = true;
+                  }
+                } else if (typeof candidate.content?.text === 'string') {
+                  updatedMsg.text = candidate.content.text;
+                  foundContent = true;
+                }
+              }
+              
+              // Third priority: Use response property
+              if (!foundContent && finalResponse.response) {
+                if (Array.isArray(finalResponse.response)) {
+                  // Array response
+                  const fullText = finalResponse.response
                     .map(chunk => {
                       if (typeof chunk === 'string') return chunk;
-                      if (typeof chunk === 'object' && chunk !== null) {
-                        return chunk.text || JSON.stringify(chunk);
-                      }
-                      return String(chunk || '');
+                      if (chunk && typeof chunk === 'object' && chunk.text) return chunk.text;
+                      return JSON.stringify(chunk);
                     })
                     .join('');
-                } else {
-                  // Fallback for other object structures
-                  processedResponse = JSON.stringify(finalResponse.response);
+                  
+                  if (fullText.trim()) {
+                    updatedMsg.text = fullText;
+                    foundContent = true;
+                  }
+                } else if (typeof finalResponse.response === 'string') {
+                  // String response
+                  if (finalResponse.response.trim()) {
+                    updatedMsg.text = finalResponse.response;
+                    foundContent = true;
+                  }
+                } else if (finalResponse.response && typeof finalResponse.response === 'object') {
+                  // Object response, might contain nested content
+                  if (finalResponse.response.content && Array.isArray(finalResponse.response.content)) {
+                    const fullText = finalResponse.response.content
+                      .map((chunk: any) => {
+                        if (typeof chunk === 'string') return chunk;
+                        if (chunk && typeof chunk === 'object' && chunk.text) return chunk.text;
+                        return JSON.stringify(chunk);
+                      })
+                      .join('');
+                    
+                    if (fullText.trim()) {
+                      updatedMsg.text = fullText;
+                      foundContent = true;
+                    }
+                  }
                 }
-              } else if (typeof finalResponse.response === 'string') {
-                // Direct string response
-                processedResponse = finalResponse.response;
-              } else {
-                // Fallback for other types
-                processedResponse = String(finalResponse.response || '');
               }
               
-              // Only update if we have actual content
-              if (processedResponse.trim()) {
-                console.log(`[useChatMessages] Updating message ${msg.id} with final response text (length: ${processedResponse.length})`);
-                updatedMsg.text = processedResponse;
+              if (!foundContent) {
+                console.warn(`[useChatMessages] Could not extract valid content from finalResponse for message ${msg.id}`);
               } else {
-                console.warn(`[useChatMessages] Empty processed response for message ${msg.id} - keeping existing text`);
+                console.log(`[useChatMessages] Updated message ${msg.id} with final response (${typeof updatedMsg.text === 'string' ? updatedMsg.text.length : 'non-string'} chars)`);
               }
-            } else {
-              console.warn(`[useChatMessages] No response property in finalResponse for message ${msg.id}`);
+            } catch (error) {
+              console.error(`[useChatMessages] Error processing finalResponse:`, error);
             }
             
+            // Always add tool invocations if present
             if (Array.isArray(finalResponse.toolInvocations)) {
-              // Assuming finalData.toolInvocations elements match ToolInvocation structure
               updatedMsg.toolInvocations = finalResponse.toolInvocations as ToolInvocation[];
             }
             
@@ -244,10 +285,26 @@ export function useChatMessages(): UseChatMessagesReturn {
         prevMessages.map((msg) => {
           if (msg.id === botMessageId) {
             // Check if this error is already injected to avoid duplicates
-            if (msg.text.includes(`[ERROR: ${errorText}]`)) {
+            if (msg.text && typeof msg.text === 'string' && msg.text.includes(`[ERROR: ${errorText}]`)) {
               return msg;
             }
-            return { ...msg, text: msg.text + `\n\n[ERROR: ${errorText}]` };
+            
+            // Format error message to append to existing text
+            const errorMsg = `\n\n[ERROR: ${errorText}]`;
+            
+            // Handle different message text formats
+            if (typeof msg.text === 'string') {
+              return { ...msg, text: msg.text + errorMsg };
+            } else if (Array.isArray(msg.text)) {
+              const textString = msg.text
+                .map(chunk => typeof chunk === 'string' ? chunk : JSON.stringify(chunk))
+                .join('');
+              return { ...msg, text: textString + errorMsg };
+            } else if (msg.text && typeof msg.text === 'object') {
+              return { ...msg, text: JSON.stringify(msg.text) + errorMsg };
+            } else {
+              return { ...msg, text: String(msg.text || '') + errorMsg };
+            }
           }
           return msg;
         }),
@@ -255,11 +312,7 @@ export function useChatMessages(): UseChatMessagesReturn {
     },
     [],
   );
-
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-  }, []);
-
+  
   const fixTruncatedBotMessage = useCallback((botMessageId: string): boolean => {
     let wasFixed = false;
     
@@ -353,7 +406,11 @@ export function useChatMessages(): UseChatMessagesReturn {
     });
     
     return wasFixed;
-  }, [setMessages]);
+  }, []);
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+  }, []);
 
   return {
     messages,
@@ -367,6 +424,5 @@ export function useChatMessages(): UseChatMessagesReturn {
     injectErrorIntoBotMessage,
     fixTruncatedBotMessage,
     clearMessages,
-    // setMessages, // Expose if needed
   };
 }

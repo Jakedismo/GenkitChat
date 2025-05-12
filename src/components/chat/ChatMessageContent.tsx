@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 // Import Options type for component prop typing
 import ReactMarkdown, { Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight"; // Assuming consistency
+import rehypeHighlight from "rehype-highlight";
 
 interface ChatMessageContentProps {
   text: string | string[] | { text?: string; [key: string]: any } | any; // Support various text formats
@@ -24,6 +24,12 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   
   useEffect(() => {
     try {
+      // Immediately return empty array for empty/null text to avoid "No content" message
+      if (!text || (typeof text === 'string' && text.trim() === '')) {
+        setRenderedParts([]);
+        return;
+      }
+      
       // Process text to handle any possible format
       let processedText = '';
       
@@ -185,13 +191,9 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   }
 
   // Render the parts. Each part is a ReactMarkdown component or a button.
-  // If no parts were rendered, provide an empty fallback to avoid UI breakage
+  // If no parts were rendered, return empty space to avoid showing empty messages
   if (renderedParts.length === 0) {
-    return (
-      <div className="text-secondary-foreground">
-        <p className="text-muted-foreground text-sm">No content to display</p>
-      </div>
-    );
+    return <></>;
   }
   
   return (
