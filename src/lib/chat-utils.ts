@@ -1,4 +1,5 @@
 import { aiInstance } from "@/genkit-server";
+import { createModelKey } from "@/services/rag";
 import type {
   GenerateResponseData,
   MessageData,
@@ -222,7 +223,7 @@ export async function initiateChatStream(
     // Call Genkit's generateStream function
     // This function returns an object immediately, which contains the stream and a response promise.
     const generationAPI = aiInstance.generateStream({
-      model: input.modelId, // Pass the model name string directly
+      model: createModelKey(input.modelId), // Use createModelKey helper to avoid stringification warnings
       messages: messages,
       config: {
         temperature,

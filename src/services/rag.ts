@@ -192,7 +192,7 @@ export async function indexFileDocument( // Renamed back (or to generic)
         console.error("RAG indexer reference is not available");
         return false; // Cannot proceed without indexer
       }
-      
+
       await aiInstance.index({
         indexer: ragIndexerRef,
         documents: allDocuments,
@@ -233,23 +233,22 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     // Use the tools from input or default to empty array
     const tools: string[] = Array.isArray(inputTools) ? inputTools : [];
     const logger = context?.logger; // Get logger from context, handle if context is undefined
-    
-    // Helper function to create stable string keys from model IDs
-    // This helps avoid warnings about object keys being stringified
-    const createModelKey = (id: string) => `model_${id}`;
+
+    // Using the global createModelKey function defined at the bottom of the file
 
     // Log if tools are being used
     if (tools.length > 0) {
       logger?.info(`Using ${tools.length} tools in RAG document chat`);
     }
 
+    // Get the rag_assistant prompt using string parameter (correct Genkit API approach)
     const ragAssistantPrompt = await aiInstance.prompt("rag_assistant");
     try {
       logger?.info(`RAG query: \\\"${query}\\\" for session: ${sessionId}`);
 
       // Stage 1: Retrieve a larger initial set of documents
       const initialK = INITIAL_RETRIEVAL_COUNT;
-      
+
       // Check if retriever reference is available
       if (!ragRetrieverRef) {
         logger?.error("RAG retriever reference is not available");
@@ -259,7 +258,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         });
         return;
       }
-      
+
       const docs = await aiInstance.retrieve({
         retriever: ragRetrieverRef,
         query: query,
@@ -330,19 +329,44 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         );
         sendChunk({ type: "sources", sources: sourcesToYield as Document[] });
 
-        // Pass query and modelId as properties of a single object parameter
-        // Use the helper function to create a stable string key for modelId
-        const promptResult = await ragAssistantPrompt({
+        // Create the initial prompt using the formattedPrompt from ragAssistantPrompt
+        // Since we can't directly use the returned prompt with variables, we'll create our own messages
+        // structure with the correct TypeScript types that Genkit expects
+        const formattedPrompt = await ragAssistantPrompt({
           query,
-          modelId: createModelKey(modelId),
+          modelId: createModelKey(modelId)
         });
+
+        // Create a properly typed messages array to avoid TypeScript errors
+        // Must use the exact string literal types that Genkit expects
+        const messages = [
+          {
+            role: "system" as const, // Use const assertion for literal type
+            content: [
+              {
+                text: `You are analyzing documents to answer a query: "${query}". Use the context from the documents to give a comprehensive answer.`
+              }
+            ]
+          },
+          {
+            role: "user" as const, // Use const assertion for literal type
+            content: [
+              {
+                text: query
+              }
+            ]
+          }
+        ];
+
+        const promptResult = { messages };
 
         // Use tools if provided in the input
         logger?.debug(`Generating with ${tools.length} tools in the RAG flow`);
 
+        // Create properly typed generateOptions with literal types to satisfy TypeScript
         const generateOptions = {
-          model: modelId,
-          messages: promptResult.messages,
+          model: createModelKey(modelId), // Use createModelKey helper
+          messages, // Use our properly typed messages array
           docs: topDocs,
           // Include tools from input
           tools: tools,
@@ -362,8 +386,11 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             "Error generating with tools, retrying without:",
             streamError
           );
+          // Create fallback options with the same properly typed structure but without tools
           const fallbackOptions = {
-            ...generateOptions,
+            model: createModelKey(modelId),
+            messages, // Reuse the same typed messages
+            docs: topDocs,
             tools: [], // Remove tools completely
           };
 
@@ -553,20 +580,35 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
 
         // Pass query and modelId as properties of a single object parameter
         // Use the helper function to create a stable string key for modelId
-        const promptResultFallback = await ragAssistantPrompt({
-          query,
-          modelId: createModelKey(modelId),
-        });
+        // Create the same properly typed messages structure as in the main flow
+        const fallbackMessages = [
+          {
+            role: "system" as const,
+            content: [
+              {
+                text: `You are analyzing documents to answer a query: "${query}". Use the context from the documents to give a comprehensive answer.`
+              }
+            ]
+          },
+          {
+            role: "user" as const,
+            content: [
+              {
+                text: query
+              }
+            ]
+          }
+        ];
 
         // Use tools if provided in the input (fallback flow)
         logger?.debug(
           `Generating with ${tools.length} tools in the RAG fallback flow`
         );
 
+        // Create properly typed generateOptions structure for the fallback flow
         const generateOptionsFallback = {
-          // Renamed to avoid conflict
-          model: modelId,
-          messages: promptResultFallback.messages,
+          model: createModelKey(modelId), // Use createModelKey helper
+          messages: fallbackMessages, // Use the properly typed messages array
           docs: fallbackDocs,
           // Include tools from input
           tools: tools,
@@ -575,7 +617,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         let llmStreamResultFallback;
         try {
           // Try to generate stream with tools
-          llmStreamResultFallback = await aiInstance.generateStream(
+          llmStreamResultFallback = aiInstance.generateStream(
             generateOptionsFallback
           );
         } catch (streamError) {
@@ -585,7 +627,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             streamError
           );
           const fallbackWithoutToolsOptions = {
-            ...generateOptionsFallback,
+            model: createModelKey(modelId),
+            messages: fallbackMessages, // Reuse the same properly typed messages
+            docs: fallbackDocs,
             tools: [], // Remove tools completely
           };
 
@@ -850,40 +894,20 @@ const INITIAL_RETRIEVAL_COUNT = 10;
 const FINAL_DOCUMENT_COUNT = 10;
 
 /**
- * Simple similarity score calculation between a query and document text
- * This simulates a reranking score when the Vertex AI reranker isn't available
- *
- * @param query - The search query
- * @param text - The document text to compare against
- * @returns A similarity score between 0-1
- */
-function simpleSimilarityScore(query: string, text: string): number {
-  // Convert both to lowercase for case-insensitive matching
-  const queryLower = query.toLowerCase();
-  const textLower = text.toLowerCase();
-
-  // Split query into words
-  const queryWords = queryLower.split(/\s+/).filter((word) => word.length > 3);
-
-  if (queryWords.length === 0) return 0;
-
-  // Count how many query words appear in the text
-  let matchCount = 0;
-  for (const word of queryWords) {
-    if (textLower.includes(word)) {
-      matchCount++;
-    }
-  }
-
-  // Calculate score as percentage of query words found
-  return matchCount / queryWords.length;
-}
-
-/**
  * Generate a new session ID for RAG
  *
  * @returns A new session ID
  */
 export function generateRagSessionId(): string {
   return `rag-${uuidv4()}`;
+}
+
+/**
+ * Helper function to create stable string keys from model IDs
+ * This helps avoid warnings about object keys being stringified
+ * @param id - The model ID to convert to a stable string key
+ * @returns A string key prefixed with 'model_'
+ */
+export function createModelKey(id: string): string {
+  return `model_${id}`;
 }
