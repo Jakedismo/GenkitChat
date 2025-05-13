@@ -237,10 +237,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     const logger = context?.logger; // Get logger from context, handle if context is undefined
 
     // Using the global createModelKey function defined at the bottom of the file
+    // Logger setup - use context logger or fallback to console
+    logger?.debug(
+      `RAG query with model '${modelId}', session '${sessionId}' and ${tools.length} tools`
+    );
+    console.log(`[RAG-DEBUG] Starting RAG query with model '${modelId}', session '${sessionId}' and ${tools.length} tools`);
 
     // Log if tools are being used
     if (tools.length > 0) {
       logger?.info(`Using ${tools.length} tools in RAG document chat`);
+      console.log(`[RAG-DEBUG] Using ${tools.length} tools in RAG document chat`);
     }
 
     // Get the rag_assistant prompt using string parameter (correct Genkit API approach)
@@ -299,6 +305,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       // Stage 2: Rerank the filtered documents
       try {
         logger?.info("Starting reranking with Vertex AI Reranker...");
+        console.log(`[RAG-DEBUG] Starting reranking with Vertex AI Reranker for ${filteredDocs.length} documents`);
         // const rerankModelIdForLLMCompReranker = "openai/gpt-4.1-nano"; // No longer needed for Vertex AI reranker
         // Create a proper document from the query text for reranking
         const queryDocument = Document.fromText(query || '');
@@ -313,6 +320,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         logger?.info(
           `Finished reranking with LLM. Got ${rerankedDocsWithScores.length} results.`
         );
+        console.log(`[RAG-DEBUG] Reranking completed with ${rerankedDocsWithScores.length} results`);
 
         const finalK = FINAL_DOCUMENT_COUNT;
         // Ensure reranked docs have scores in metadata
@@ -540,6 +548,8 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           return; // Exit the function early
         }
         
+        console.log(`[RAG-DEBUG] Beginning stream processing. Using model: ${modelId}`);
+        
         // Continue with stream processing
         for await (const chunk of llmStreamResult.stream) {
           let currentTextOutput = "";
@@ -548,71 +558,72 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
               if (part.text) {
                 currentTextOutput += part.text;
               } else if (part.toolRequest) {
+                console.log(`[RAG-DEBUG] Processing toolRequest:`, JSON.stringify(part.toolRequest, null, 2));
                 if (currentTextOutput) {
                   sendChunk({ type: "text", text: currentTextOutput });
                   currentTextOutput = "";
                 }
-                if (part.toolRequest.ref && part.toolRequest.name) {
-                  pendingToolRequests.set(part.toolRequest.ref, {
-                    name: part.toolRequest.name,
-                    input: part.toolRequest.input,
-                  });
+                // Carefully handle tool request - add defensive checks to avoid name property errors
+                try {
+                  if (part.toolRequest?.ref) {
+                    // Extract name safely with default if missing
+                    const toolName = part.toolRequest?.name || 'unknown-tool';
+                    const toolInput = part.toolRequest?.input || {};
+                    console.log(`[RAG-DEBUG] Saving tool request: ${toolName}`);
+                    
+                    pendingToolRequests.set(part.toolRequest.ref, {
+                      name: toolName,
+                      input: toolInput
+                    });
+                  }
+                } catch (toolRequestError) {
+                  console.error('[RAG-ERROR] Error processing tool request:', toolRequestError);
                 }
               } else if (part.toolResponse) {
+                console.log(`[RAG-DEBUG] Processing toolResponse:`, JSON.stringify(part.toolResponse, null, 2));
                 if (currentTextOutput) {
                   sendChunk({ type: "text", text: currentTextOutput });
                   currentTextOutput = "";
                 }
-                if (
-                  part.toolResponse.ref &&
-                  pendingToolRequests.has(part.toolResponse.ref)
-                ) {
-                  const requestDetails = pendingToolRequests.get(
-                    part.toolResponse.ref
-                  );
-
-                  // Add defensive coding to ensure properties exist
-                  if (requestDetails) {
-                    const toolName = requestDetails.name || "unknown-tool";
-                    const toolInput = requestDetails.input || {};
-                    const toolOutput = part.toolResponse.output || {};
-
+                
+                try {
+                  // First check if toolResponse has a ref and if we have a matching request
+                  if (part.toolResponse?.ref && pendingToolRequests.has(part.toolResponse.ref)) {
+                    // Get the saved request details
+                    const requestDetails = pendingToolRequests.get(part.toolResponse.ref);
+                    const toolName = requestDetails?.name || "unknown-tool";
+                    const toolInput = requestDetails?.input || {};
+                    const toolOutput = part.toolResponse?.output || {};
+                    
+                    console.log(`[RAG-DEBUG] Found matching request for tool: ${toolName}`);
+                    
+                    // Send tool invocation with complete data
                     sendChunk({
                       type: "tool_invocation",
                       name: toolName,
                       input: toolInput,
-                      output: toolOutput,
+                      output: toolOutput
                     });
-
+                    
+                    // Clean up after processing
                     pendingToolRequests.delete(part.toolResponse.ref);
                   } else {
-                    console.error(
-                      "[RAG] Missing tool request details in primary flow:",
-                      part.toolResponse.ref
-                    );
-                  }
-                } else if (
-                  part.toolResponse &&
-                  typeof part.toolResponse === "object"
-                ) {
-                  // Add defensive coding to ensure toolResponse exists and has a name property
-                  const toolName = part.toolResponse.name || "unknown-tool";
-                  const toolOutput = part.toolResponse.output || {};
-
-                  // Only send the tool invocation if we have a valid name
-                  if (toolName) {
+                    // Fallback for responses without matching requests
+                    const toolName = part.toolResponse?.name || "unknown-tool";
+                    const toolOutput = part.toolResponse?.output || {};
+                    
+                    console.log(`[RAG-DEBUG] No matching request found for tool response, using direct name: ${toolName}`);
+                    
+                    // Send tool invocation with available data
                     sendChunk({
                       type: "tool_invocation",
-                      name: toolName,
-                      input: undefined, // No input in this case
-                      output: toolOutput,
+                      name: toolName, 
+                      input: undefined,
+                      output: toolOutput
                     });
-                  } else {
-                    console.error(
-                      "[RAG] Invalid tool response without name:",
-                      part.toolResponse
-                    );
                   }
+                } catch (toolResponseError) {
+                  console.error("[RAG-ERROR] Error processing tool response:", toolResponseError);
                 }
               }
             }
@@ -627,10 +638,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         // Safely handle final response
         if (!llmStreamResult) {
           logger?.error("Cannot get final response - stream result is undefined");
+          console.log(`[RAG-DEBUG] Cannot get final response - stream result is undefined`);
           return; // Exit early if llmStreamResult is undefined
         }
         
+        console.log(`[RAG-DEBUG] Getting final response from stream result`);
         const finalResponse = await llmStreamResult.response;
+        console.log(`[RAG-DEBUG] Final response received: ${!!finalResponse}`);
+        if (finalResponse) {
+          console.log(`[RAG-DEBUG] Final response has messages: ${!!(finalResponse.messages && Array.isArray(finalResponse.messages))}`);
+        }
         if (finalResponse.messages && Array.isArray(finalResponse.messages)) {
           const finalToolRequests = new Map<string, ToolRequestPart>();
           for (const message of finalResponse.messages) {
