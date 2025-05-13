@@ -231,9 +231,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     }: { sendChunk: (chunk: RagStreamEvent) => void; context?: any }
   ) => {
     // Extract props from input including tools
-    const { query, sessionId, modelId } = input;
-    // Don't use tools at all for now to avoid name property access errors
-    const tools: string[] = []; // Explicitly ignore any tools passed in
+    const { query, sessionId, modelId, tools: inputTools } = input;
+    // Use tools from input if provided, otherwise default to empty array
+    const tools: string[] = Array.isArray(inputTools) ? inputTools : [];
     const logger = context?.logger; // Get logger from context, handle if context is undefined
 
     // Using the global createModelKey function defined at the bottom of the file
