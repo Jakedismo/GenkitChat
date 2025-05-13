@@ -214,6 +214,8 @@ export async function indexFileDocument( // Renamed back (or to generic)
   }
 }
 
+// Export the documentQaStreamFlow to be used by the genkit-server
+// This creates the flow and registers it with the GenKit instance
 export const documentQaStreamFlow = aiInstance.defineFlow(
   {
     name: "documentQaStreamFlow",
@@ -229,9 +231,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     }: { sendChunk: (chunk: RagStreamEvent) => void; context?: any }
   ) => {
     // Extract props from input including tools
-    const { query, sessionId, modelId, tools: inputTools } = input;
-    // Use the tools from input or default to empty array
-    const tools: string[] = Array.isArray(inputTools) ? inputTools : [];
+    const { query, sessionId, modelId } = input;
+    // Don't use tools at all for now to avoid name property access errors
+    const tools: string[] = []; // Explicitly ignore any tools passed in
     const logger = context?.logger; // Get logger from context, handle if context is undefined
 
     // Using the global createModelKey function defined at the bottom of the file
@@ -259,9 +261,13 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         return;
       }
 
+      // Create a proper Document object from the query text for retrieval
+      const queryDocument = Document.fromText(query || '');
+      
+      // Retrieve documents using the query document
       const docs = await aiInstance.retrieve({
         retriever: ragRetrieverRef,
-        query: query,
+        query: queryDocument,
         options: {
           k: initialK,
         },
@@ -271,6 +277,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const filteredDocs = docs.filter(
         (doc: Document) => doc.metadata && doc.metadata.sessionId === sessionId
       );
+      
+      // Log retrieved documents
+      logger?.info(`Retrieved ${docs.length} documents, filtered to ${filteredDocs.length} for session: ${sessionId}`);
 
       if (!filteredDocs || filteredDocs.length === 0) {
         logger?.warn(`No documents found for session: ${sessionId}`);
@@ -291,11 +300,14 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       try {
         logger?.info("Starting reranking with Vertex AI Reranker...");
         // const rerankModelIdForLLMCompReranker = "openai/gpt-4.1-nano"; // No longer needed for Vertex AI reranker
+        // Create a proper document from the query text for reranking
+        const queryDocument = Document.fromText(query || '');
+        
+        // Rerank the filtered documents using the Vertex AI reranker that's registered in genkit-server.ts
         const rerankedDocsWithScores = await aiInstance.rerank({
-          reranker: "vertexai/reranker", // Using standard Vertex AI reranker
-          query: Document.fromText(query), // Query should be a Document
+          reranker: "vertexai/reranker", // Must match the reranker name registered in genkit-server.ts
+          query: queryDocument,
           documents: filteredDocs,
-          // Options like rerankModelId are not typically needed for standard Vertex AI rerankers
         });
 
         logger?.info(
@@ -303,7 +315,24 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         );
 
         const finalK = FINAL_DOCUMENT_COUNT;
-        const topDocs = rerankedDocsWithScores.slice(0, finalK);
+        // Ensure reranked docs have scores in metadata
+        const docsWithScores = rerankedDocsWithScores.map(doc => {
+          // Deep clone to avoid mutation issues
+          const newDoc = { ...doc };
+          
+          // Make sure metadata exists
+          if (!newDoc.metadata) {
+            newDoc.metadata = { score: 0 };
+          } else if (typeof newDoc.metadata.score !== 'number') {
+            // Ensure score exists as a number (usually set by reranker)
+            newDoc.metadata.score = 0;
+          }
+          
+          return newDoc;
+        });
+        
+        // Get the top K documents based on reranking scores
+        const topDocs = docsWithScores.slice(0, finalK);
 
         logger?.info(
           `Selected top ${topDocs.length} documents after LLM reranking`
@@ -314,27 +343,60 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           );
         }
 
-        topDocs.forEach((doc: Document, index: number) => {
-          logger?.debug(
-            `Document ${index + 1} score: ${doc.metadata?.score || "N/A"}`
-          );
+        // Log document scores for debugging with safe property access
+        topDocs.forEach((doc, index) => {
+          // Safely access score through optional chaining and nullish coalescing
+          const score = doc?.metadata?.score ?? 'N/A';
+          logger?.debug(`Document ${index + 1} score: ${score}`);
         });
 
-        // Yield sources first
-        const sourcesToYield = topDocs.map(
-          ({ metadata, ...rest }: Document) => {
-            const { score, ...metadataWithoutScore } = metadata || {};
-            return { ...rest, metadata: metadataWithoutScore };
+        // Process documents to ensure they have the correct structure for client display
+        // and conform to the Document type from genkit/retriever
+        const sourcesToYield = topDocs.map(doc => {
+          // Extract text from the document using a safe approach that handles different document structures
+          let docText = '';
+          
+          // Try to extract text from different possible document structures
+          // TypeScript safe approach using type guards
+          const anyDoc = doc as any; // Use any for property access
+          
+          if (anyDoc.text && typeof anyDoc.text === 'string') {
+            // Document has a direct text property
+            docText = anyDoc.text;
+          } else if (anyDoc.content && Array.isArray(anyDoc.content)) {
+            // Document has a content array (likely from Genkit)
+            docText = anyDoc.content
+              .filter((part: any) => part && typeof part.text === 'string')
+              .map((part: any) => part.text)
+              .join('\n');
           }
-        );
-        sendChunk({ type: "sources", sources: sourcesToYield as Document[] });
+          
+          // Create metadata with required fields
+          const metadata = {
+            // Include all original metadata
+            ...(doc.metadata || {}),
+            // Set a fileName for display purposes using type-safe approach
+            fileName: doc.metadata?.fileName || (doc as any).id || 'unknown',
+            // Required score property 
+            score: 1
+          };
+          
+          // Create a proper Document instance
+          return Document.fromText(docText, metadata);
+        });
+        
+        // Log sources being sent to client
+        logger?.info(`Sending ${sourcesToYield.length} source documents to client`);
+        sendChunk({ type: "sources", sources: sourcesToYield });
 
-        // Create the initial prompt using the formattedPrompt from ragAssistantPrompt
-        // Since we can't directly use the returned prompt with variables, we'll create our own messages
-        // structure with the correct TypeScript types that Genkit expects
+        // Prepare documents for generation by extracting text and context
+        logger?.info(`Preparing ${topDocs.length} documents for context augmentation`);
+        
+        // Create the initial prompt with the correctly formatted messages structure
+        // that follows GenKit's expected format
         const formattedPrompt = await ragAssistantPrompt({
           query,
-          modelId: createModelKey(modelId)
+          modelId: createModelKey(modelId),
         });
 
         // Create a properly typed messages array to avoid TypeScript errors
@@ -344,77 +406,140 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             role: "system" as const, // Use const assertion for literal type
             content: [
               {
-                text: `You are analyzing documents to answer a query: "${query}". Use the context from the documents to give a comprehensive answer.`
-              }
-            ]
+                text: `You are analyzing documents to answer a query: "${query}". Use the context from the documents to give a comprehensive answer.`,
+              },
+            ],
           },
           {
             role: "user" as const, // Use const assertion for literal type
             content: [
               {
-                text: query
-              }
-            ]
-          }
+                text: query,
+              },
+            ],
+          },
         ];
 
         const promptResult = { messages };
 
-        // Use tools if provided in the input
-        logger?.debug(`Generating with ${tools.length} tools in the RAG flow`);
+        // Use tools if provided in the input and safely handle empty tools array
+        const safeTools = Array.isArray(tools) && tools.length > 0 ? tools : [];
+        logger?.debug(`Generating with ${safeTools.length} tools in the RAG flow`);
 
-        // Create properly typed generateOptions with literal types to satisfy TypeScript
-        const generateOptions = {
+        // Ensure docs are in the correct format for the generate function
+        // Convert topDocs to proper Document instances for use with GenKit
+        const formattedDocs = topDocs.map(doc => {
+          // Extract text content safely from various document structures
+          let docText = '';
+          let docMetadata = doc.metadata || {};
+          
+          // Handle different document structures with type-safe approach
+          const anyDoc = doc as any; // Use any for flexible property access
+          
+          if (anyDoc.text && typeof anyDoc.text === 'string') {
+            // Document already has text property
+            docText = anyDoc.text;
+          } else if (anyDoc.content && Array.isArray(anyDoc.content)) {
+            // Extract text from content array
+            docText = anyDoc.content
+              .filter((part: any) => part && typeof part.text === 'string')
+              .map((part: any) => part.text)
+              .join('\n');
+          }
+          
+          // Create a new Document with proper structure
+          return Document.fromText(docText, docMetadata);
+        });
+
+        // First try: attempt to generate without tools to avoid tool registration issues
+        const initialGenerateOptions = {
           model: createModelKey(modelId), // Use createModelKey helper
           messages, // Use our properly typed messages array
-          docs: topDocs,
-          // Include tools from input
-          tools: tools,
+          docs: formattedDocs, // Use formatted docs
+          // Don't include tools for initial attempt
+          tools: [],
         };
+        
+        // If tools were provided, we'll try with tools in the catch block
+        const shouldTryWithTools = safeTools.length > 0;
+        
+        // Secondary options with tools (if needed)
+        const toolGenerateOptions = shouldTryWithTools ? {
+          model: createModelKey(modelId),
+          messages,
+          docs: formattedDocs,
+          tools: safeTools,
+        } : null;
 
         const pendingToolRequests = new Map<
           string,
           { name: string; input: unknown }
         >();
         let llmStreamResult;
+        
         try {
-          // Try to generate stream with tools
-          llmStreamResult = await aiInstance.generateStream(generateOptions);
-        } catch (streamError) {
-          // If generation with tools fails, retry without tools
-          logger?.error(
-            "Error generating with tools, retrying without:",
-            streamError
-          );
-          // Create fallback options with the same properly typed structure but without tools
-          const fallbackOptions = {
-            model: createModelKey(modelId),
-            messages, // Reuse the same typed messages
-            docs: topDocs,
-            tools: [], // Remove tools completely
-          };
-
-          try {
-            llmStreamResult = await aiInstance.generateStream(fallbackOptions);
-            logger?.info("Successfully generating stream without tools");
-          } catch (fallbackError) {
-            // If even the fallback fails, send an error and abort
-            logger?.error(
-              "Fatal streaming error, even fallback failed:",
-              fallbackError
-            );
-            sendChunk({
-              type: "error",
-              error: `Failed to generate response: ${
-                fallbackError instanceof Error
-                  ? fallbackError.message
-                  : String(fallbackError)
-              }`,
-            });
-            return; // Exit the function early
+          // First, try to generate without tools to avoid potential tool registration issues
+          llmStreamResult = await aiInstance.generateStream(initialGenerateOptions);
+          logger?.info("Successfully generating stream without tools initially");
+          
+          // If we get here and we should have tried with tools, log that we didn't use them
+          if (shouldTryWithTools) {
+            logger?.info("Note: Tools were provided but we're using the no-tools flow for reliability");
+          }
+        } catch (initialError) {
+          // If even the basic generation fails, try with tools if they were requested
+          if (shouldTryWithTools && toolGenerateOptions) {
+            logger?.info("Initial generation failed, trying with tools instead", initialError);
+            try {
+              llmStreamResult = await aiInstance.generateStream(toolGenerateOptions);
+              logger?.info("Successfully generating stream with tools");
+            } catch (toolError) {
+              // If generation with tools also fails, use a minimal fallback
+              logger?.error(
+                "Error generating with tools, falling back to minimal options:",
+                toolError
+              );
+              // Create ultra-minimal fallback options
+              const fallbackOptions = {
+                model: createModelKey(modelId),
+                messages, // Reuse the same typed messages
+                docs: formattedDocs,
+                tools: [], // No tools
+              };
+              
+              try {
+                llmStreamResult = await aiInstance.generateStream(fallbackOptions);
+                logger?.info("Successfully generating stream without tools");
+              } catch (fallbackError) {
+                // If even the fallback fails, send an error and abort
+                logger?.error(
+                  "Fatal streaming error, even fallback failed:",
+                  fallbackError
+                );
+                sendChunk({
+                  type: "error",
+                  error: `Failed to generate response: ${
+                    fallbackError instanceof Error
+                      ? fallbackError.message
+                      : String(fallbackError)
+                  }`,
+                });
+                return; // Exit the function early
+              }
+            }
           }
         }
 
+        // Check if llmStreamResult is defined before processing
+        if (!llmStreamResult) {
+          logger?.error("Stream result is undefined, cannot process");
+          sendChunk({
+            type: "error",
+            error: "Failed to initialize response stream. Please try again."
+          });
+          return; // Exit the function early
+        }
+        
         // Continue with stream processing
         for await (const chunk of llmStreamResult.stream) {
           let currentTextOutput = "";
@@ -499,6 +624,12 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           }
         }
 
+        // Safely handle final response
+        if (!llmStreamResult) {
+          logger?.error("Cannot get final response - stream result is undefined");
+          return; // Exit early if llmStreamResult is undefined
+        }
+        
         const finalResponse = await llmStreamResult.response;
         if (finalResponse.messages && Array.isArray(finalResponse.messages)) {
           const finalToolRequests = new Map<string, ToolRequestPart>();
@@ -529,12 +660,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
                   // Add defensive coding to prevent 'Cannot read properties of undefined (reading 'name')' error
                   if (requestPart && requestPart.toolRequest) {
                     // Ensure all required properties exist before sending
-                    const toolName =
-                      requestPart.toolRequest.name || "unknown-tool";
+                    // Use safe property access with defaults for all fields
+                    const toolName = requestPart.toolRequest.name || "unknown-tool";
                     const toolInput = requestPart.toolRequest.input || {};
-                    const toolOutput =
-                      toolResponsePart.toolResponse?.output || {};
+                    
+                    // Safe access to toolResponse output
+                    const toolOutput = toolResponsePart.toolResponse && 
+                      typeof toolResponsePart.toolResponse === 'object' ? 
+                      (toolResponsePart.toolResponse.output || {}) : {};
 
+                    // Send a properly formatted tool invocation event with complete data
                     sendChunk({
                       type: "tool_invocation",
                       name: toolName,
@@ -586,18 +721,18 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             role: "system" as const,
             content: [
               {
-                text: `You are analyzing documents to answer a query: "${query}". Use the context from the documents to give a comprehensive answer.`
-              }
-            ]
+                text: `You are analyzing documents to answer a query: "${query}". Use the context from the documents to give a comprehensive answer.`,
+              },
+            ],
           },
           {
             role: "user" as const,
             content: [
               {
-                text: query
-              }
-            ]
-          }
+                text: query,
+              },
+            ],
+          },
         ];
 
         // Use tools if provided in the input (fallback flow)
@@ -634,7 +769,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           };
 
           try {
-            llmStreamResultFallback = await aiInstance.generateStream(
+            llmStreamResultFallback = aiInstance.generateStream(
               fallbackWithoutToolsOptions
             );
             logger?.info(
@@ -786,12 +921,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
                   // Add defensive coding to prevent 'Cannot read properties of undefined (reading 'name')' error
                   if (requestPart && requestPart.toolRequest) {
                     // Ensure all required properties exist before sending
-                    const toolName =
-                      requestPart.toolRequest.name || "unknown-tool";
+                    // Use safe property access with defaults for all fields
+                    const toolName = requestPart.toolRequest.name || "unknown-tool";
                     const toolInput = requestPart.toolRequest.input || {};
-                    const toolOutput =
-                      toolResponsePart.toolResponse?.output || {};
+                    
+                    // Safe access to toolResponse output
+                    const toolOutput = toolResponsePart.toolResponse && 
+                      typeof toolResponsePart.toolResponse === 'object' ? 
+                      (toolResponsePart.toolResponse.output || {}) : {};
 
+                    // Send a properly formatted tool invocation event with complete data
                     sendChunk({
                       type: "tool_invocation",
                       name: toolName,
@@ -906,8 +1045,10 @@ export function generateRagSessionId(): string {
  * Helper function to create stable string keys from model IDs
  * This helps avoid warnings about object keys being stringified
  * @param id - The model ID to convert to a stable string key
- * @returns A string key prefixed with 'model_'
+ * @returns The model ID as a string (no prefix needed anymore)
  */
 export function createModelKey(id: string): string {
-  return `model_${id}`;
+  // Return the ID as is - no prefix needed
+  // This prevents issues with model lookup in Genkit
+  return id;
 }

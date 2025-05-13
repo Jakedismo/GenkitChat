@@ -16,8 +16,11 @@ import { tavilyPlugin } from "./ai/plugins/tavily-plugin"; // Import custom Tavi
 import { startFlowServer } from "@genkit-ai/express"; // For serving flows
 import { perplexityPlugin } from "./ai/plugins/perplexity-plugin"; // Import local Perplexity plugin
 
-// Lazy-import flows to avoid circular dependencies
-let documentQaStreamFlow: any;
+// Import RagFlowInputSchema to avoid circular dependencies
+import { RagFlowInputSchema, RagStreamEventSchemaZod } from "./services/rag";
+import { z } from "zod";
+
+// We'll define flow instances below after aiInstance is initialized
 
 // TODO: Replace with your actual Google Cloud Project ID and Location
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || "your-gcp-project-id";
@@ -231,6 +234,10 @@ export const ragRetrieverRef = (function () {
   }
 })();
 
+// Define and export document QA stream flow
+// This will be populated from the rag.ts module
+export let documentQaStreamFlow: any;
+
 // Function to start the flow server - NOT automatically executed
 export async function startGenkitServer() {
   if (typeof window !== "undefined") {
@@ -252,21 +259,29 @@ export async function startGenkitServer() {
     console.log("Genkit instance initialized with plugins.");
 
     // Lazy-load flows to avoid circular dependencies
+    // This is where we get the properly implemented flow from rag.ts
     const rag = await import("./services/rag");
     documentQaStreamFlow = rag.documentQaStreamFlow;
+    
+    // Log flow availability
+    console.log("documentQaStreamFlow loaded from rag module:", !!documentQaStreamFlow);
 
-    // Register flows and start the server
+    // Define the flows to register with the server
     const flowsToRegister = [
       documentQaStreamFlow,
-      // Add other imported flows here:
-      // someOtherFlow,
+      // Add other imported flows here as needed
     ];
 
-    startFlowServer({
+    // Start a single flow server instance with all registered flows
+    const SERVER_PORT = 3400; // Define port as a constant
+    
+    await startFlowServer({
       flows: flowsToRegister,
-      port: 3400,
+      port: SERVER_PORT,
       cors: { origin: "*" },
     });
+    
+    console.log(`Genkit flow server started on port ${SERVER_PORT}`);
 
     console.log(
       `Genkit server started on port 3400 with ${flowsToRegister.length} flow(s) registered.`
