@@ -92,8 +92,74 @@ body {
 
 }
 
-/* Remove gradient overrides */
+/* Custom styles for markdown content */
 @layer components {
-  /* Remove specific background overrides for dark mode gradients if they exist */
-  /* Tailwind will now use the CSS variables directly */
+  /* Improved markdown styling for better readability */
+  .markdown-content {
+    /* Typography */
+    @apply text-base leading-7;
+    
+    /* Headings */
+    & h1 {
+      @apply text-2xl font-bold mt-6 mb-4;
+    }
+    & h2 {
+      @apply text-xl font-bold mt-5 mb-3;
+    }
+    & h3 {
+      @apply text-lg font-semibold mt-4 mb-2;
+    }
+    & h4, & h5, & h6 {
+      @apply font-semibold mt-3 mb-2;
+    }
+    
+    /* Lists */
+    & ul, & ol {
+      @apply pl-6 my-3 space-y-1;
+    }
+    & ul {
+      @apply list-disc;
+    }
+    & ol {
+      @apply list-decimal;
+    }
+    
+    /* Code blocks */
+    & pre {
+      @apply bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto;
+    }
+    & code {
+      @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+    }
+    & pre code {
+      @apply bg-transparent p-0 text-sm;
+    }
+    
+    /* Tables */
+    & table {
+      @apply w-full my-4 border-collapse;
+    }
+    & th, & td {
+      @apply border border-border p-2;
+    }
+    & th {
+      @apply bg-muted font-semibold;
+    }
+    
+    /* Block elements */
+    & p {
+      @apply my-3;
+    }
+    & blockquote {
+      @apply border-l-4 border-muted-foreground pl-4 py-1 my-3 italic;
+    }
+    & hr {
+      @apply my-6 border-border;
+    }
+    
+    /* Spacing between sections */
+    & > * + :is(h1, h2, h3, h4, h5, h6) {
+      @apply mt-6;
+    }
+  }
 }

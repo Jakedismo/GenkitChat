@@ -4,11 +4,11 @@ description: "Specialist agent for verifying the factual accuracy of a given sta
 tools:
   - tavilySearch
   - perplexitySearch
-model: {{resolvedModelId}} # e.g., "googleai/gemini-2.5-flash-preview-04-17"
+model: {{modelId}} # e.g., "googleai/gemini-2.5-flash-preview-04-17"
 input:
   schema:
     statement: string
-    resolvedModelId: string
+    modelId: string
 output:
   schema:
     isVerified: boolean

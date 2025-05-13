@@ -4,13 +4,13 @@ description: "Specialist agent for conducting in-depth research on a given topic
 tools:
   - tavilyExtract
   - perplexityDeepResearch
-model: {{resolvedModelId}} # e.g., "googleai/gemini-2.5-pro..." or "openai/gpt-4.1"
+model: {{modelId}} # e.g., "googleai/gemini-2.5-pro..." or "openai/gpt-4.1"
 input:
   schema:
     researchTask: string # Detailed task from Orchestrator
     researchTopic: string
     toolsToUse: string[] # Specific tools selected by Orchestrator/User
-    resolvedModelId: string
+    modelId: string
 # output:
 #   schema:
 #     findings: string # Summarized findings, raw data, links etc.

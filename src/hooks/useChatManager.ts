@@ -429,7 +429,33 @@ export function useChatManager({
             new Set(prev).add(botMessagePlaceholderId)
           );
         },
-        onStreamError: (errorMessage: string) => {
+        onStreamError: (errorMessage: any) => {
+          // Enhanced defensive coding - handle both string error messages and error objects
+          let originalError = errorMessage;
+          
+          // Convert errors to strings with special handling for common issues
+          if (typeof errorMessage !== 'string') {
+            if (errorMessage instanceof Error) {
+              // Standard Error object
+              errorMessage = errorMessage.message;
+            } else if (errorMessage && typeof errorMessage === 'object') {
+              // Handle the specific 'Cannot read properties of undefined (reading 'name')' error
+              if (errorMessage.toString().includes("Cannot read properties of undefined (reading 'name')")) {
+                console.error('[useChatManager] Caught tool name access error, using defensive handler');
+                errorMessage = 'Error processing tool invocation: missing tool information';
+              } else {
+                // Generic object error
+                errorMessage = String(errorMessage);
+              }
+            } else {
+              // Fallback for any other type
+              errorMessage = String(errorMessage || 'Unknown error');
+            }
+            console.error('[useChatManager] Converted error object to string:', {
+              originalError,
+              stringMessage: errorMessage
+            });
+          }
           // Extract relevant error details for better user feedback
           let userFriendlyMessage = errorMessage;
           let detailedLog: Record<string, any> = {

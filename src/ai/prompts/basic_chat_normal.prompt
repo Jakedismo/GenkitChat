@@ -1,8 +1,8 @@
 ---
-model: {{resolvedModelId}}
+model: {{modelId}}
 input:
   schema:
-    resolvedModelId: string
+    modelId: string
 ---
 {{role "system"}}
 {{>_assistant_intro description="helpful and friendly"}}...

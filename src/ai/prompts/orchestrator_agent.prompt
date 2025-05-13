@@ -8,13 +8,13 @@ tools:
   - citation_checker_agent
   - fact_verifier_agent
   - summarization_agent
-model: {{resolvedModelId}}
+model: {{modelId}}
 input:
   schema:
     userQuery: string
     researchTopic: string
     availableDataTools: string[] # e.g., ["tavilyExtract", "perplexityDeepResearch"], pool of data-gathering tools
-    resolvedModelId: string
+    modelId: string
 # output: # Define if orchestrator produces structured output for delegation
 #   schema:
 #     nextAction: string # e.g., "invoke_clarification", "invoke_research", "invoke_report_writer", "respond_to_user"

@@ -22,10 +22,11 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   const [error, setError] = useState<Error | null>(null);
   const [renderedParts, setRenderedParts] = useState<JSX.Element[]>([]);
   
-  // Enhanced markdown components with better link handling
+  // Use type assertion to fix type compatibility with react-markdown
   const enhancedComponents = {
     ...components,
-    a: ({ node, href, children, ...props }) => {
+    // Use the type expected by react-markdown components
+    a: ({ node, href, children, ...props }: any) => {
       // Open links in new tab and add proper security attributes
       return (
         <a 
@@ -39,7 +40,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         </a>
       );
     },
-  };
+  } as ReactMarkdownOptions['components'];
   
   useEffect(() => {
     try {
@@ -221,10 +222,10 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   }
   
   return (
-    <span className="inline leading-relaxed">
-      {/* Use span or div depending on desired flow */}
+    <div className="leading-relaxed max-w-full markdown-content">
+      {/* Using custom styling with better spacing and typography */}
       {renderedParts.map((part) => part)}
-    </span>
+    </div>
   );
 };
 

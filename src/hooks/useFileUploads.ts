@@ -70,19 +70,73 @@ export function useFileUploads(
       console.log(`Uploading ${newFiles.length} file(s) via FormData for session ${sessionIdToUse} (useFileUploads)`);
 
       // Send files to the backend RAG endpoint
-      const response = await fetch('/api/rag-chat', { // Assuming this endpoint handles file uploads
-        method: 'POST',
-        body: formData, // Browser sets correct Content-Type for FormData
-      });
+      console.log(`[useFileUploads] Making API request to /api/rag-chat with ${formData.getAll('files').length} files`);
+      let response;
+      try {
+        response = await fetch('/api/rag-chat', { // Assuming this endpoint handles file uploads
+          method: 'POST',
+          body: formData, // Browser sets correct Content-Type for FormData
+        });
+        console.log(`[useFileUploads] API response status: ${response.status}`);
+      } catch (fetchError) {
+        console.error('[useFileUploads] Network error during fetch:', fetchError);
+        throw new Error(`Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown fetch error'}`);
+      }
 
       // Check for network/server errors
       if (!response.ok) {
-        let errorData: { error?: string; message?: string } = {};
+        // Fixed type definition to properly handle details object
+        let errorData: { 
+          error?: string; 
+          message?: string; 
+          details?: { 
+            invalidFiles?: string[] | string;
+            allowedTypes?: string[];
+            [key: string]: any; 
+          } 
+        } = {};
+        
         try {
-          errorData = await response.json();
-        } catch { /* Ignore if response isn't JSON */ }
-        const errorMessage = errorData?.error || errorData?.message || `Upload failed with status: ${response.status}`;
-        console.error('File upload failed:', response.status, errorMessage);
+          errorData = await response.json().catch(e => ({
+            error: `Error parsing server response: ${e.message}`,
+            details: {
+              message: 'The server response was not valid JSON'
+            }
+          }));
+          console.log('[useFileUploads] Error response JSON:', errorData);
+        } catch (jsonError) {
+          console.error('[useFileUploads] Error parsing error response:', jsonError);
+          /* Fallback to basic error info */
+        }
+        
+        // Enhanced error message with status code and specific handling for 422
+        let errorMessage = '';
+        if (response.status === 422) {
+          // Check for detailed error information
+          if (errorData?.message) {
+            // Use the server's detailed message
+            errorMessage = errorData.message;
+          } else if (errorData?.details?.invalidFiles) {
+            // Construct a message from details if available
+            const invalidFiles = Array.isArray(errorData.details.invalidFiles) 
+              ? errorData.details.invalidFiles.join(', ')
+              : String(errorData.details.invalidFiles);
+              
+            errorMessage = `File validation failed: Unsupported file type(s): ${invalidFiles}`;
+          } else {
+            // Fallback generic message
+            errorMessage = `File validation failed: ${errorData?.error || 'The file may be too large, of an unsupported type, or corrupted'}`;
+          }
+          
+          console.error('[useFileUploads] Validation error (422):', errorData);
+          
+          // Add file type hint to toast message
+          errorMessage += '\nSupported formats include PDF, TXT, DOCX, XLSX, PPTX, MD, CSV, and JSON.';
+        } else {
+          errorMessage = errorData?.error || errorData?.message || `Upload failed with status: ${response.status}`;
+          console.error('[useFileUploads] File upload failed:', response.status, errorMessage);
+        }
+        
         throw new Error(errorMessage);
       }
 

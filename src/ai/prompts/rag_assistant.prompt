@@ -1,9 +1,9 @@
 ---
-model: {{resolvedModelId}}
+model: {{modelId}}
 input:
   schema:
     query: string
-    resolvedModelId: string # This will be populated by the 'modelId' from the calling function
+    modelId: string # This will be populated by the 'modelId' from the calling function
 ---
 {{role "system"}}
 {{>_assistant_intro description="helpful"}} Answer the query based *primarily* on the provided documents.

@@ -27,11 +27,42 @@ export async function POST(request: NextRequest) {
       const files = formData.getAll("files") as File[];
       const sessionId = formData.get("sessionId") as string || generateRagSessionId();
 
-      // Validate request
+      // Enhanced validation for request
       if (!files || files.length === 0) {
+        console.log('[rag-chat/route] No files provided in upload request');
         return NextResponse.json(
-          { error: "No files provided" },
+          { error: "No files provided", message: "Please select at least one file to upload." },
           { status: 400 }
+        );
+      }
+      
+      // Validate file types
+      const allowedTypes = [
+        'application/pdf', 
+        'text/plain',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // pptx
+        'text/markdown',
+        'text/csv',
+        'application/json'
+      ];
+      
+      const invalidFiles = files.filter(file => !allowedTypes.includes(file.type));
+      if (invalidFiles.length > 0) {
+        const invalidTypes = invalidFiles.map(f => `${f.name} (${f.type || 'unknown type'})`);
+        console.log(`[rag-chat/route] Invalid file types in upload: ${invalidTypes.join(', ')}`);
+        
+        return NextResponse.json(
+          { 
+            error: "Invalid file type(s)", 
+            message: `The following files have unsupported formats: ${invalidTypes.join(', ')}. Supported formats include PDF, TXT, DOCX, XLSX, PPTX, MD, CSV, and JSON.`,
+            details: {
+              invalidFiles: invalidTypes,
+              allowedTypes
+            }
+          },
+          { status: 422 } // Unprocessable Entity
         );
       }
 
@@ -94,6 +125,7 @@ export async function POST(request: NextRequest) {
         .filter(Boolean);
 
       if (failedFiles.length > 0) {
+        console.log(`[rag-chat/route] File processing failed for ${failedFiles.length} files:`, failedFiles);
         return NextResponse.json({
           sessionId,
           success: false,

@@ -114,6 +114,7 @@ export const aiInstance = (function () {
     const instance = genkit({
       promptDir: "src/ai/prompts",
       plugins: getPlugins(),
+      // Note: mapAsMap option is not supported in GenkitOptions type
     });
 
     // Initialize Tavily plugin with the aiInstance
@@ -163,6 +164,38 @@ export const aiInstance = (function () {
           stream: [],
           response: Promise.reject(new Error("Genkit not initialized")),
         };
+      },
+      prompt: (promptNameOrConfig: string | any) => {
+        console.error(
+          "Genkit instance failed to initialize. Operations will fail."
+        );
+        return Promise.reject(new Error("Genkit not initialized"));
+      },
+      defineFlow: () => {
+        console.error(
+          "Genkit instance failed to initialize. Operations will fail."
+        );
+        return function() {
+          return Promise.reject(new Error("Genkit not initialized"));
+        };
+      },
+      retrieve: () => {
+        console.error(
+          "Genkit instance failed to initialize. Operations will fail."
+        );
+        return Promise.reject(new Error("Genkit not initialized"));
+      },
+      index: () => {
+        console.error(
+          "Genkit instance failed to initialize. Operations will fail."
+        );
+        return Promise.reject(new Error("Genkit not initialized"));
+      },
+      rerank: () => {
+        console.error(
+          "Genkit instance failed to initialize. Operations will fail."
+        );
+        return Promise.reject(new Error("Genkit not initialized"));
       },
     };
   }
