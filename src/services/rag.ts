@@ -233,6 +233,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     // Use the tools from input or default to empty array
     const tools: string[] = Array.isArray(inputTools) ? inputTools : [];
     const logger = context?.logger; // Get logger from context, handle if context is undefined
+    
+    // Helper function to create stable string keys from model IDs
+    // This helps avoid warnings about object keys being stringified
+    const createModelKey = (id: string) => `model_${id}`;
 
     // Log if tools are being used
     if (tools.length > 0) {
@@ -327,9 +331,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         sendChunk({ type: "sources", sources: sourcesToYield as Document[] });
 
         // Pass query and modelId as properties of a single object parameter
+        // Use the helper function to create a stable string key for modelId
         const promptResult = await ragAssistantPrompt({
           query,
-          modelId,
+          modelId: createModelKey(modelId),
         });
 
         // Use tools if provided in the input
@@ -547,9 +552,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         sendChunk({ type: "sources", sources: sourcesToYield as Document[] });
 
         // Pass query and modelId as properties of a single object parameter
+        // Use the helper function to create a stable string key for modelId
         const promptResultFallback = await ragAssistantPrompt({
           query,
-          modelId,
+          modelId: createModelKey(modelId),
         });
 
         // Use tools if provided in the input (fallback flow)
