@@ -224,20 +224,7 @@ export async function POST(request: NextRequest) {
                      output: event.output,
                      error: event.error // Include error if present
                    };
-                   // If output.result is a very large string, truncate and flag
-                   if (toolData.output && typeof toolData.output.result === 'string') {
-                     const MAX_RESULT_LENGTH = 12000; // 12k chars, tune as needed
-                     if (toolData.output.result.length > MAX_RESULT_LENGTH) {
-                       toolData = {
-                         ...toolData,
-                         output: {
-                           ...toolData.output,
-                           result: toolData.output.result.slice(0, MAX_RESULT_LENGTH) + '\n...[truncated]',
-                           outputTruncated: true
-                         }
-                       };
-                     }
-                   }
+                   // No truncation: always send the full output as a single JSON event
                    sseEventString = `event: tool_invocation\ndata: ${JSON.stringify(toolData)}\n\n`;
                    // Debug: log outgoing event (truncated for log safety)
                    console.debug('[SSE] tool_invocation event:', sseEventString.slice(0, 500) + (sseEventString.length > 500 ? '...[log truncated]' : ''));
