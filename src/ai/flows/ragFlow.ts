@@ -153,9 +153,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         },
       });
 
+      // Try to filter by session first, but fall back to all docs if no matches
       filteredDocs = sessionId
         ? docs.filter((doc) => doc.metadata?.sessionId === sessionId)
         : docs;
+      
+      // If session filtering yielded no results but we have docs, fall back to all docs
+      if (sessionId && filteredDocs.length === 0 && docs.length > 0) {
+        logger.warn(`[SESSION-FALLBACK] No documents found for session ${sessionId}, falling back to all ${docs.length} documents`);
+        filteredDocs = docs;
+      }
 
       // Enhanced debug document metadata to understand filtering issue
       if (sessionId && docs.length > 0 && filteredDocs.length === 0) {
@@ -211,20 +218,32 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const history: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
       // Note: For a full chat experience, actual session history should be loaded if sessionId is present.
 
-      // Render the prompt to MessageData[]
-      const ragAssistantPromptObject = await aiInstance.prompt('rag_assistant');
+      // Render the prompt to MessageData[] with defensive checks
       let currentPromptMessages: MessageData[];
-      if (typeof ragAssistantPromptObject === 'function') {
-        const result = await ragAssistantPromptObject({ query, docs: topDocs });
-        // Assuming result is { messages: MessageData[] } or MessageData[]
-        currentPromptMessages = Array.isArray(result) ? result : result?.messages || [];
-        if (currentPromptMessages.length === 0 && !Array.isArray(result)) {
-            logger.warn('Prompt function did not return messages in expected structure, using query as prompt.');
-            // Fallback if prompt structure is not as expected
-            currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+      try {
+        const ragAssistantPromptObject = await aiInstance.prompt('rag_assistant');
+        if (typeof ragAssistantPromptObject === 'function') {
+          // Ensure docs have proper structure before passing to prompt
+          const safeDocs = topDocs.map(doc => ({
+            ...doc,
+            content: doc.content || [{ text: 'No content available' }],
+            metadata: doc.metadata || {}
+          }));
+          
+          const result = await ragAssistantPromptObject({ query, docs: safeDocs });
+          // Assuming result is { messages: MessageData[] } or MessageData[]
+          currentPromptMessages = Array.isArray(result) ? result : result?.messages || [];
+          if (currentPromptMessages.length === 0 && !Array.isArray(result)) {
+              logger.warn('Prompt function did not return messages in expected structure, using query as prompt.');
+              // Fallback if prompt structure is not as expected
+              currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+          }
+        } else {
+          logger.error('RAG assistant prompt object is not a function. Using query as prompt.');
+          currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
         }
-      } else {
-        logger.error('RAG assistant prompt object is not a function. Using query as prompt.');
+      } catch (promptError: any) {
+        logger.error(`Error in prompt function: ${promptError.message || String(promptError)}. Using fallback prompt.`);
         currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
       }
 
@@ -294,19 +313,31 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         const fallbackModelKey = createModelKey(modelId); // This will also use the simplified key
         logger.info(`Falling back to model: ${fallbackModelKey} without tools.`);
         
-        // Fallback: Render prompt similarly
-        const ragAssistantPromptObjectFallback = await aiInstance.prompt('rag_assistant');
+        // Fallback: Render prompt similarly with defensive checks
         let fallbackPromptMessages: MessageData[];
-        if (typeof ragAssistantPromptObjectFallback === 'function') {
-            const result = await ragAssistantPromptObjectFallback({ query, docs: topDocs });
-            fallbackPromptMessages = Array.isArray(result) ? result : result?.messages || [];
-            if (fallbackPromptMessages.length === 0 && !Array.isArray(result)) {
-                 logger.warn('Fallback prompt function did not return messages, using query as prompt.');
-                fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
-            }
-        } else {
-            logger.error('Fallback RAG assistant prompt object is not a function. Using query as prompt.');
-            fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+        try {
+          const ragAssistantPromptObjectFallback = await aiInstance.prompt('rag_assistant');
+          if (typeof ragAssistantPromptObjectFallback === 'function') {
+              // Ensure docs have proper structure before passing to prompt
+              const safeDocs = topDocs.map(doc => ({
+                ...doc,
+                content: doc.content || [{ text: 'No content available' }],
+                metadata: doc.metadata || {}
+              }));
+              
+              const result = await ragAssistantPromptObjectFallback({ query, docs: safeDocs });
+              fallbackPromptMessages = Array.isArray(result) ? result : result?.messages || [];
+              if (fallbackPromptMessages.length === 0 && !Array.isArray(result)) {
+                   logger.warn('Fallback prompt function did not return messages, using query as prompt.');
+                  fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+              }
+          } else {
+              logger.error('Fallback RAG assistant prompt object is not a function. Using query as prompt.');
+              fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+          }
+        } catch (fallbackPromptError: any) {
+          logger.error(`Error in fallback prompt function: ${fallbackPromptError.message || String(fallbackPromptError)}. Using simple prompt.`);
+          fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
         }
         const historyForFallback: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
         const messagesForLlmFallback = historyForFallback.concat(fallbackPromptMessages);
