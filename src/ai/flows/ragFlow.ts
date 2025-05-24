@@ -117,8 +117,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
               requestPart = pendingToolRequests.get(responsePart.toolResponse.ref);
             }
             const output = responsePart?.toolResponse?.output;
-            // Enhanced defensive checks for tool request/response handling
-            const toolName = requestPart?.toolRequest?.name || 'unknown_tool_ref_not_found';
+            
+            // FIXED: Enhanced defensive checks for tool request/response handling
+            const toolName = requestPart?.toolRequest?.name ?? 'unknown_tool_ref_not_found';
             const toolInput = requestPart?.toolRequest?.input;
 
             return {
@@ -195,16 +196,25 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         topDocs = [];
       } else {
         if (filteredDocs.length > FINAL_DOCUMENT_COUNT) {
-          const rerankedDocsOutput: RankedDocument[] = await aiInstance.rerank({
-            reranker: RERANKER_ID,
-            query: Document.fromText(query),
-            documents: filteredDocs,
-            options: { k: FINAL_DOCUMENT_COUNT },
-          });
-          topDocs = rerankedDocsOutput;
-          logger.info(
-            `Reranked ${filteredDocs.length} documents to ${topDocs.length} for session ${sessionId}.`
-          );
+          try {
+            const rerankedDocsOutput: RankedDocument[] = await aiInstance.rerank({
+              reranker: RERANKER_ID,
+              query: Document.fromText(query),
+              documents: filteredDocs,
+              options: { k: FINAL_DOCUMENT_COUNT },
+            });
+            topDocs = rerankedDocsOutput;
+            logger.info(
+              `Reranked ${filteredDocs.length} documents to ${topDocs.length} for session ${sessionId}.`
+            );
+          } catch (rerankerError: any) {
+            logger.error(`Error in RAG reranker: ${rerankerError.message || String(rerankerError)}. Falling back.`);
+            // Fallback: use simple selection of top documents
+            topDocs = filteredDocs.slice(0, FINAL_DOCUMENT_COUNT);
+            logger.info(
+              `Fallback: Selected first ${topDocs.length} documents from ${filteredDocs.length} for session ${sessionId}.`
+            );
+          }
         } else {
           topDocs = filteredDocs;
         }
