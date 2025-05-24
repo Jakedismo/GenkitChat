@@ -1,5 +1,5 @@
 import { aiInstance } from "@/genkit-server";
-import { createModelKey } from "@/services/rag";
+import { createModelKey } from "@/ai/flows/ragFlow"; // Corrected import path
 import type {
   GenerateResponseData,
   MessageData,
@@ -105,34 +105,7 @@ export async function initiateChatStream(
   const currentSessionId = input.sessionId || uuidv4();
   const temperature = mapTemperature(input.temperaturePreset);
 
-  const messages: MessageData[] = [];
-
-  // --- Add System Prompts Based on Enabled Tools ---
-  let systemPromptContent = "";
-  if (input.perplexitySearchEnabled || input.perplexityDeepResearchEnabled) {
-    systemPromptContent +=
-      "When you receive output from the perplexitySearch or perplexityDeepResearch tools, your response must consist ONLY of the raw, unmodified text provided by the tool. Do not add any introduction, conclusion, summarization, or commentary. Preserve all original formatting, including markdown tables and citations. Respond ONLY with the tool's output and nothing else.";
-  }
-  if (input.tavilySearchEnabled) {
-    if (systemPromptContent) systemPromptContent += "\\n\\n"; // Add separator if other instructions exist
-    systemPromptContent +=
-      "When generating a response using information from the tavilySearch tool, focus on synthesizing the information. Do NOT include the source markers like '[Source N]' in your text, as a formatted list of sources will be appended later.";
-  }
-
-  if (systemPromptContent) {
-    messages.push({ role: "system", content: [{ text: systemPromptContent }] });
-    console.log("System Prompt Added:", systemPromptContent);
-  }
-  // --- End System Prompts ---
-
-  // Prepend history if provided
-  if (input.history && input.history.length > 0) {
-    messages.push(...input.history);
-  }
-  // Add current user message
-  messages.push({ role: "user", content: [{ text: input.userMessage }] });
-
-  // Collect names of enabled tools
+  // Collect names of enabled tools first so we can pass them to the prompt templates
   const enabledToolNames: string[] = [];
   if (input.tavilySearchEnabled) enabledToolNames.push("tavilySearch");
   if (input.tavilyExtractEnabled) enabledToolNames.push("tavilyExtract");
@@ -144,6 +117,68 @@ export async function initiateChatStream(
     enabledToolNames.push("context7/resolve-library-id");
   if (input.context7GetLibraryDocsEnabled)
     enabledToolNames.push("context7/get-library-docs");
+
+  console.log(`Enabled tools: ${enabledToolNames.join(", ")}`);
+  
+  // Initialize messages array
+  const messages: MessageData[] = [];
+  
+  // Initialize an empty system message
+  let systemMessage: MessageData | null = null;
+  
+  try {
+    // Load the appropriate prompt template based on the temperature preset
+    let promptTemplate;
+    switch (input.temperaturePreset) {
+      case "precise":
+        promptTemplate = await aiInstance.prompt("basic_chat_precise");
+        break;
+      case "creative":
+        promptTemplate = await aiInstance.prompt("basic_chat_creative");
+        break;
+      case "normal":
+      default:
+        promptTemplate = await aiInstance.prompt("basic_chat_normal");
+        break;
+    }
+    
+    // Apply the prompt template with the tools
+    const promptResult = await promptTemplate({
+      modelId: createModelKey(input.modelId),
+      tools: enabledToolNames,
+    });
+    
+    // Use the first message from the prompt result as our system prompt
+    if (promptResult.messages && promptResult.messages.length > 0) {
+      // Store the system message from the prompt template
+      systemMessage = promptResult.messages[0];
+      console.log("System prompt from template loaded successfully");
+    }
+  } catch (promptError) {
+    console.error("Error loading prompt template:", promptError);
+    console.log("Falling back to basic system message");
+    // Create a fallback system message
+    systemMessage = { 
+      role: "system", 
+      content: [{ 
+        text: `You are a helpful assistant. You have access to the following tools: ${enabledToolNames.join(", ")}` 
+      }] 
+    };
+  }
+  
+  // Add the system message to the messages array
+  if (systemMessage) {
+    messages.push(systemMessage);
+  }
+
+  // Prepend history if provided
+  if (input.history && input.history.length > 0) {
+    messages.push(...input.history);
+  }
+  // Add current user message
+  messages.push({ role: "user", content: [{ text: input.userMessage }] });
+
+  // Tools already collected and configured above
 
   // Verify if API keys are set when tools are enabled and log warnings appropriately
   if (

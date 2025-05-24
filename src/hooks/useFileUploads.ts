@@ -63,14 +63,14 @@ export function useFileUploads(
     try {
       const formData = new FormData();
       newFiles.forEach((uploadFile) => {
-        formData.append('files', uploadFile.file, uploadFile.file.name);
+        formData.append('file', uploadFile.file, uploadFile.file.name);
       });
       formData.append('sessionId', sessionIdToUse);
 
       console.log(`Uploading ${newFiles.length} file(s) via FormData for session ${sessionIdToUse} (useFileUploads)`);
 
       // Send files to the backend RAG endpoint
-      console.log(`[useFileUploads] Making API request to /api/rag-chat with ${formData.getAll('files').length} files`);
+      console.log(`[useFileUploads] Making API request to /api/rag-chat with ${formData.getAll('file').length} files`);
       let response;
       try {
         response = await fetch('/api/rag-chat', { // Assuming this endpoint handles file uploads

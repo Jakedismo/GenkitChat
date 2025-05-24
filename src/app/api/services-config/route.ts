@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getRagEndpoints } from '@/services/rag';
-import { getBedrockModels } from '@/services/bedrock';
 import '@/lib/genkit-instance'; // Ensure Genkit is initialized
 
 export async function GET() {
@@ -9,14 +8,12 @@ export async function GET() {
     // This might involve awaiting an initialization promise if your setup requires it.
     // For now, we assume '@/lib/genkit-instance' handles synchronous or awaited init.
 
-    const [ragEndpoints, bedrockModels] = await Promise.all([
+    const [ragEndpoints] = await Promise.all([
       getRagEndpoints(),
-      getBedrockModels(),
     ]);
 
     return NextResponse.json({
       ragEndpoints,
-      bedrockModels,
     });
   } catch (error: unknown) {
     console.error('Error fetching services config:', error);

@@ -15,6 +15,7 @@
     "@genkit-ai/core": "^1.7.0",
     "@genkit-ai/dev-local-vectorstore": "^1.7.0",
     "@genkit-ai/express": "^1.7.0",
+    "@genkit-ai/flow": "^0.5.17",
     "@genkit-ai/googleai": "^1.8.0",
     "@genkit-ai/next": "^1.7.0",
     "@genkit-ai/vertexai": "^1.7.0",

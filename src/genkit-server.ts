@@ -3,8 +3,9 @@
 
 import { genkit } from "genkit/beta"; // Align with lib/genkit-instance, removed Genkit type
 import { logger } from "genkit/logging"; // Added for log level
-import { googleAI, textEmbedding004 } from "@genkit-ai/googleai";
+import { googleAI } from "@genkit-ai/googleai";
 import { openAI } from "genkitx-openai";
+import { vertexAI } from "@genkit-ai/vertexai"; // Import Vertex AI for reranking
 import {
   devLocalVectorstore,
   devLocalIndexerRef,
@@ -16,29 +17,25 @@ import { tavilyPlugin } from "./ai/plugins/tavily-plugin"; // Import custom Tavi
 import { startFlowServer } from "@genkit-ai/express"; // For serving flows
 import { perplexityPlugin } from "./ai/plugins/perplexity-plugin"; // Import local Perplexity plugin
 
-// Import RagFlowInputSchema to avoid circular dependencies
-import { RagFlowInputSchema, RagStreamEventSchemaZod } from "./services/rag";
-import { z } from "zod";
-
 // We'll define flow instances below after aiInstance is initialized
 
 // TODO: Replace with your actual Google Cloud Project ID and Location
-const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || "your-gcp-project-id";
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || "mlops-dev-330107";
 const LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
 
 // Only log in server context to avoid client-side errors
 if (typeof window === "undefined") {
   console.log("Initializing Genkit configuration...");
-}
-
-// API Key Check (ensure GEMINI_API_KEY or GOOGLE_API_KEY is set in the environment)
-if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
-  console.error(
-    "FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set. Genkit cannot start."
-  );
-  // Throw an error to prevent Genkit from starting incorrectly
-  // Note: The googleAI plugin itself might throw, but being explicit here is safer.
-  throw new Error("Missing Google AI API Key environment variable.");
+  
+  // API Key Check (ensure GEMINI_API_KEY or GOOGLE_API_KEY is set in the environment)
+  if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
+    console.error(
+      "FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set. Genkit cannot start."
+    );
+    // Throw an error to prevent Genkit from starting incorrectly
+    // Note: The googleAI plugin itself might throw, but being explicit here is safer.
+    throw new Error("Missing Google AI API Key environment variable.");
+  }
 }
 
 // Function to safely configure Context7 MCP client
@@ -75,7 +72,14 @@ function getPlugins() {
   } catch (e) {
     console.warn("Failed to initialize OpenAI plugin:", e);
   }
-
+  try {
+    plugins.push(vertexAI({
+      projectId: PROJECT_ID,
+      location: LOCATION,
+    }));
+  } catch (e) {
+    console.warn("Failed to initialize Vertex AI plugin:", e);
+  }
   const context7 = getContext7Client();
   if (context7) plugins.push(context7);
 
@@ -84,7 +88,7 @@ function getPlugins() {
       devLocalVectorstore([
         {
           indexName: "documentRagStore",
-          embedder: textEmbedding004,
+          embedder: vertexAI.embedder('text-embedding-005'),
         },
       ])
     );
@@ -104,10 +108,7 @@ function getPlugins() {
     console.warn("Failed to initialize reranker plugin:", e);
   }
 
-  // Tavily and Perplexity plugins will be initialized after the Genkit instance is created
-
-  // Perplexity plugin will be initialized after the Genkit instance is created
-
+  // Note: Tavily and Perplexity plugins will be initialized after the Genkit instance is created
   return plugins;
 }
 
@@ -178,7 +179,7 @@ export const aiInstance = (function () {
         console.error(
           "Genkit instance failed to initialize. Operations will fail."
         );
-        return function() {
+        return function () {
           return Promise.reject(new Error("Genkit not initialized"));
         };
       },
@@ -235,16 +236,40 @@ export const ragRetrieverRef = (function () {
 })();
 
 // Define and export document QA stream flow
-// This will be populated from the rag.ts module
-export let documentQaStreamFlow: any;
+// This will be populated dynamically to avoid circular dependencies
+export let documentQaStreamFlow: any; 
 
-// Function to start the flow server - NOT automatically executed
+// Track server initialization state
+let isServerInitialized = false;
+let serverInitializationPromise: Promise<void> | null = null;
+
+// Function to start the flow server - implements singleton pattern
 export async function startGenkitServer() {
+  // Return immediately if we're in the browser
   if (typeof window !== "undefined") {
     console.warn("Cannot start Genkit server in browser context");
     return;
   }
 
+  // If server is already initialized, return immediately
+  if (isServerInitialized) {
+    console.log("Genkit server already initialized, skipping initialization");
+    return;
+  }
+
+  // If initialization is in progress, wait for it to complete
+  if (serverInitializationPromise) {
+    console.log("Genkit server initialization already in progress, waiting...");
+    return serverInitializationPromise;
+  }
+
+  // Start initialization and save the promise
+  serverInitializationPromise = initializeServer();
+  return serverInitializationPromise;
+}
+
+// Actual initialization logic in a separate function
+async function initializeServer(): Promise<void> {
   try {
     console.log("Starting Genkit server initialization...");
 
@@ -258,13 +283,15 @@ export async function startGenkitServer() {
 
     console.log("Genkit instance initialized with plugins.");
 
-    // Lazy-load flows to avoid circular dependencies
-    // This is where we get the properly implemented flow from rag.ts
-    const rag = await import("./services/rag");
-    documentQaStreamFlow = rag.documentQaStreamFlow;
-    
+    // Lazy-load the flow to avoid circular dependencies
+    const ragFlowModule = await import("./ai/flows/ragFlow");
+    documentQaStreamFlow = ragFlowModule.documentQaStreamFlow;
+
     // Log flow availability
-    console.log("documentQaStreamFlow loaded from rag module:", !!documentQaStreamFlow);
+    console.log(
+      "documentQaStreamFlow loaded dynamically from ragFlow.ts:",
+      !!documentQaStreamFlow
+    );
 
     // Define the flows to register with the server
     const flowsToRegister = [
@@ -274,24 +301,28 @@ export async function startGenkitServer() {
 
     // Start a single flow server instance with all registered flows
     const SERVER_PORT = 3400; // Define port as a constant
-    
-    await startFlowServer({
+
+    startFlowServer({
       flows: flowsToRegister,
       port: SERVER_PORT,
       cors: { origin: "*" },
     });
-    
-    console.log(`Genkit flow server started on port ${SERVER_PORT}`);
 
+    // Mark initialization as complete
+    isServerInitialized = true;
+
+    console.log(`Genkit flow server started on port ${SERVER_PORT}`);
     console.log(
-      `Genkit server started on port 3400 with ${flowsToRegister.length} flow(s) registered.`
+      `Genkit server started on port ${SERVER_PORT} with ${flowsToRegister.length} flow(s) registered.`
     );
     console.log(
       "Genkit Developer UI should be available at http://localhost:4000"
     );
-  } catch (e) {
-    console.error("Failed to start Genkit server:", e);
+    console.log(`Genkit server successfully initialized`);
+  } catch (error) {
+    console.error("Failed to initialize Genkit server:", error);
+    // Reset the initialization promise so it can be retried
+    serverInitializationPromise = null;
+    throw error;
   }
 }
-
-// Don't auto-start the server - it will be started explicitly when needed

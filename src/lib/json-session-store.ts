@@ -1,7 +1,6 @@
 import { SessionStore, SessionData } from 'genkit/beta'; // Or 'genkit/flow' if types moved
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import * as path from 'node:path';
-import { ensureDir } from 'fs-extra'; // For ensuring directory exists
 
 // Define a directory to store session files.
 // IMPORTANT: Ensure this directory is writable by your application
@@ -20,7 +19,7 @@ export class JsonSessionStore<S = any> implements SessionStore<S> {
 
   private async ensureSessionsDir(): Promise<void> {
     try {
-      await ensureDir(this.sessionsDir);
+      await mkdir(this.sessionsDir, { recursive: true });
     } catch (err) {
       console.error(`[JsonSessionStore] Error ensuring sessions directory '${this.sessionsDir}':`, err);
       // Depending on severity, you might want to throw or handle differently
@@ -48,10 +47,11 @@ export class JsonSessionStore<S = any> implements SessionStore<S> {
       const s = await readFile(filePath, { encoding: 'utf8' });
       const data = JSON.parse(s);
       // Ensure the loaded data has the basic SessionData structure
-      if (data && typeof data.state !== 'undefined' && Array.isArray(data.messages)) {
+      if (data && typeof data.id === 'string') {
+        // SessionData requires id, and optionally state and threads
         return data as SessionData<S>;
       }
-      console.warn(`[JsonSessionStore] Data in ${filePath} does not match SessionData structure.`);
+      console.warn(`[JsonSessionStore] Data in ${filePath} does not match SessionData structure (missing id).`);
       return undefined;
     } catch (error: any) {
       if (error.code === 'ENOENT') {
@@ -63,7 +63,7 @@ export class JsonSessionStore<S = any> implements SessionStore<S> {
     }
   }
 
-  async save(sessionId: string, sessionData: SessionData<S>): Promise<void> {
+  async save(sessionId: string, sessionData: Omit<SessionData<S>, 'id'>): Promise<void> {
     if (!sessionId) {
       console.warn('[JsonSessionStore] Attempted to save session with empty ID.');
       return;
@@ -71,12 +71,17 @@ export class JsonSessionStore<S = any> implements SessionStore<S> {
     await this.ensureSessionsDir();
     const filePath = this.getFilePath(sessionId);
     try {
-      const s = JSON.stringify(sessionData, null, 2); // Pretty print JSON
+      // Add the id field to match full SessionData structure for storage
+      const fullSessionData: SessionData<S> = {
+        id: sessionId,
+        ...sessionData
+      };
+      const s = JSON.stringify(fullSessionData, null, 2); // Pretty print JSON
       await writeFile(filePath, s, { encoding: 'utf8' });
     } catch (error) {
       console.error(`[JsonSessionStore] Error writing session file ${filePath}:`, error);
       // Depending on your error handling strategy, you might want to throw this error
-      // throw error; 
+      // throw error;
     }
   }
 }
