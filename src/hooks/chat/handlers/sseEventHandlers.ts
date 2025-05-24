@@ -13,6 +13,9 @@ import {
   validateFinalResponse
 } from "../parsers/jsonRecovery";
 
+// Module-level storage for multi-part responses
+const responseParts = new Map<string, Map<number, string>>();
+
 /**
  * Process text or chunk events
  */
@@ -191,7 +194,76 @@ export function handleFinalResponseEvent(
   callbacks: StreamEventCallbacks
 ): void {
   try {
-    const sanitizedPayload = sanitizeJsonPayload(dataPayload, 'final_response');
+    console.log(`[sseEventHandlers] Processing final_response with payload length: ${dataPayload.length}`);
+    console.log(`[sseEventHandlers] Payload preview: ${dataPayload.substring(0, 200)}...`);
+    console.log(`[sseEventHandlers] Payload end: ...${dataPayload.substring(Math.max(0, dataPayload.length - 50))}`);
+    
+    let jsonData: any;
+    
+    // Check if JSON appears to be truncated
+    const isTruncated = !dataPayload.trim().endsWith('}') && !dataPayload.trim().endsWith('"}');
+    if (isTruncated) {
+      console.warn(`[sseEventHandlers] JSON appears truncated - doesn't end with } or "}. Last 20 chars: "${dataPayload.slice(-20)}"`);
+    }
+    
+    // Try direct parsing first
+    try {
+      jsonData = safeDestr<any>(dataPayload);
+      console.log(`[sseEventHandlers] Direct parsing successful`);
+      console.log(`[sseEventHandlers] Parsed JSON structure:`, {
+        hasResponse: !!jsonData?.response,
+        responseType: typeof jsonData?.response,
+        responseLength: typeof jsonData?.response === 'string' ? jsonData.response.length : 'N/A',
+        responsePreview: typeof jsonData?.response === 'string' ? jsonData.response.substring(0, 100) + '...' : jsonData?.response,
+        hasSessionId: !!jsonData?.sessionId,
+        hasToolInvocations: !!jsonData?.toolInvocations,
+        allKeys: Object.keys(jsonData || {})
+      });
+    } catch (parseError) {
+      console.warn(`[sseEventHandlers] Direct JSON parse failed: ${parseError}`);
+      
+      // If JSON is truncated, try to recover using manual extraction
+      const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+      if (isTruncated || errorMessage.includes('Unterminated')) {
+        console.log(`[sseEventHandlers] Attempting manual extraction for truncated JSON`);
+        
+        // Try manual extraction methods for incomplete JSON
+        const manualExtracted = manualExtractResponse(dataPayload);
+        if (manualExtracted) {
+          console.log(`[sseEventHandlers] Manual extraction successful, response length: ${manualExtracted.response.length}`);
+          callbacks.onFinalResponse(manualExtracted, manualExtracted.sessionId);
+          return;
+        }
+        
+        const charExtracted = characterByCharacterExtraction(dataPayload);
+        if (charExtracted) {
+          console.log(`[sseEventHandlers] Character extraction successful, response length: ${charExtracted.response.length}`);
+          callbacks.onFinalResponse(charExtracted, charExtracted.sessionId);
+          return;
+        }
+      }
+      
+      // Try sanitization as fallback
+      const sanitizedPayload = sanitizeJsonPayload(dataPayload, 'final_response');
+      console.log(`[sseEventHandlers] Trying sanitized payload, length: ${sanitizedPayload.length}`);
+      
+      try {
+        jsonData = safeDestr<any>(sanitizedPayload);
+        console.log(`[sseEventHandlers] Sanitized parsing successful, response length: ${typeof jsonData?.response === 'string' ? jsonData.response.length : 'unknown'}`);
+      } catch (sanitizedError) {
+        console.error(`[sseEventHandlers] Sanitized parsing also failed: ${sanitizedError}`);
+        
+        // Final fallback - try to extract whatever we can
+        const finalExtracted = manualExtractResponse(dataPayload) || characterByCharacterExtraction(dataPayload);
+        if (finalExtracted) {
+          console.log(`[sseEventHandlers] Final extraction successful, response length: ${finalExtracted.response.length}`);
+          callbacks.onFinalResponse(finalExtracted, finalExtracted.sessionId || "");
+          return;
+        }
+        
+        jsonData = undefined;
+      }
+    }
     
     // Special handling for Context7 responses
     if (dataPayload.includes('Context7')) {
@@ -199,21 +271,6 @@ export function handleFinalResponseEvent(
       if (context7Data) {
         callbacks.onFinalResponse(context7Data);
         return;
-      }
-    }
-    
-    let jsonData: any;
-    
-    try {
-      jsonData = safeDestr<any>(sanitizedPayload);
-    } catch (parseError) {
-      console.error(`[sseEventHandlers] Initial JSON parse failed: ${parseError}`);
-      // Fallback to JSON.parse for more specific error information
-      try {
-        jsonData = JSON.parse(sanitizedPayload);
-      } catch (jsonError) {
-        console.error(`[sseEventHandlers] Both parsing methods failed: ${jsonError}`);
-        jsonData = undefined;
       }
     }
     
@@ -291,6 +348,117 @@ export function handleFinalResponseEvent(
 }
 
 /**
+ * Process multi-part response events
+ */
+export function handleResponsePartEvent(
+  dataPayload: string,
+  callbacks: StreamEventCallbacks
+): void {
+  try {
+    console.log(`[sseEventHandlers] Processing response part event`);
+    
+    const partData = safeDestr<{
+      id: string;
+      part: number;
+      total: number;
+      data: string;
+      sessionId?: string;
+    }>(dataPayload);
+    
+    if (!partData || !partData.id) {
+      console.error('[sseEventHandlers] Invalid response_part data:', dataPayload);
+      return;
+    }
+    
+    console.log(`[sseEventHandlers] Received response part ${partData.part}/${partData.total} (${partData.data.length} chars)`);
+    
+    // Store parts in module-level map
+    if (!responseParts.has(partData.id)) {
+      responseParts.set(partData.id, new Map<number, string>());
+    }
+    
+    const responseMap = responseParts.get(partData.id)!;
+    responseMap.set(partData.part, partData.data);
+    
+    console.log(`[sseEventHandlers] Stored part ${partData.part}/${partData.total}`);
+    
+  } catch (error) {
+    console.error('[sseEventHandlers] Error processing response_part:', error);
+    throw error; // Re-throw to be caught by the try-catch in the switch statement
+  }
+}
+
+/**
+ * Process response complete events
+ */
+export function handleResponseCompleteEvent(
+  dataPayload: string,
+  callbacks: StreamEventCallbacks
+): void {
+  try {
+    console.log(`[sseEventHandlers] Processing response complete event`);
+    
+    const completeData = safeDestr<{
+      id: string;
+      sessionId?: string;
+      toolInvocations?: any[];
+    }>(dataPayload);
+    
+    if (!completeData || !completeData.id) {
+      console.error('[sseEventHandlers] Invalid response_complete data:', dataPayload);
+      return;
+    }
+    
+    console.log(`[sseEventHandlers] Response complete signal for ID: ${completeData.id}`);
+    
+    // Reconstruct the complete response from parts
+    if (!responseParts.has(completeData.id)) {
+      console.error('[sseEventHandlers] No parts found for response ID:', completeData.id);
+      return;
+    }
+    
+    const parts = responseParts.get(completeData.id)!;
+    const sortedParts = Array.from(parts.entries()).sort((a, b) => a[0] - b[0]);
+    const completeJsonString = sortedParts.map(([_, data]) => data).join('');
+    
+    console.log(`[sseEventHandlers] Reconstructed complete response (${completeJsonString.length} chars)`);
+    
+    // Clean up stored parts
+    responseParts.delete(completeData.id);
+    
+    // Parse the reconstructed JSON
+    try {
+      const jsonData = safeDestr<any>(completeJsonString);
+      console.log(`[sseEventHandlers] Successfully parsed reconstructed JSON (${typeof jsonData?.response === 'string' ? jsonData.response.length : 'N/A'} chars)`);
+      
+      // Add tool invocations from complete signal if present
+      if (completeData.toolInvocations) {
+        jsonData.toolInvocations = completeData.toolInvocations;
+      }
+      
+      callbacks.onFinalResponse(jsonData as ParsedJsonData, completeData.sessionId);
+      
+    } catch (parseError) {
+      console.error('[sseEventHandlers] Failed to parse reconstructed JSON:', parseError);
+      console.error('[sseEventHandlers] Reconstructed JSON:', completeJsonString);
+      
+      // Fallback error response
+      const errorResponse: ParsedJsonData = {
+        response: "Error: Could not reconstruct complete response from parts. Please try again.",
+        sessionId: completeData.sessionId || "",
+        toolInvocations: completeData.toolInvocations || []
+      };
+      callbacks.onFinalResponse(errorResponse, completeData.sessionId || "");
+    }
+    
+    
+  } catch (error) {
+    console.error('[sseEventHandlers] Error processing response_complete:', error);
+    throw error; // Re-throw to be caught by the try-catch in the switch statement
+  }
+}
+
+/**
  * Main SSE event processing function
  */
 export function processSseEvent(
@@ -343,6 +511,22 @@ export function processSseEvent(
       break;
     case "final_response":
       handleFinalResponseEvent(joinedDataPayload, callbacks);
+      break;
+    case "response_part":
+      try {
+        handleResponsePartEvent(joinedDataPayload, callbacks);
+      } catch (error) {
+        console.error('[sseEventHandlers] Error in handleResponsePartEvent:', error);
+        callbacks.onStreamError(`Error processing response part: ${error}`);
+      }
+      break;
+    case "response_complete":
+      try {
+        handleResponseCompleteEvent(joinedDataPayload, callbacks);
+      } catch (error) {
+        console.error('[sseEventHandlers] Error in handleResponseCompleteEvent:', error);
+        callbacks.onStreamError(`Error processing response complete: ${error}`);
+      }
       break;
     default:
       console.warn(

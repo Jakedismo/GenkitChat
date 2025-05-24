@@ -244,7 +244,7 @@ export function useChatManager({
     const userMessageText = userInput;
     let sessionIdToUse = currentSessionId;
     if (!sessionIdToUse) {
-      sessionIdToUse = startNewSession();
+      sessionIdToUse = await startNewSession();
     }
 
     addUserMessage(userMessageText);
@@ -297,14 +297,6 @@ export function useChatManager({
       const reader = response.body.getReader();
       const streamEventCallbacks: StreamEventCallbacks = {
         onText: (textChunk: string) => {
-          // Do not update text if the final response for this message has already been processed
-          if (finalizedMessageIds.has(botMessagePlaceholderId)) {
-            console.log(
-              `[useChatManager] Ignoring text chunk for finalized message ID: ${botMessagePlaceholderId}`
-            );
-            return;
-          }
-
           // Process text chunk, ensuring proper handling of special characters
           const processedChunk = textChunk
             .replace(/\\+$/, "") // Remove trailing backslashes that might cause issues
@@ -313,8 +305,10 @@ export function useChatManager({
             .replace(/\\r/g, "\r") // Convert escaped carriage returns
             .replace(/\\t/g, "\t"); // Convert escaped tabs
 
-          // Always append the incoming chunk
+          // Always append the incoming chunk - let the final response handler decide what to do
           updateBotMessageText(botMessagePlaceholderId, processedChunk);
+          
+          console.log(`[useChatManager] Processed text chunk of ${processedChunk.length} chars for message ${botMessagePlaceholderId}`);
         },
         onSources: (sources: DocumentData[]) => {
           updateBotMessageSources(botMessagePlaceholderId, sources);

@@ -268,9 +268,23 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           maxOutputTokens: maxTokens,
         },
         streamingCallback: (chunk: any) => { // Using any for chunk type temporarily
+          console.log('[RAG-STREAM-DEBUG] Received chunk:', {
+            hasText: !!chunk?.text,
+            textLength: chunk?.text?.length || 0,
+            textPreview: chunk?.text?.substring(0, 100) || 'no text',
+            chunkKeys: Object.keys(chunk || {}),
+            chunkType: typeof chunk,
+            chunkContent: chunk,
+            accumulatedLength: accumulatedLlmText.length
+          });
+          
           if (chunk?.text) {
+            console.log('[RAG-STREAM-DEBUG] Processing text chunk:', chunk.text);
             sendChunk({ type: 'text', text: chunk.text });
             accumulatedLlmText += chunk.text;
+            console.log('[RAG-STREAM-DEBUG] Updated accumulated text length:', accumulatedLlmText.length);
+          } else {
+            console.log('[RAG-STREAM-DEBUG] Chunk has no text property, chunk structure:', JSON.stringify(chunk, null, 2));
           }
           // Enhanced defensive checks for tool requests
           chunk?.toolRequests?.forEach((requestPart: ToolRequestPart) => {
@@ -296,21 +310,39 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       // Moved logger.info here to accurately reflect the tools being passed
       logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
 
+      console.log('[RAG-STREAM-DEBUG] Starting LLM stream generation');
       const llmStreamResult = aiInstance.generateStream(generateOptions);
 
+      let streamItemCount = 0;
       for await (const _item of llmStreamResult.stream) {
+        streamItemCount++;
+        console.log(`[RAG-STREAM-DEBUG] Processed stream item ${streamItemCount}`);
         // The streamingCallback handles individual chunks/items.
         // This loop ensures the entire stream is processed.
       }
       
+      console.log(`[RAG-STREAM-DEBUG] Stream completed after ${streamItemCount} items`);
+      console.log('[RAG-STREAM-DEBUG] Accumulated text length before final response:', accumulatedLlmText.length);
+      
       const finalLlmResponse = await llmStreamResult.response;
-      await flushToolBuffer(); 
+      console.log('[RAG-STREAM-DEBUG] Final LLM response received:', {
+        hasText: !!finalLlmResponse.text,
+        textLength: finalLlmResponse.text?.length || 0,
+        textPreview: finalLlmResponse.text?.substring(0, 100) || 'no text'
+      });
+      
+      await flushToolBuffer();
       
       const responseText = finalLlmResponse.text;
       if (accumulatedLlmText === '' && responseText) {
+        console.log('[RAG-STREAM-DEBUG] Using final response text as fallback');
         sendChunk({ type: 'text', text: responseText });
         accumulatedLlmText = responseText;
       }
+      
+      console.log('[RAG-STREAM-DEBUG] Final accumulated text length:', accumulatedLlmText.length);
+      console.log('[RAG-STREAM-DEBUG] Final accumulated text preview:', accumulatedLlmText.substring(0, 200) + '...');
+      console.log('[RAG-STREAM-DEBUG] Final accumulated text ending:', '...' + accumulatedLlmText.substring(Math.max(0, accumulatedLlmText.length - 100)));
       
       return accumulatedLlmText;
 

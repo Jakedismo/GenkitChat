@@ -53,15 +53,28 @@ export async function processStream(
         if (buffer.trim()) {
           console.warn(
             "[useChatStreaming] Stream ended with unprocessed data in buffer:",
-            buffer,
+            buffer.substring(0, 200) + (buffer.length > 200 ? '...' : ''),
           );
-          // Attempt to process the last line if it seems like a data line without a newline
-          if (currentSSEDataLines.length > 0 && buffer.startsWith("data:")) {
-            currentSSEDataLines.push(buffer.substring(5));
+          console.log("[useChatStreaming] Full buffer content:", buffer);
+          
+          // Try to process remaining buffer content
+          const remainingLines = buffer.split('\n');
+          for (const line of remainingLines) {
+            if (line.startsWith("event:")) {
+              currentSSEEventType = line.substring(6).trim();
+            } else if (line.startsWith("data:")) {
+              currentSSEDataLines.push(line.substring(5).trim());
+            }
           }
         }
+        
         // Final processing of any pending event data before breaking
         if (currentSSEDataLines.length > 0) {
+          console.log("[useChatStreaming] Processing final event data:", {
+            eventType: currentSSEEventType,
+            dataLines: currentSSEDataLines.length,
+            preview: currentSSEDataLines.join('').substring(0, 100) + '...'
+          });
           processSseEvent(currentSSEEventType, currentSSEDataLines, callbacks);
         }
         break;
@@ -71,6 +84,8 @@ export async function processStream(
       let normalizedChunk = rawChunk.replace(/\\n/g, "\n").replace(/\r/g, "");
       buffer += normalizedChunk;
 
+      console.log(`[useChatStreaming] Received chunk: ${rawChunk.length} bytes, buffer now: ${buffer.length} chars`);
+
       let lineEndPos;
       while ((lineEndPos = buffer.indexOf("\n")) !== -1) {
         const line = buffer.substring(0, lineEndPos);
@@ -79,6 +94,8 @@ export async function processStream(
         if (line === "") {
           // Empty line: event boundary
           if (currentSSEDataLines.length > 0) {
+            console.log(`[useChatStreaming] Processing complete SSE event: ${currentSSEEventType}, data lines: ${currentSSEDataLines.length}`);
+            console.log(`[useChatStreaming] Combined data length: ${currentSSEDataLines.join('').length} chars`);
             processSseEvent(
               currentSSEEventType,
               currentSSEDataLines,
@@ -89,12 +106,17 @@ export async function processStream(
           currentSSEDataLines = [];
         } else if (line.startsWith("event:")) {
           currentSSEEventType = line.substring(6).trim();
+          console.log(`[useChatStreaming] New SSE event type: ${currentSSEEventType}`);
         } else if (line.startsWith("data:")) {
-          currentSSEDataLines.push(line.substring(5).trim()); // Trim individual data lines
+          const dataLine = line.substring(5).trim();
+          currentSSEDataLines.push(dataLine);
+          console.log(`[useChatStreaming] Added data line (${dataLine.length} chars): ${dataLine.substring(0, 100)}...`);
         } else if (line.startsWith(":")) {
           // Comment, ignore
+          console.log(`[useChatStreaming] Received comment: ${line}`);
         } else {
           // Ignore other non-empty lines for robustness
+          console.log(`[useChatStreaming] Ignoring unrecognized line: ${line.substring(0, 50)}...`);
         }
       }
     } catch (error) {
