@@ -333,11 +333,7 @@ export async function POST(req: Request) {
                     };
                     
                     // Test JSON serialization first to catch any issues
-                    let jsonString = JSON.stringify(finalResponseData);
-
-                    // CRITICAL FIX: Ensure JSON is properly encoded for SSE
-                    // Replace any literal newlines that might break SSE parsing
-                    jsonString = jsonString.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+                    const jsonString = JSON.stringify(finalResponseData);
 
                     console.log('[RAG-DEBUG] JSON serialization successful, length:', jsonString.length);
                     console.log('[RAG-DEBUG] Original result length:', typeof result === 'string' ? result.length : 'unknown');
@@ -353,7 +349,7 @@ export async function POST(req: Request) {
 
                     console.log('[RAG-DEBUG] JSON string length:', jsonString.length);
 
-                    // Send as single response with properly escaped JSON
+                    // Send as single response - JSON.stringify already handles escaping properly
                     const finalResponseEvent = `event: final_response\ndata: ${jsonString}\n\n`;
                     controller.enqueue(encoder.encode(finalResponseEvent));
                     console.log('[RAG-DEBUG] Sent response as single event');

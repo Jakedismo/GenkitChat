@@ -194,9 +194,10 @@ export function handleFinalResponseEvent(
 ): void {
   try {
     console.log(`[sseEventHandlers] Processing final_response with payload length: ${dataPayload.length}`);
+    console.log(`[sseEventHandlers] Full payload:`, dataPayload);
     console.log(`[sseEventHandlers] Payload preview: ${dataPayload.substring(0, 200)}...`);
     console.log(`[sseEventHandlers] Payload end: ...${dataPayload.substring(Math.max(0, dataPayload.length - 50))}`);
-    
+
     let jsonData: any;
     
     // Check if JSON appears to be truncated
