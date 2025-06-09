@@ -301,11 +301,14 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             chunkContent: chunk,
             accumulatedLength: accumulatedLlmText.length
           });
-          
-          if (chunk?.text) {
-            console.log('[RAG-STREAM-DEBUG] Processing text chunk:', chunk.text);
-            sendChunk({ type: 'text', text: chunk.text });
-            accumulatedLlmText += chunk.text;
+
+          // Try different possible text properties in the chunk
+          let textContent = chunk?.text || chunk?.content || chunk?.delta?.text || chunk?.choices?.[0]?.delta?.content;
+
+          if (textContent) {
+            console.log('[RAG-STREAM-DEBUG] Processing text chunk:', textContent);
+            sendChunk({ type: 'text', text: textContent });
+            accumulatedLlmText += textContent;
             console.log('[RAG-STREAM-DEBUG] Updated accumulated text length:', accumulatedLlmText.length);
           } else {
             console.log('[RAG-STREAM-DEBUG] Chunk has no text property, chunk structure:', JSON.stringify(chunk, null, 2));
@@ -338,11 +341,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const llmStreamResult = aiInstance.generateStream(generateOptions);
 
       let streamItemCount = 0;
-      for await (const _item of llmStreamResult.stream) {
+      for await (const item of llmStreamResult.stream) {
         streamItemCount++;
-        console.log(`[RAG-STREAM-DEBUG] Processed stream item ${streamItemCount}`);
-        // The streamingCallback handles individual chunks/items.
-        // This loop ensures the entire stream is processed.
+        console.log(`[RAG-STREAM-DEBUG] Processed stream item ${streamItemCount}:`, item);
+
+        // Process the stream item directly if the callback isn't working
+        if (item?.text && accumulatedLlmText.length === 0) {
+          console.log('[RAG-STREAM-DEBUG] Processing stream item text directly:', item.text);
+          sendChunk({ type: 'text', text: item.text });
+          accumulatedLlmText += item.text;
+        }
       }
       
       console.log(`[RAG-STREAM-DEBUG] Stream completed after ${streamItemCount} items`);
