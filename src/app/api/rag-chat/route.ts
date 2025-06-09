@@ -334,32 +334,26 @@ export async function POST(req: Request) {
                     
                     // Test JSON serialization first to catch any issues
                     let jsonString = JSON.stringify(finalResponseData);
-                    
-                    // Ensure the JSON string doesn't contain unescaped newlines that would break SSE parsing
-                    // JSON.stringify should handle this automatically, but let's verify
-                    if (jsonString.includes('\n') && !jsonString.includes('\\n')) {
-                      console.warn('[RAG-DEBUG] JSON contains unescaped newlines, this will break SSE parsing');
-                      // Re-escape any unescaped newlines
-                      jsonString = jsonString.replace(/\n/g, '\\n');
-                    }
+
+                    // CRITICAL FIX: Ensure JSON is properly encoded for SSE
+                    // Replace any literal newlines that might break SSE parsing
+                    jsonString = jsonString.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+
                     console.log('[RAG-DEBUG] JSON serialization successful, length:', jsonString.length);
                     console.log('[RAG-DEBUG] Original result length:', typeof result === 'string' ? result.length : 'unknown');
                     console.log('[RAG-DEBUG] Cleaned result length:', cleanedResult.length);
                     console.log('[RAG-DEBUG] JSON preview:', jsonString.substring(0, 300) + '...');
                     console.log('[RAG-DEBUG] JSON ending:', '...' + jsonString.substring(Math.max(0, jsonString.length - 100)));
-                    
+
                     // Ensure the JSON string is properly formatted
                     if (!jsonString.endsWith('}')) {
                       console.error('[RAG-DEBUG] JSON string does not end with }, this will cause parsing errors');
                       throw new Error('Malformed JSON string');
                     }
-                    
-                    // CRITICAL FIX: Use multi-part SSE transmission to avoid browser/network limits
-                    // Large SSE events get truncated by browsers/proxies, so split into multiple events
-                    
+
                     console.log('[RAG-DEBUG] JSON string length:', jsonString.length);
-                    
-                    // Always send as single response to avoid reconstruction issues
+
+                    // Send as single response with properly escaped JSON
                     const finalResponseEvent = `event: final_response\ndata: ${jsonString}\n\n`;
                     controller.enqueue(encoder.encode(finalResponseEvent));
                     console.log('[RAG-DEBUG] Sent response as single event');
