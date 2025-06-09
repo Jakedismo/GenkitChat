@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -124,6 +124,7 @@ const GenkitChat: React.FC = () => {
     [],
   );
   const { toast } = useToast();
+  const animatedMessageIds = useRef(new Set<string>());
 
   // State for citation preview sidebar
   const [citationPreview, setCitationPreview] =
@@ -182,6 +183,13 @@ const GenkitChat: React.FC = () => {
     selectedGeminiModelId,
     selectedOpenAIModelId,
   ]);
+
+  // Effect to clear animatedMessageIds when messages are cleared
+  useEffect(() => {
+    if (messages.length === 0) {
+      animatedMessageIds.current.clear();
+    }
+  }, [messages]);
 
   // Citation click handler remains here as it controls local UI state
   const handleCitationClick = (
@@ -401,18 +409,25 @@ const GenkitChat: React.FC = () => {
                         key={`messages-${renderKey}`}
                         data-messages-container="true"
                       >
-                    {messages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={cn(
-                          "flex w-full flex-col animate-fade-in-slide-up",
-                          message.sender === "user"
-                            ? "items-end"
-                            : "items-start",
-                        )}
-                        data-message-id={message.id}
-                        data-message-type={message.sender}
-                      >
+                    {messages.map((message) => {
+                      let M_SHOULD_ANIMATE = false;
+                      if (!animatedMessageIds.current.has(message.id)) {
+                        M_SHOULD_ANIMATE = true;
+                        animatedMessageIds.current.add(message.id);
+                      }
+                      return (
+                        <div
+                          key={message.id}
+                          className={cn(
+                            "flex w-full flex-col",
+                            message.sender === "user"
+                              ? "items-end"
+                              : "items-start",
+                            M_SHOULD_ANIMATE && "animate-fade-in-slide-up"
+                          )}
+                          data-message-id={message.id}
+                          data-message-type={message.sender}
+                        >
                         <div
                           className={cn(
                             "max-w-[85%] rounded-lg px-4 py-3",
