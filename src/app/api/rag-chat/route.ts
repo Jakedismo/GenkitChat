@@ -275,11 +275,9 @@ export async function POST(req: Request) {
                     sseEventString = `event: error\ndata: ${JSON.stringify({
                       error: event.error,
                     })}\n\n`;
-                    // Send the error and close the stream
-                    controller.enqueue(encoder.encode(sseEventString));
-                    controller.close();
-                    streamClosed = true;
-                    return;
+                    // Send the error event, but DO NOT close the stream.
+                    // The 'sseEventString' will be enqueued by the common logic after the switch.
+                    break;
                   case "final_response":
                     sseEventString = `event: final_response\ndata: ${JSON.stringify({
                       response: event.response,

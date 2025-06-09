@@ -418,7 +418,8 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
 
     } catch (error: any) {
       logger.error(`Error in RAG flow: ${error.message || String(error)}. Falling back.`);
-      sendChunk({ type: 'error', error: `Service error: ${error.message || 'Unknown error during RAG flow'}` });
+      // Send a non-terminal error event to indicate primary failure and fallback attempt
+      sendChunk({ type: 'error', error: `Initial RAG process failed: ${error.message || String(error)}. Attempting fallback.` });
       
       let fallbackAccumulatedText = '';
       try {
@@ -489,15 +490,18 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
 
       } catch (fallbackError: any) {
         logger.error(`Error in RAG fallback: ${fallbackError.message || String(fallbackError)}`);
-        sendChunk({ type: 'error', error: `Service fallback error: ${fallbackError.message || 'Unknown error during fallback'}` });
-        const errorMessage = `Error: RAG service encountered an issue. ${fallbackError.message || ''}`.trim();
+        // Send a non-terminal error event detailing the fallback failure
+        sendChunk({ type: 'error', error: `RAG fallback attempt failed: ${fallbackError.message || String(fallbackError)}` });
+
+        // Then send a final_response indicating overall failure
+        const finalErrorMessage = `RAG process failed after primary attempt and fallback: ${fallbackError.message || String(fallbackError)}`;
         sendChunk({
           type: 'final_response',
-          response: errorMessage,
+          response: finalErrorMessage,
           sessionId: sessionId,
           toolInvocations: [], // Tool invocations are not available in fallback
         });
-        return errorMessage;
+        return finalErrorMessage;
       }
     }
   }
