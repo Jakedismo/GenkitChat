@@ -23,17 +23,19 @@ export function handleTextEvent(
   dataPayload: string,
   callbacks: StreamEventCallbacks
 ): void {
+  console.log(`[sseEventHandlers] Processing ${eventType} event with payload: "${dataPayload}"`);
+
   const textContent = extractTextContent(dataPayload, eventType);
-  
+
   if (textContent) {
-    console.log(`[sseEventHandlers] Sending text chunk of length: ${textContent.length}`);
+    console.log(`[sseEventHandlers] Extracted text chunk of length: ${textContent.length} - "${textContent}"`);
     callbacks.onText(textContent);
   } else if (dataPayload) {
-    // If extraction completely failed but payload wasn't empty
-    callbacks.onText("");
-    console.warn(
-      `[sseEventHandlers] ${eventType} event processing resulted in empty textContent from non-empty payload of length: ${dataPayload.length}`,
-    );
+    // If extraction completely failed but payload wasn't empty, try using raw payload
+    console.warn(`[sseEventHandlers] Text extraction failed, using raw payload: "${dataPayload}"`);
+    callbacks.onText(dataPayload);
+  } else {
+    console.warn(`[sseEventHandlers] ${eventType} event had empty payload`);
   }
 }
 

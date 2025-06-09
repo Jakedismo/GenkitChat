@@ -277,15 +277,20 @@ export function useChatMessages(): UseChatMessagesReturn {
                   // String response
                   const fullText = finalResponse.response;
                   if (fullText.trim()) {
-                    // Always replace with the final response if it's longer or if existing text is very short
-                    // This ensures we get the complete response from the server
-                    if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                      console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with string response (${fullText.length} chars)`);
+                    // PRIORITIZE STREAMING: Only use final response if streaming failed completely
+                    if (!existingText || existingText.length === 0) {
+                      console.log(`[useChatMessages] No streamed text found, using final response (${fullText.length} chars)`);
                       updatedMsg.text = fullText;
+                      foundContent = true;
+                    } else if (existingText.length < fullText.length * 0.8) {
+                      // Only replace if streamed text is significantly shorter (less than 80% of final)
+                      console.log(`[useChatMessages] Streamed text appears incomplete (${existingText.length} chars vs ${fullText.length} chars), using final response`);
+                      updatedMsg.text = fullText;
+                      foundContent = true;
                     } else {
-                      console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
+                      console.log(`[useChatMessages] Keeping streamed text as it appears complete (${existingText.length} chars vs ${fullText.length} chars final)`);
+                      foundContent = true; // Keep existing streamed content
                     }
-                    foundContent = true;
                   }
                 } else if (finalResponse.response && typeof finalResponse.response === 'object') {
                   // Object response, might contain nested content
@@ -293,14 +298,20 @@ export function useChatMessages(): UseChatMessagesReturn {
                     const fullText = finalResponse.response.content.map(extractTextFromPart).join('');
                     
                     if (fullText.trim()) {
-                      // Always replace with the final response if it's longer or if existing text is very short
-                      if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                        console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with object content response (${fullText.length} chars)`);
+                      // PRIORITIZE STREAMING: Only use final response if streaming failed completely
+                      if (!existingText || existingText.length === 0) {
+                        console.log(`[useChatMessages] No streamed text found, using final object response (${fullText.length} chars)`);
                         updatedMsg.text = fullText;
+                        foundContent = true;
+                      } else if (existingText.length < fullText.length * 0.8) {
+                        // Only replace if streamed text is significantly shorter (less than 80% of final)
+                        console.log(`[useChatMessages] Streamed text appears incomplete (${existingText.length} chars vs ${fullText.length} chars), using final object response`);
+                        updatedMsg.text = fullText;
+                        foundContent = true;
                       } else {
-                        console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
+                        console.log(`[useChatMessages] Keeping streamed text as it appears complete (${existingText.length} chars vs ${fullText.length} chars final object)`);
+                        foundContent = true; // Keep existing streamed content
                       }
-                      foundContent = true;
                     }
                   }
                 }

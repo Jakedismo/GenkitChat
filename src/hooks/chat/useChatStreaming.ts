@@ -108,12 +108,17 @@ export async function processStream(
           currentSSEEventType = line.substring(6).trim();
           console.log(`[useChatStreaming] New SSE event type: ${currentSSEEventType}`);
         } else if (line.startsWith("data:")) {
-          const dataLine = line.substring(5).trim();
+          const dataLine = line.substring(5); // Don't trim - preserve spaces
           currentSSEDataLines.push(dataLine);
           console.log(`[useChatStreaming] Added data line (${dataLine.length} chars): ${dataLine.substring(0, 100)}...`);
         } else if (line.startsWith(":")) {
           // Comment, ignore
           console.log(`[useChatStreaming] Received comment: ${line}`);
+        } else if (currentSSEDataLines.length > 0) {
+          // If we're in the middle of collecting data lines and encounter a non-SSE line,
+          // it might be part of multi-line JSON content - add it as a continuation
+          currentSSEDataLines.push(line);
+          console.log(`[useChatStreaming] Added continuation line (${line.length} chars): ${line.substring(0, 50)}...`);
         } else {
           // Ignore other non-empty lines for robustness
           console.log(`[useChatStreaming] Ignoring unrecognized line: ${line.substring(0, 50)}...`);

@@ -211,6 +211,7 @@ export async function POST(req: Request) {
                     })}\n\n`;
                     break;
                   case "text":
+                    console.log(`[RAG-DEBUG] Sending text event: "${event.text}"`);
                     sseEventString = `event: text\ndata: ${JSON.stringify({
                       text: event.text,
                     })}\n\n`;
