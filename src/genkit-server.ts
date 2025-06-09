@@ -97,15 +97,25 @@ function getPlugins() {
   }
 
   try {
+    // Try to initialize rerankers with multiple possible configurations
+    const possibleRerankers = [
+      "vertexai/semantic-ranker-512",
+      "vertexai/reranker",
+      "vertexai/text-bison-32k",
+      "semantic-ranker-512"
+    ];
+
     plugins.push(
       vertexAIRerankers({
         projectId: PROJECT_ID,
         location: LOCATION,
-        rerankers: ["vertexai/reranker"],
+        rerankers: possibleRerankers,
       })
     );
+    console.log("Vertex AI rerankers initialized with models:", possibleRerankers);
   } catch (e) {
     console.warn("Failed to initialize reranker plugin:", e);
+    console.warn("RAG will fall back to simple document selection without reranking");
   }
 
   // Note: Tavily and Perplexity plugins will be initialized after the Genkit instance is created

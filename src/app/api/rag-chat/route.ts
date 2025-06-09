@@ -359,52 +359,10 @@ export async function POST(req: Request) {
                     
                     console.log('[RAG-DEBUG] JSON string length:', jsonString.length);
                     
-                    // If response is large, split into multiple SSE events
-                    const MAX_SSE_SIZE = 500; // Conservative limit to avoid truncation
-                    if (jsonString.length > MAX_SSE_SIZE) {
-                      console.log('[RAG-DEBUG] Large response detected, using multi-part transmission');
-                      
-                      // Generate unique ID for this multi-part response
-                      const responseId = crypto.randomUUID();
-                      const totalParts = Math.ceil(jsonString.length / MAX_SSE_SIZE);
-                      
-                      // Send response in parts
-                      for (let i = 0; i < totalParts; i++) {
-                        const start = i * MAX_SSE_SIZE;
-                        const end = Math.min(start + MAX_SSE_SIZE, jsonString.length);
-                        const part = jsonString.substring(start, end);
-                        
-                        const partEvent = `event: response_part\ndata: ${JSON.stringify({
-                          id: responseId,
-                          part: i + 1,
-                          total: totalParts,
-                          data: part,
-                          sessionId: sessionId
-                        })}\n\n`;
-                        
-                        controller.enqueue(encoder.encode(partEvent));
-                        console.log(`[RAG-DEBUG] Sent part ${i + 1}/${totalParts} (${part.length} chars)`);
-                        
-                        // Small delay between parts
-                        await new Promise(resolve => setTimeout(resolve, 10));
-                      }
-                      
-                      // Send completion signal
-                      const completeEvent = `event: response_complete\ndata: ${JSON.stringify({
-                        id: responseId,
-                        sessionId: sessionId,
-                        toolInvocations: []
-                      })}\n\n`;
-                      
-                      controller.enqueue(encoder.encode(completeEvent));
-                      console.log('[RAG-DEBUG] Sent response_complete signal');
-                      
-                    } else {
-                      // Small response, send as single event
-                      const finalResponseEvent = `event: final_response\ndata: ${jsonString}\n\n`;
-                      controller.enqueue(encoder.encode(finalResponseEvent));
-                      console.log('[RAG-DEBUG] Sent small response as single event');
-                    }
+                    // Always send as single response to avoid reconstruction issues
+                    const finalResponseEvent = `event: final_response\ndata: ${jsonString}\n\n`;
+                    controller.enqueue(encoder.encode(finalResponseEvent));
+                    console.log('[RAG-DEBUG] Sent response as single event');
                     
                     // Send a keep-alive comment to ensure the stream stays open
                     const keepAlive = `: keep-alive\n\n`;

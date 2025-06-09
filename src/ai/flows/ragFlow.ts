@@ -71,7 +71,14 @@ export type RagFlowInput = z.infer<typeof RagFlowInputSchema>;
 // Constants for RAG
 const INITIAL_RETRIEVAL_COUNT = 20;
 const FINAL_DOCUMENT_COUNT = 5;
-const RERANKER_ID = 'vertexai/reranker';
+// Try different reranker IDs - the exact name may vary by Genkit version
+const POSSIBLE_RERANKER_IDS = [
+  'vertexai/semantic-ranker-512',
+  'vertexai/reranker',
+  'vertexai/text-bison-32k',
+  'semantic-ranker-512'
+];
+const RERANKER_ID = POSSIBLE_RERANKER_IDS[0]; // Start with the first one
 
 // Helper function to create a model key string
 export const createModelKey = (
@@ -196,20 +203,36 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         topDocs = [];
       } else {
         if (filteredDocs.length > FINAL_DOCUMENT_COUNT) {
-          try {
-            const rerankedDocsOutput: RankedDocument[] = await aiInstance.rerank({
-              reranker: RERANKER_ID,
-              query: Document.fromText(query),
-              documents: filteredDocs,
-              options: { k: FINAL_DOCUMENT_COUNT },
-            });
-            topDocs = rerankedDocsOutput;
-            logger.info(
-              `Reranked ${filteredDocs.length} documents to ${topDocs.length} for session ${sessionId}.`
-            );
-          } catch (rerankerError: any) {
-            logger.error(`Error in RAG reranker: ${rerankerError.message || String(rerankerError)}. Falling back.`);
-            // Fallback: use simple selection of top documents
+          let rerankerSuccess = false;
+
+          // Try different reranker IDs until one works
+          for (const rerankerId of POSSIBLE_RERANKER_IDS) {
+            try {
+              logger.info(`Attempting to rerank ${filteredDocs.length} documents using ${rerankerId}`);
+              const rerankedDocsOutput: RankedDocument[] = await aiInstance.rerank({
+                reranker: rerankerId,
+                query: Document.fromText(query),
+                documents: filteredDocs,
+                options: { k: FINAL_DOCUMENT_COUNT },
+              });
+              topDocs = rerankedDocsOutput;
+              logger.info(
+                `Successfully reranked ${filteredDocs.length} documents to ${topDocs.length} using ${rerankerId} for session ${sessionId}.`
+              );
+              rerankerSuccess = true;
+              break; // Exit the loop on success
+            } catch (rerankerError: any) {
+              logger.warn(`Reranker ${rerankerId} failed: ${rerankerError.message || String(rerankerError)}`);
+              if (rerankerError.stack) {
+                logger.debug(`Reranker error stack: ${rerankerError.stack}`);
+              }
+              // Continue to try the next reranker ID
+            }
+          }
+
+          // If all rerankers failed, fall back to simple selection
+          if (!rerankerSuccess) {
+            logger.error(`All reranker IDs failed. Falling back to simple document selection.`);
             topDocs = filteredDocs.slice(0, FINAL_DOCUMENT_COUNT);
             logger.info(
               `Fallback: Selected first ${topDocs.length} documents from ${filteredDocs.length} for session ${sessionId}.`
@@ -217,6 +240,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           }
         } else {
           topDocs = filteredDocs;
+          logger.info(`Using all ${topDocs.length} documents (no reranking needed) for session ${sessionId}.`);
         }
         sendChunk({ type: 'sources', sources: topDocs as Document[] });
       }
