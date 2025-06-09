@@ -52,3 +52,4 @@ memory-bank/
 uploads/
 .db/
 .genkit_sessions/
+.augment/
