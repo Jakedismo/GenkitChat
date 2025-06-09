@@ -284,9 +284,13 @@ export async function POST(req: Request) {
                     sseEventString = `event: final_response\ndata: ${JSON.stringify({
                       response: event.response,
                       sessionId: event.sessionId,
-                      toolInvocations: event.toolInvocations || []
+                      toolInvocations: event.toolInvocations || [],
                     })}\n\n`;
-                    break;
+                    // Send the final response and close the stream
+                    controller.enqueue(encoder.encode(sseEventString));
+                    controller.close();
+                    streamClosed = true;
+                    return;
                   default:
                     // Log unknown event types but don't break the stream
                     console.warn("Unknown RAG stream event type:", event);
@@ -318,71 +322,10 @@ export async function POST(req: Request) {
                 console.log('[RAG-DEBUG] Flow completed with result length:', typeof result === 'string' ? result.length : 'not a string');
                 console.log('[RAG-DEBUG] Result preview:', typeof result === 'string' ? result.substring(0, 200) + '...' : result);
                 
-                // Send final_response event with the complete result
-                if (!streamClosed && result) {
-                  try {
-                    // Clean the result string to avoid JSON serialization issues
-                    // Only remove problematic control characters, preserve newlines and tabs for markdown
-                    const cleanedResult = typeof result === 'string'
-                      ? result.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '') // Remove control chars but keep \n (0A) and \t (09)
-                      : String(result);
-                    
-                    const finalResponseData = {
-                      response: cleanedResult,
-                      sessionId: sessionId,
-                      toolInvocations: []
-                    };
-                    
-                    // Test JSON serialization first to catch any issues
-                    const jsonString = JSON.stringify(finalResponseData);
+                // The final_response is now sent from ragFlow.ts via sideChannel/handleEvent.
+                // The logic below is no longer needed.
+                // if (!streamClosed && result) { ... }
 
-                    console.log('[RAG-DEBUG] JSON serialization successful, length:', jsonString.length);
-                    console.log('[RAG-DEBUG] Original result length:', typeof result === 'string' ? result.length : 'unknown');
-                    console.log('[RAG-DEBUG] Cleaned result length:', cleanedResult.length);
-                    console.log('[RAG-DEBUG] JSON preview:', jsonString.substring(0, 300) + '...');
-                    console.log('[RAG-DEBUG] JSON ending:', '...' + jsonString.substring(Math.max(0, jsonString.length - 100)));
-
-                    // Ensure the JSON string is properly formatted
-                    if (!jsonString.endsWith('}')) {
-                      console.error('[RAG-DEBUG] JSON string does not end with }, this will cause parsing errors');
-                      throw new Error('Malformed JSON string');
-                    }
-
-                    console.log('[RAG-DEBUG] JSON string length:', jsonString.length);
-
-                    // CRITICAL: Escape the JSON string for SSE transmission
-                    // SSE data fields cannot contain literal newlines - they must be escaped
-                    const escapedJsonString = jsonString.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
-
-                    console.log('[RAG-DEBUG] Original JSON length:', jsonString.length);
-                    console.log('[RAG-DEBUG] Escaped JSON length:', escapedJsonString.length);
-                    console.log('[RAG-DEBUG] Escaped JSON preview:', escapedJsonString.substring(0, 200));
-
-                    const finalResponseEvent = `event: final_response\ndata: ${escapedJsonString}\n\n`;
-                    controller.enqueue(encoder.encode(finalResponseEvent));
-                    console.log('[RAG-DEBUG] Sent response as single event with escaped JSON');
-                    
-                    // Send a keep-alive comment to ensure the stream stays open
-                    const keepAlive = `: keep-alive\n\n`;
-                    controller.enqueue(encoder.encode(keepAlive));
-                    console.log('[RAG-DEBUG] Sent keep-alive comment');
-                    
-                    // Add a longer delay to ensure the final event is fully transmitted
-                    // before closing the stream to prevent race conditions
-                    await new Promise(resolve => setTimeout(resolve, 200)); // Increased delay further
-                    console.log('[RAG-DEBUG] Delay completed, preparing to close stream');
-                  } catch (jsonError) {
-                    console.error('[RAG-DEBUG] JSON serialization error:', jsonError);
-                    // Send a fallback response if JSON serialization fails
-                    const fallbackData = {
-                      response: "Error: Response contains characters that cannot be serialized to JSON. Please try again.",
-                      sessionId: sessionId,
-                      toolInvocations: []
-                    };
-                    const fallbackEvent = `event: final_response\ndata: ${JSON.stringify(fallbackData)}\n\n`;
-                    controller.enqueue(encoder.encode(fallbackEvent));
-                  }
-                }
               } catch (error) {
                 console.error('[RAG-DEBUG] Error during documentQaStreamFlow:', error);
                 throw error; // Re-throw the error to be caught by the outer try-catch

@@ -30,7 +30,18 @@ export type RagStreamEvent =
         error?: string;
       }>;
     }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | {
+      type: 'final_response';
+      response: string;
+      sessionId?: string;
+      toolInvocations: Array<{
+        name: string;
+        input: unknown;
+        output: unknown;
+        error?: string;
+      }>;
+    };
 
 export const RagStreamEventSchemaZod = z.union([
   z.object({ type: z.literal('sources'), sources: z.array(z.custom<Document>()) }),
@@ -54,6 +65,19 @@ export const RagStreamEventSchemaZod = z.union([
     ),
   }),
   z.object({ type: z.literal('error'), error: z.string() }),
+  z.object({
+    type: z.literal('final_response'),
+    response: z.string(),
+    sessionId: z.string().optional(),
+    toolInvocations: z.array(
+      z.object({
+        name: z.string(),
+        input: z.unknown(),
+        output: z.unknown(),
+        error: z.string().optional(),
+      })
+    ),
+  }),
 ]);
 
 // Define the input schema for the RAG flow
@@ -106,6 +130,12 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     const pendingToolRequests = new Map<string, ToolRequestPart>();
     const toolResponseBuffer = new Map<string, ToolResponsePart>();
     let accumulatedLlmText = '';
+    const collectedToolInvocations: Array<{
+      name: string;
+      input: unknown;
+      output: unknown;
+      error?: string;
+    }> = [];
 
     // Helper to send chunks to the stream
     const sendChunk = (data: RagStreamEvent) => {
@@ -129,12 +159,14 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             const toolName = requestPart?.toolRequest?.name ?? 'unknown_tool_ref_not_found';
             const toolInput = requestPart?.toolRequest?.input;
 
-            return {
+            const invocation = {
               name: toolName,
               input: toolInput,
               output: output,
               error: output instanceof Error ? output.message : undefined,
             };
+            collectedToolInvocations.push(invocation);
+            return invocation;
           }
         );
         sendChunk({ type: 'tool_invocations', invocations });
@@ -376,6 +408,12 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       console.log('[RAG-STREAM-DEBUG] Final accumulated text preview:', accumulatedLlmText.substring(0, 200) + '...');
       console.log('[RAG-STREAM-DEBUG] Final accumulated text ending:', '...' + accumulatedLlmText.substring(Math.max(0, accumulatedLlmText.length - 100)));
       
+      sendChunk({
+        type: 'final_response',
+        response: accumulatedLlmText,
+        sessionId: sessionId,
+        toolInvocations: collectedToolInvocations,
+      });
       return accumulatedLlmText;
 
     } catch (error: any) {
@@ -441,12 +479,25 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
            sendChunk({ type: 'text', text: fallbackResponseText });
            fallbackAccumulatedText = fallbackResponseText;
         }
+        sendChunk({
+          type: 'final_response',
+          response: fallbackAccumulatedText,
+          sessionId: sessionId,
+          toolInvocations: [], // Tool invocations are not available in fallback
+        });
         return fallbackAccumulatedText;
 
       } catch (fallbackError: any) {
         logger.error(`Error in RAG fallback: ${fallbackError.message || String(fallbackError)}`);
         sendChunk({ type: 'error', error: `Service fallback error: ${fallbackError.message || 'Unknown error during fallback'}` });
-        return `Error: RAG service encountered an issue. ${fallbackError.message || ''}`.trim();
+        const errorMessage = `Error: RAG service encountered an issue. ${fallbackError.message || ''}`.trim();
+        sendChunk({
+          type: 'final_response',
+          response: errorMessage,
+          sessionId: sessionId,
+          toolInvocations: [], // Tool invocations are not available in fallback
+        });
+        return errorMessage;
       }
     }
   }
