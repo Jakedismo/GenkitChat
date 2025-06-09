@@ -350,10 +350,17 @@ export async function POST(req: Request) {
 
                     console.log('[RAG-DEBUG] JSON string length:', jsonString.length);
 
-                    // Send as single response - JSON.stringify already handles escaping properly
-                    const finalResponseEvent = `event: final_response\ndata: ${jsonString}\n\n`;
+                    // CRITICAL: Escape the JSON string for SSE transmission
+                    // SSE data fields cannot contain literal newlines - they must be escaped
+                    const escapedJsonString = jsonString.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+
+                    console.log('[RAG-DEBUG] Original JSON length:', jsonString.length);
+                    console.log('[RAG-DEBUG] Escaped JSON length:', escapedJsonString.length);
+                    console.log('[RAG-DEBUG] Escaped JSON preview:', escapedJsonString.substring(0, 200));
+
+                    const finalResponseEvent = `event: final_response\ndata: ${escapedJsonString}\n\n`;
                     controller.enqueue(encoder.encode(finalResponseEvent));
-                    console.log('[RAG-DEBUG] Sent response as single event');
+                    console.log('[RAG-DEBUG] Sent response as single event with escaped JSON');
                     
                     // Send a keep-alive comment to ensure the stream stays open
                     const keepAlive = `: keep-alive\n\n`;

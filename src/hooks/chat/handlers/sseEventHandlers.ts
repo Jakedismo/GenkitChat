@@ -200,6 +200,11 @@ export function handleFinalResponseEvent(
     console.log(`[sseEventHandlers] Payload preview: ${dataPayload.substring(0, 200)}...`);
     console.log(`[sseEventHandlers] Payload end: ...${dataPayload.substring(Math.max(0, dataPayload.length - 50))}`);
 
+    // Unescape the JSON string that was escaped for SSE transmission
+    const unescapedPayload = dataPayload.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+    console.log(`[sseEventHandlers] Unescaped payload length: ${unescapedPayload.length}`);
+    console.log(`[sseEventHandlers] Unescaped payload preview: ${unescapedPayload.substring(0, 200)}...`);
+
     let jsonData: any;
     
     // Check if JSON appears to be truncated
@@ -208,9 +213,9 @@ export function handleFinalResponseEvent(
       console.warn(`[sseEventHandlers] JSON appears truncated - doesn't end with } or "}. Last 20 chars: "${dataPayload.slice(-20)}"`);
     }
     
-    // Try direct parsing first
+    // Try direct parsing first with unescaped payload
     try {
-      jsonData = safeDestr<any>(dataPayload);
+      jsonData = safeDestr<any>(unescapedPayload);
       console.log(`[sseEventHandlers] Direct parsing successful`);
       console.log(`[sseEventHandlers] Parsed JSON structure:`, {
         hasResponse: !!jsonData?.response,

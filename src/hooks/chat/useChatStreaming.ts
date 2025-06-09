@@ -94,8 +94,10 @@ export async function processStream(
         if (line === "") {
           // Empty line: event boundary
           if (currentSSEDataLines.length > 0) {
+            const combinedData = currentSSEDataLines.join('');
             console.log(`[useChatStreaming] Processing complete SSE event: ${currentSSEEventType}, data lines: ${currentSSEDataLines.length}`);
-            console.log(`[useChatStreaming] Combined data length: ${currentSSEDataLines.join('').length} chars`);
+            console.log(`[useChatStreaming] Combined data length: ${combinedData.length} chars`);
+            console.log(`[useChatStreaming] Full combined data: ${combinedData}`);
             processSseEvent(
               currentSSEEventType,
               currentSSEDataLines,
@@ -110,7 +112,7 @@ export async function processStream(
         } else if (line.startsWith("data:")) {
           const dataLine = line.substring(5); // Don't trim - preserve spaces
           currentSSEDataLines.push(dataLine);
-          console.log(`[useChatStreaming] Added data line (${dataLine.length} chars): ${dataLine.substring(0, 100)}...`);
+          console.log(`[useChatStreaming] Added data line (${dataLine.length} chars): ${dataLine.length > 100 ? dataLine.substring(0, 100) + '...' : dataLine}`);
         } else if (line.startsWith(":")) {
           // Comment, ignore
           console.log(`[useChatStreaming] Received comment: ${line}`);
