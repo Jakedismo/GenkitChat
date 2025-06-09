@@ -180,16 +180,16 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
-              size="icon"
               onClick={onFileUploadTrigger}
-              className="h-10 w-10 p-2" // Ensure consistent height with input
+              className="h-10 p-2 flex items-center" // Ensure consistent height with input, remove w-10, add flex
               disabled={isLoading || isUploading}
             >
-              <Paperclip size={20} /> {/* Slightly larger icon */}
+              <Paperclip size={20} className="mr-0 md:mr-2" /> {/* Add margin for desktop */}
+              <span className="hidden md:inline">Attach Files</span> {/* Responsive label */}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>Upload file(s)</p>
+            <p>Attach files for context</p>
           </TooltipContent>
         </Tooltip>
         <Input
