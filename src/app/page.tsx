@@ -405,7 +405,7 @@ const GenkitChat: React.FC = () => {
                       <div
                         key={message.id}
                         className={cn(
-                          "flex w-full flex-col",
+                          "flex w-full flex-col animate-fade-in-slide-up",
                           message.sender === "user"
                             ? "items-end"
                             : "items-start",
@@ -415,7 +415,7 @@ const GenkitChat: React.FC = () => {
                       >
                         <div
                           className={cn(
-                            "max-w-[80%] rounded-lg px-4 py-2",
+                            "max-w-[85%] rounded-lg px-4 py-3",
                             "prose dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-li:my-0",
                             message.sender === "user"
                               ? "bg-primary text-primary-foreground"
@@ -505,7 +505,7 @@ const GenkitChat: React.FC = () => {
                         {message.sender === "bot" &&
                           message.toolInvocations &&
                           message.toolInvocations.length > 0 && (
-                            <div className="mt-2 w-full max-w-[80%] rounded-md border border-border bg-muted p-3 text-xs">
+                            <div className="mt-2 w-full max-w-[85%] rounded-md border border-border bg-muted p-3 text-xs">
                               <p className="mb-2 flex items-center gap-1 font-medium text-muted-foreground">
                                 <Code size={14} /> Tool Calls:{" "}
                                 <span className="ml-1 text-xs text-muted-foreground">
@@ -554,9 +554,13 @@ const GenkitChat: React.FC = () => {
                     ))}
                     <div ref={messagesEndRef} />
                     {isLoading && (
-                      <div className="flex w-full flex-col items-start">
-                        <div className="max-w-[80%] rounded-lg px-4 py-2 whitespace-pre-wrap bg-secondary text-secondary-foreground opacity-70 animate-pulse">
-                          Thinking...
+                      <div className="flex w-full flex-col items-start" data-testid="loading-indicator">
+                        <div className="max-w-[85%] rounded-lg px-4 py-3 bg-secondary text-secondary-foreground">
+                          <div className="bouncing-loader">
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                          </div>
                         </div>
                       </div>
                     )}

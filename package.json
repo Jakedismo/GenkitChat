@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@genkit-ai/core": "^1.12.0",
@@ -51,6 +52,7 @@
     "destr": "^2.0.5",
     "firebase": "^11.3.0",
     "flatted": "^3.3.3",
+    "framer-motion": "^11.3.2",
     "fs": "^0.0.1-security",
     "genkit": "^1.12.0",
     "genkitx-anthropic": "^0.22.0",
@@ -92,6 +94,13 @@
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.19.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^5.16.0",
+    "identity-obj-proxy": "^3.0.0",
+    "jest-environment-jsdom": "^29.0.0"
   }
 }
