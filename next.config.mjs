@@ -100,7 +100,7 @@ export default {
   },
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000'],
+      allowedOrigins: ['localhost:9002'], // Fixed: App runs on port 9002, not 3000
     },
   },
 

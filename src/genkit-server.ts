@@ -1,7 +1,7 @@
 // src/genkit-server.ts
 // This file exports the aiInstance and server initialization functions
 
-import { genkit } from "genkit/beta"; // Align with lib/genkit-instance, removed Genkit type
+import { genkit } from "genkit"; // Use stable import for genkit
 import { logger } from "genkit/logging"; // Added for log level
 import { googleAI } from "@genkit-ai/googleai";
 import { openAI } from "genkitx-openai";
