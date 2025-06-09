@@ -71,7 +71,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={onTavilySearchToggle}
-                className="h-7 w-7"
+                className="h-7 w-7 hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || isUploading}
               >
                 <Search
@@ -97,7 +97,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={onTavilyExtractToggle}
-                className="h-7 w-7"
+                className="h-7 w-7 hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || isUploading}
               >
                 <ExternalLink
@@ -124,7 +124,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={onPerplexitySearchToggle}
-                className="h-7 w-7"
+                className="h-7 w-7 hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || isUploading}
               >
                 <Sparkles
@@ -151,7 +151,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={onPerplexityDeepResearchToggle}
-                className="h-7 w-7"
+                className="h-7 w-7 hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || isUploading}
               >
                 <BrainCircuit
@@ -181,7 +181,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
             <Button
               variant="ghost"
               onClick={onFileUploadTrigger}
-              className="h-10 p-2 flex items-center" // Ensure consistent height with input, remove w-10, add flex
+              className="h-10 p-2 flex items-center hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed" // Ensure consistent height with input, remove w-10, add flex
               disabled={isLoading || isUploading}
             >
               <Paperclip size={20} className="mr-0 md:mr-2" /> {/* Add margin for desktop */}
@@ -205,6 +205,9 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
         <Button
           onClick={onSendMessage}
           disabled={isLoading || isUploading || !userInput.trim()}
+          className={cn(
+            isLoading && "animate-subtle-pulse"
+          )}
         >
           {isLoading ? "Sending..." : "Send"}
         </Button>

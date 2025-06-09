@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -124,6 +124,7 @@ const GenkitChat: React.FC = () => {
     [],
   );
   const { toast } = useToast();
+  const animatedMessageIds = useRef(new Set<string>());
 
   // State for citation preview sidebar
   const [citationPreview, setCitationPreview] =
@@ -182,6 +183,13 @@ const GenkitChat: React.FC = () => {
     selectedGeminiModelId,
     selectedOpenAIModelId,
   ]);
+
+  // Effect to clear animatedMessageIds when messages are cleared
+  useEffect(() => {
+    if (messages.length === 0) {
+      animatedMessageIds.current.clear();
+    }
+  }, [messages]);
 
   // Citation click handler remains here as it controls local UI state
   const handleCitationClick = (
@@ -401,21 +409,28 @@ const GenkitChat: React.FC = () => {
                         key={`messages-${renderKey}`}
                         data-messages-container="true"
                       >
-                    {messages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={cn(
-                          "flex w-full flex-col",
-                          message.sender === "user"
-                            ? "items-end"
-                            : "items-start",
-                        )}
-                        data-message-id={message.id}
-                        data-message-type={message.sender}
-                      >
+                    {messages.map((message) => {
+                      let M_SHOULD_ANIMATE = false;
+                      if (!animatedMessageIds.current.has(message.id)) {
+                        M_SHOULD_ANIMATE = true;
+                        animatedMessageIds.current.add(message.id);
+                      }
+                      return (
+                        <div
+                          key={message.id}
+                          className={cn(
+                            "flex w-full flex-col",
+                            message.sender === "user"
+                              ? "items-end"
+                              : "items-start",
+                            M_SHOULD_ANIMATE && "animate-fade-in-slide-up"
+                          )}
+                          data-message-id={message.id}
+                          data-message-type={message.sender}
+                        >
                         <div
                           className={cn(
-                            "max-w-[80%] rounded-lg px-4 py-2",
+                            "max-w-[85%] rounded-lg px-4 py-3",
                             "prose dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-li:my-0",
                             message.sender === "user"
                               ? "bg-primary text-primary-foreground"
@@ -505,7 +520,7 @@ const GenkitChat: React.FC = () => {
                         {message.sender === "bot" &&
                           message.toolInvocations &&
                           message.toolInvocations.length > 0 && (
-                            <div className="mt-2 w-full max-w-[80%] rounded-md border border-border bg-muted p-3 text-xs">
+                            <div className="mt-2 w-full max-w-[85%] rounded-md border border-border bg-muted p-3 text-xs">
                               <p className="mb-2 flex items-center gap-1 font-medium text-muted-foreground">
                                 <Code size={14} /> Tool Calls:{" "}
                                 <span className="ml-1 text-xs text-muted-foreground">
@@ -554,9 +569,13 @@ const GenkitChat: React.FC = () => {
                     ))}
                     <div ref={messagesEndRef} />
                     {isLoading && (
-                      <div className="flex w-full flex-col items-start">
-                        <div className="max-w-[80%] rounded-lg px-4 py-2 whitespace-pre-wrap bg-secondary text-secondary-foreground opacity-70 animate-pulse">
-                          Thinking...
+                      <div className="flex w-full flex-col items-start" data-testid="loading-indicator">
+                        <div className="max-w-[85%] rounded-lg px-4 py-3 bg-secondary text-secondary-foreground">
+                          <div className="bouncing-loader">
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                          </div>
                         </div>
                       </div>
                     )}
