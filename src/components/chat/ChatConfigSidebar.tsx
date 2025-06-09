@@ -1,20 +1,20 @@
-import React from "react";
-import { cn } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import React from "react";
 // Assuming SidebarGroup and SidebarGroupLabel are correctly exported from your main sidebar component via index.ts
 import { SidebarGroup, SidebarGroupLabel } from "@/components/ui/sidebar";
-import { Sparkles, BrainCircuit } from "lucide-react";
+import { BrainCircuit, Sparkles } from "lucide-react";
 // Import shared types
-import { ChatMode, TemperaturePreset, ModelInfo } from "@/types/chat";
+import { ChatMode, ModelInfo, TemperaturePreset } from "@/types/chat";
 
 interface ChatConfigSidebarProps {
   chatMode: ChatMode;
@@ -170,15 +170,16 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
             <Label htmlFor="max-tokens" className="mb-1 block">Max Response Length (Tokens)</Label>
             <Input
               id="max-tokens"
-            type="number"
-            value={maxTokens}
-            onChange={(e) =>
-              onMaxTokensChange(Math.max(1, parseInt(e.target.value, 10) || 1))
-            }
-            min="1"
-            max="8192" // Example max, adjust as needed
-            step="16"
-          />
+              type="number"
+              value={maxTokens}
+              onChange={(e) =>
+                onMaxTokensChange(Math.max(1, parseInt(e.target.value, 10) || 1))
+              }
+              min="1"
+              max="8192" // Example max, adjust as needed
+              step="16"
+            />
+          </div>
         </div>
       </div>
     </SidebarGroup>

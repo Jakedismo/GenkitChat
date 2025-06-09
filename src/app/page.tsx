@@ -1,36 +1,33 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import dynamic from "next/dynamic";
-import { Card, CardContent } from "@/components/ui/card";
+import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
+import ChatInputControls from "@/components/chat/ChatInputControls";
+import ChatMessageContent from "@/components/chat/ChatMessageContent";
+import FileUploadManager from "@/components/chat/FileUploadManager";
+import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
+import PdfWorkerSetup from "@/components/PdfWorkerSetup";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
-import { Code } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
-import ChatMessageContent from "@/components/chat/ChatMessageContent";
-import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
-import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
-import ChatInputControls from "@/components/chat/ChatInputControls";
-import FileUploadManager from "@/components/chat/FileUploadManager";
-import PdfWorkerSetup from "@/components/PdfWorkerSetup";
+import { useChatManager } from "@/hooks/useChatManager";
 import { useChatSettings } from "@/hooks/useChatSettings";
 import { useFileUploads } from "@/hooks/useFileUploads";
-import { useChatManager } from "@/hooks/useChatManager";
+import { cn } from "@/lib/utils";
 import {
-  ChatMode,
-  ConnectedServer,
-  CitationPreviewData,
-  DocumentData,
-  DisplayTool,
+    CitationPreviewData,
+    ConnectedServer,
+    DisplayTool,
+    DocumentData
 } from "@/types/chat";
 import "highlight.js/styles/github-dark.css";
-import mermaid from "mermaid";
+import { Code } from "lucide-react";
+import dynamic from "next/dynamic";
+import React, { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import remarkGfm from "remark-gfm";
 
 // Dynamically import components that might have browser-only dependencies
 const CitationPreviewSidebar = dynamic(
@@ -565,8 +562,9 @@ const GenkitChat: React.FC = () => {
                               )}
                             </div>
                           )}
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                     <div ref={messagesEndRef} />
                     {isLoading && (
                       <div className="flex w-full flex-col items-start" data-testid="loading-indicator">
