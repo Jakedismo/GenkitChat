@@ -620,6 +620,7 @@ const GenkitChat: React.FC = () => {
                 <FileUploadManager
                   uploadedFiles={uploadedFiles}
                   onRemoveFile={removeFile}
+                  onClearAll={resetUploadedFiles}
                 />
 
                 <div className="p-4">

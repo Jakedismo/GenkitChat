@@ -1,5 +1,5 @@
 // studio-master/src/ai/plugins/perplexity-plugin.ts
-import { z } from "genkit/beta";
+import { z } from "genkit"; // Use stable import for z
 import { Genkit } from "genkit";
 
 const PERPLEXITY_API_ENDPOINT = "https://api.perplexity.ai/chat/completions";

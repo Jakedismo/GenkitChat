@@ -4,7 +4,7 @@ import type {
   GenerateResponseData,
   MessageData,
   GenerateResponseChunk, // Represents a chunk from ai.generateStream().stream
-} from "genkit/beta";
+} from "genkit"; // Use stable import for types
 import { v4 as uuidv4 } from "uuid";
 
 // This interface is used by the calling API route (basic-chat/route.ts)

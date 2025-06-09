@@ -1,5 +1,5 @@
 // studio-master/src/ai/plugins/tavily-plugin.ts
-import { z } from "genkit/beta";
+import { z } from "genkit"; // Use stable import for z
 import { Genkit } from "genkit";
 import { TavilyClient } from "tavily";
 
