@@ -36,28 +36,22 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
 
   // Debounced render function to prevent streaming interference
   const debouncedRender = useCallback(async () => {
-    console.log('[MermaidDiagram] Starting render process', { diagramId, chartLength: cleanChart.length });
-    
     if (!cleanChart || cleanChart.length === 0) {
-      console.warn('[MermaidDiagram] No chart content provided');
       setError('No chart content provided');
       setIsLoading(false);
       return;
     }
 
     try {
-      console.log('[MermaidDiagram] Initializing mermaid rendering');
       setIsLoading(true);
       setError(null);
       setRendered(false);
 
       // Dynamic import to handle SSR
-      console.log('[MermaidDiagram] Importing mermaid library');
       const mermaid = (await import('mermaid')).default;
       
       // Determine theme for Mermaid
       const mermaidTheme = resolvedTheme === 'dark' ? 'dark' : 'default';
-      console.log('[MermaidDiagram] Using theme:', mermaidTheme);
       
       // Initialize mermaid with configuration
       mermaid.initialize({
@@ -88,18 +82,15 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
       setMermaidInstance(mermaid);
 
       if (elementRef.current) {
-        console.log('[MermaidDiagram] Element ref available, starting render');
         // Clear any existing content
         elementRef.current.innerHTML = '';
         
         // Validate the diagram syntax first
         try {
-          console.log('[MermaidDiagram] Parsing chart syntax');
           const parseResult = await mermaid.parse(cleanChart);
           if (!parseResult) {
             throw new Error('Invalid Mermaid syntax');
           }
-          console.log('[MermaidDiagram] Chart syntax validation passed');
         } catch (parseError) {
           console.error('[MermaidDiagram] Parse error:', parseError);
           throw new Error(`Syntax error: ${parseError instanceof Error ? parseError.message : 'Invalid diagram syntax'}`);
@@ -107,9 +98,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
         
         // Render the diagram
         try {
-          console.log('[MermaidDiagram] Starting SVG render');
           const { svg } = await mermaid.render(diagramId, cleanChart);
-          console.log('[MermaidDiagram] SVG render completed, length:', svg.length);
           
           // Only update if component is still mounted
           if (elementRef.current) {
@@ -118,14 +107,12 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
             // Add responsive styling to the SVG
             const svgElement = elementRef.current.querySelector('svg');
             if (svgElement) {
-              console.log('[MermaidDiagram] Applying SVG styling');
               svgElement.style.maxWidth = '100%';
               svgElement.style.height = 'auto';
               svgElement.style.transform = `scale(${zoom})`;
               svgElement.style.transformOrigin = 'top left';
             }
             setRendered(true);
-            console.log('[MermaidDiagram] Render completed successfully');
           }
         } catch (renderError) {
           console.error('[MermaidDiagram] Render error:', renderError);
@@ -136,18 +123,11 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
       console.error('[MermaidDiagram] Fatal rendering error:', err);
       setError(err instanceof Error ? err.message : 'Failed to render diagram');
     } finally {
-      console.log('[MermaidDiagram] Render process finished');
       setIsLoading(false);
     }
   }, [cleanChart, diagramId, zoom, resolvedTheme, chart]);
 
   useEffect(() => {
-    console.log('[MermaidDiagram] Effect triggered', { 
-      chartLength: cleanChart.length, 
-      hasChart: !!cleanChart,
-      diagramId 
-    });
-    
     // Clear any existing timeout
     if (renderTimeoutRef.current) {
       clearTimeout(renderTimeoutRef.current);
@@ -155,7 +135,6 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
 
     // Debounce rendering to prevent streaming interference
     renderTimeoutRef.current = setTimeout(() => {
-      console.log('[MermaidDiagram] Debounce timeout triggered, starting render');
       debouncedRender();
     }, 300); // 300ms debounce
 
