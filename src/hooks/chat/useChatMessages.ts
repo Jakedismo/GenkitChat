@@ -67,7 +67,7 @@ export function useChatMessages(): UseChatMessagesReturn {
               .replace(/\\\\/g, '\\')
               .replace(/\\+$/, ''); // Remove trailing backslashes
             
-            console.log(`[useChatMessages] Processing chunk for message ${msg.id} (${processedChunk.length} chars)`);
+
             
             // If replacing the text, ensure the new content isn't empty
             if (options?.replace && processedChunk.trim()) {
@@ -204,17 +204,17 @@ export function useChatMessages(): UseChatMessagesReturn {
             try {
               // First priority: Check for Google/Gemini message.content array
               if (finalResponse.message?.content && Array.isArray(finalResponse.message.content)) {
-                console.log(`[useChatMessages] Processing message.content array with ${finalResponse.message.content.length} items`);
+
                 
                 const contentParts = finalResponse.message.content.map(extractTextFromPart);
                 const fullText = contentParts.join('');
-                console.log(`[useChatMessages] Joined message.content into text (${fullText.length} chars)`);
+
                 
                 if (fullText.trim()) {
                   // Always replace with the final response if it's longer or if existing text is very short
                   // This ensures we get the complete response from the server
                   if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                    console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with final message (${fullText.length} chars)`);
+
                     updatedMsg.text = fullText;
                   } else {
                     console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
@@ -237,7 +237,7 @@ export function useChatMessages(): UseChatMessagesReturn {
                   if (fullText.trim()) {
                     // Always replace with the final response if it's longer or if existing text is very short
                     if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                      console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with candidate parts (${fullText.length} chars)`);
+
                       updatedMsg.text = fullText;
                     } else {
                       console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
@@ -279,16 +279,16 @@ export function useChatMessages(): UseChatMessagesReturn {
                   if (fullText.trim()) {
                     // PRIORITIZE STREAMING: Only use final response if streaming failed completely
                     if (!existingText || existingText.length === 0) {
-                      console.log(`[useChatMessages] No streamed text found, using final response (${fullText.length} chars)`);
+
                       updatedMsg.text = fullText;
                       foundContent = true;
                     } else if (existingText.length < fullText.length * 0.8) {
                       // Only replace if streamed text is significantly shorter (less than 80% of final)
-                      console.log(`[useChatMessages] Streamed text appears incomplete (${existingText.length} chars vs ${fullText.length} chars), using final response`);
+
                       updatedMsg.text = fullText;
                       foundContent = true;
                     } else {
-                      console.log(`[useChatMessages] Keeping streamed text as it appears complete (${existingText.length} chars vs ${fullText.length} chars final)`);
+
                       foundContent = true; // Keep existing streamed content
                     }
                   }
@@ -300,16 +300,16 @@ export function useChatMessages(): UseChatMessagesReturn {
                     if (fullText.trim()) {
                       // PRIORITIZE STREAMING: Only use final response if streaming failed completely
                       if (!existingText || existingText.length === 0) {
-                        console.log(`[useChatMessages] No streamed text found, using final object response (${fullText.length} chars)`);
+
                         updatedMsg.text = fullText;
                         foundContent = true;
                       } else if (existingText.length < fullText.length * 0.8) {
                         // Only replace if streamed text is significantly shorter (less than 80% of final)
-                        console.log(`[useChatMessages] Streamed text appears incomplete (${existingText.length} chars vs ${fullText.length} chars), using final object response`);
+
                         updatedMsg.text = fullText;
                         foundContent = true;
                       } else {
-                        console.log(`[useChatMessages] Keeping streamed text as it appears complete (${existingText.length} chars vs ${fullText.length} chars final object)`);
+
                         foundContent = true; // Keep existing streamed content
                       }
                     }
@@ -320,7 +320,7 @@ export function useChatMessages(): UseChatMessagesReturn {
               if (!foundContent) {
                 console.warn(`[useChatMessages] Could not extract valid content from finalResponse for message ${msg.id}`);
               } else {
-                console.log(`[useChatMessages] Updated message ${msg.id} with final response (${typeof updatedMsg.text === 'string' ? updatedMsg.text.length : 'non-string'} chars)`);
+
               }
             } catch (error) {
               console.error(`[useChatMessages] Error processing finalResponse:`, error);

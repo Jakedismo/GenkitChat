@@ -2,10 +2,12 @@ import { aiInstance } from "@/genkit-server";
 import { createModelKey } from "@/ai/flows/ragFlow"; // Corrected import path
 import type {
   GenerateResponseData,
-  MessageData,
+  MessageData as GenkitMessageData,
   GenerateResponseChunk, // Represents a chunk from ai.generateStream().stream
 } from "genkit"; // Use stable import for types
+
 import { v4 as uuidv4 } from "uuid";
+import type { MessageHistoryItem } from "@/utils/messageHistory";
 
 // This interface is used by the calling API route (basic-chat/route.ts)
 // to structure tool invocation data extracted from the final response.
@@ -22,7 +24,7 @@ export interface ChatInput {
   temperaturePreset: "precise" | "normal" | "creative";
   maxTokens: number;
   sessionId?: string; // Optional session ID for continuing conversations
-  history?: MessageData[]; // Optional message history
+  history?: MessageHistoryItem[]; // Optional message history
   // Tool flags - these correspond to Genkit tool names registered with aiInstance
   tavilySearchEnabled?: boolean;
   tavilyExtractEnabled?: boolean;
@@ -80,12 +82,11 @@ async function* adaptGenkitStream(
       // Standard text field (common in most models)
       else if (chunk.text) {
         yield { text: chunk.text };
-        console.log(`Yielding text from chunk.text: ${chunk.text.substring(0, 50)}...`);
       }
 
       // Handle tool-related chunks if present
       if (anyChunk.toolRequests) {
-        console.log(`Tool requests: ${JSON.stringify(anyChunk.toolRequests)}`);
+        // Tool requests detected
       }
     }
   } catch (error) {
@@ -121,10 +122,10 @@ export async function initiateChatStream(
   console.log(`Enabled tools: ${enabledToolNames.join(", ")}`);
   
   // Initialize messages array
-  const messages: MessageData[] = [];
+  const messages: GenkitMessageData[] = [];
   
   // Initialize an empty system message
-  let systemMessage: MessageData | null = null;
+  let systemMessage: GenkitMessageData | null = null;
   
   try {
     // Load the appropriate prompt template based on the temperature preset
@@ -173,7 +174,12 @@ export async function initiateChatStream(
 
   // Prepend history if provided
   if (input.history && input.history.length > 0) {
-    messages.push(...input.history);
+    // Convert frontend MessageHistoryItem to Genkit MessageData format
+    const genkitHistory: GenkitMessageData[] = input.history.map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+    messages.push(...genkitHistory);
   }
   // Add current user message
   messages.push({ role: "user", content: [{ text: input.userMessage }] });

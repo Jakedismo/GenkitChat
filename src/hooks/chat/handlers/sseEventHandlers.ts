@@ -23,12 +23,11 @@ export function handleTextEvent(
   dataPayload: string,
   callbacks: StreamEventCallbacks
 ): void {
-  console.log(`[sseEventHandlers] Processing ${eventType} event with payload: "${dataPayload}"`);
 
   const textContent = extractTextContent(dataPayload, eventType);
 
   if (textContent) {
-    console.log(`[sseEventHandlers] Extracted text chunk of length: ${textContent.length} - "${textContent}"`);
+
     callbacks.onText(textContent);
   } else if (dataPayload) {
     // If extraction completely failed but payload wasn't empty, try using raw payload
@@ -195,56 +194,48 @@ export function handleFinalResponseEvent(
   callbacks: StreamEventCallbacks
 ): void {
   try {
-    console.log(`[sseEventHandlers] Processing final_response with payload length: ${dataPayload.length}`);
-    console.log(`[sseEventHandlers] Full payload:`, dataPayload);
-    console.log(`[sseEventHandlers] Payload preview: ${dataPayload.substring(0, 200)}...`);
-    console.log(`[sseEventHandlers] Payload end: ...${dataPayload.substring(Math.max(0, dataPayload.length - 50))}`);
+
+
+
+
 
     // Unescape the JSON string that was escaped for SSE transmission
     const unescapedPayload = dataPayload.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
-    console.log(`[sseEventHandlers] Unescaped payload length: ${unescapedPayload.length}`);
-    console.log(`[sseEventHandlers] Unescaped payload preview: ${unescapedPayload.substring(0, 200)}...`);
+
+
 
     let jsonData: any;
     
     // Check if JSON appears to be truncated
     const isTruncated = !dataPayload.trim().endsWith('}') && !dataPayload.trim().endsWith('"}');
     if (isTruncated) {
-      console.warn(`[sseEventHandlers] JSON appears truncated - doesn't end with } or "}. Last 20 chars: "${dataPayload.slice(-20)}"`);
+
     }
     
     // Try direct parsing first with unescaped payload
     try {
       jsonData = safeDestr<any>(unescapedPayload);
-      console.log(`[sseEventHandlers] Direct parsing successful`);
-      console.log(`[sseEventHandlers] Parsed JSON structure:`, {
-        hasResponse: !!jsonData?.response,
-        responseType: typeof jsonData?.response,
-        responseLength: typeof jsonData?.response === 'string' ? jsonData.response.length : 'N/A',
-        responsePreview: typeof jsonData?.response === 'string' ? jsonData.response.substring(0, 100) + '...' : jsonData?.response,
-        hasSessionId: !!jsonData?.sessionId,
-        hasToolInvocations: !!jsonData?.toolInvocations,
-        allKeys: Object.keys(jsonData || {})
-      });
+
+
     } catch (parseError) {
-      console.warn(`[sseEventHandlers] Direct JSON parse failed: ${parseError}`);
+
       
       // If JSON is truncated, try to recover using manual extraction
       const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
       if (isTruncated || errorMessage.includes('Unterminated')) {
-        console.log(`[sseEventHandlers] Attempting manual extraction for truncated JSON`);
+
         
         // Try manual extraction methods for incomplete JSON
         const manualExtracted = manualExtractResponse(dataPayload);
         if (manualExtracted) {
-          console.log(`[sseEventHandlers] Manual extraction successful, response length: ${manualExtracted.response.length}`);
+
           callbacks.onFinalResponse(manualExtracted, manualExtracted.sessionId);
           return;
         }
         
         const charExtracted = characterByCharacterExtraction(dataPayload);
         if (charExtracted) {
-          console.log(`[sseEventHandlers] Character extraction successful, response length: ${charExtracted.response.length}`);
+
           callbacks.onFinalResponse(charExtracted, charExtracted.sessionId);
           return;
         }
@@ -252,18 +243,18 @@ export function handleFinalResponseEvent(
       
       // Try sanitization as fallback
       const sanitizedPayload = sanitizeJsonPayload(dataPayload, 'final_response');
-      console.log(`[sseEventHandlers] Trying sanitized payload, length: ${sanitizedPayload.length}`);
+
       
       try {
         jsonData = safeDestr<any>(sanitizedPayload);
-        console.log(`[sseEventHandlers] Sanitized parsing successful, response length: ${typeof jsonData?.response === 'string' ? jsonData.response.length : 'unknown'}`);
+
       } catch (sanitizedError) {
         console.error(`[sseEventHandlers] Sanitized parsing also failed: ${sanitizedError}`);
         
         // Final fallback - try to extract whatever we can
         const finalExtracted = manualExtractResponse(dataPayload) || characterByCharacterExtraction(dataPayload);
         if (finalExtracted) {
-          console.log(`[sseEventHandlers] Final extraction successful, response length: ${finalExtracted.response.length}`);
+
           callbacks.onFinalResponse(finalExtracted, finalExtracted.sessionId || "");
           return;
         }

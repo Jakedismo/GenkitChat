@@ -16,7 +16,6 @@ import {
 import {
   analyzeResponse,
   repairTruncatedResponse,
-  logResponseDebugInfo,
 } from "@/utils/responseDebug";
 
 const InputSchema = z.object({
@@ -55,7 +54,6 @@ function formatSSE(event: string, data: string): string {
     JSON.parse(safeData);
   } catch (e) {
     console.error(`Invalid JSON in formatSSE for event '${event}':`, e);
-    console.log("Problematic JSON data:", safeData.substring(0, 200) + "...");
 
     // For final_response events, try a series of recovery methods
     if (event === "final_response" && typeof data === "string") {
@@ -72,17 +70,14 @@ function formatSSE(event: string, data: string): string {
         try {
           // 2. Try to parse the sanitized data
           const parsedData = JSON.parse(sanitizedData);
-          console.log("Successfully sanitized and parsed JSON data");
           return `event: ${event}\ndata: ${JSON.stringify(parsedData)}\n\n`;
         } catch (sanitizeError: unknown) {
-          console.log("Sanitized JSON still failed parsing:", sanitizeError);
 
           // 3. Try extracting just the response field with regex if it exists
           const responseMatch = sanitizedData.match(
             /"response"\s*:\s*"([^"]+)"/
           );
           if (responseMatch && responseMatch[1]) {
-            console.log("Extracted response field via regex");
             const extractedResponse = {
               response: responseMatch[1],
               toolInvocations: [],
@@ -101,7 +96,6 @@ function formatSSE(event: string, data: string): string {
           toolInvocations: [],
           sessionId: "",
         });
-        console.log(`Using fallback data for invalid JSON in ${event} event`);
         return `event: ${event}\ndata: ${fallbackData}\n\n`;
       } catch (fallbackError) {
         console.error("All JSON recovery methods failed:", fallbackError);
@@ -123,7 +117,6 @@ export async function POST(request: Request) {
   return withGenkitServer(async () => {
     try {
       const json = await request.json();
-      console.log("SERVER_RECEIVED_PAYLOAD:", JSON.stringify(json, null, 2)); // Add this line
       const validatedInput = InputSchema.safeParse(json);
 
       if (!validatedInput.success) {
@@ -136,10 +129,6 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      console.log(
-        "SERVER_VALIDATED_INPUT:",
-        JSON.stringify(validatedInput.data, null, 2)
-      ); // Add this
 
       // Pass the full validated data (including sessionId) to the stream function
       try {
@@ -222,20 +211,11 @@ export async function POST(request: Request) {
               let finalResponse;
               try {
                 finalResponse = await responsePromise;
-                console.log(
-                  "Raw Final Response Object:",
-                  JSON.stringify(finalResponse, null, 2)
-                );
-
-                // Debug the response to detect potential issues
-                logResponseDebugInfo("finalResponse", finalResponse);
               } catch (responseError) {
                 console.error("Error getting final response:", responseError);
                 // We already handled streaming errors, so just return early
                 return;
               }
-              // Store the raw response for debugging
-              console.log("Response type:", typeof finalResponse);
 
               // Process candidates array if available to ensure we get all content
               if ((finalResponse as any)?.custom?.candidates?.length > 0) {
@@ -249,9 +229,6 @@ export async function POST(request: Request) {
                     .map((part: any) => part.text || "")
                     .filter(Boolean);
 
-                  console.log(
-                    `Extracted ${textParts.length} text parts from candidate`
-                  );
                   finalResponseData.response = textParts.join("");
 
                   // Check if candidate parts might indicate truncation
@@ -266,7 +243,6 @@ export async function POST(request: Request) {
                     finalResponseData.response = repairTruncatedResponse(
                       candidate.content.parts
                     );
-                    console.log("Attempted repair on truncated response");
                   }
                 } else {
                   finalResponseData.response = candidate.content?.text || "";
@@ -287,7 +263,6 @@ export async function POST(request: Request) {
                 finalResponseData.response = repairTruncatedResponse(
                   finalResponseData.response
                 );
-                console.log("Applied repairs to truncated final response");
               }
 
               // If we collected chunks during streaming, use them as a backup
@@ -307,9 +282,6 @@ export async function POST(request: Request) {
               const messages = (finalResponse as GenerateResponse)?.messages;
               let tavilyUrls: string[] = []; // Array to store Tavily URLs
               if (messages && Array.isArray(messages)) {
-                console.log(
-                  `Found ${messages.length} messages in history for tool parsing.`
-                );
                 const toolRequests = new Map<string, ToolRequestPart>();
                 // Iterate through the HISTORY messages to find tool request/response pairs
                 for (const message of messages) {
@@ -341,9 +313,6 @@ export async function POST(request: Request) {
                           Array.isArray(toolOutput.urls)
                         ) {
                           tavilyUrls = toolOutput.urls as string[];
-                          console.log(
-                            `Extracted ${tavilyUrls.length} Tavily URLs.`
-                          );
                         }
                         toolRequests.delete(reqRef);
                       }
@@ -364,17 +333,8 @@ export async function POST(request: Request) {
                 }
 
                 if (toolInvocations.length > 0) {
-                  console.log(
-                    `Extracted ${toolInvocations.length} tool invocations.`
-                  );
                   finalResponseData.toolInvocations = toolInvocations; // Store tool calls
-                } else {
-                  console.log("No tool invocations extracted from history.");
                 }
-              } else {
-                console.warn(
-                  "Could not find 'messages' array on finalResponse object for tool parsing."
-                );
               }
 
               // Append formatted Tavily URLs if they exist
@@ -395,9 +355,6 @@ export async function POST(request: Request) {
                   }
                 });
                 finalResponseData.response += sourcesText; // Append to the LLM's response
-                console.log(
-                  `Appended ${tavilyUrls.length} formatted Tavily sources to response.`
-                );
               }
 
               // Send final metadata (including session ID used/created)
@@ -451,13 +408,6 @@ export async function POST(request: Request) {
               // Verify the constructed JSON is valid by parsing it
               try {
                 JSON.parse(jsonString);
-                // Log a portion of the JSON for debugging
-                console.log(
-                  `Final response JSON (first 100 chars): ${jsonString.substring(
-                    0,
-                    100
-                  )}...`
-                );
               } catch (parseError) {
                 console.error(
                   "Constructed final_response JSON is invalid:",
@@ -485,7 +435,6 @@ export async function POST(request: Request) {
               controller.enqueue(
                 encoder.encode(formatSSE("final_response", jsonString))
               );
-              console.log("Successfully sent final_response event");
             } catch (streamError) {
               console.error("Error during stream processing:", streamError);
 

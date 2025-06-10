@@ -21,6 +21,7 @@ import {
     DisplayTool,
     DocumentData
 } from "@/types/chat";
+import { getHistoryTokenStats } from "@/utils/messageHistory";
 import "highlight.js/styles/github-dark.css";
 import { Code } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -28,6 +29,7 @@ import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
+import MermaidDiagram from "@/components/markdown/MermaidDiagram";
 
 // Dynamically import components that might have browser-only dependencies
 const CitationPreviewSidebar = dynamic(
@@ -256,21 +258,25 @@ const GenkitChat: React.FC = () => {
       children,
       ...props
     }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
-      const hasPreElement = (children: React.ReactNode): boolean => {
-        return React.Children.toArray(children).some((child) => {
-          if (React.isValidElement(child)) {
-            if (child.type === "pre") return true;
-            if (child.type === "code") return true;
-            if (child.props && child.props.children) {
-              return hasPreElement(child.props.children);
-            }
+      const childrenArray = React.Children.toArray(children);
+      
+
+      
+      // Check if this paragraph contains only a single code block
+      if (childrenArray.length === 1) {
+        const child = childrenArray[0];
+        if (React.isValidElement(child) && child.type === 'code') {
+          const className = child.props?.className || '';
+
+          // If it has a language class or is not inline, it's a code block
+          if (className.includes('language-') || !child.props?.inline) {
+
+            return <>{children}</>;
           }
-          return false;
-        });
-      };
-      if (hasPreElement(children)) {
-        return <>{children}</>;
+        }
       }
+      
+
       return <p {...props}>{children}</p>;
     },
 
@@ -281,27 +287,48 @@ const GenkitChat: React.FC = () => {
     }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
+      
+
+      
       if (inline) {
-        return <code className={className}>{children}</code>;
+        return <code className={`${className} bg-muted px-1.5 py-0.5 rounded text-sm font-mono`}>{children}</code>;
       }
+      
       if (language === "mermaid") {
+
         return (
-          <div className="not-prose">
-            <pre className="mermaid" key={crypto.randomUUID()}>
-              {String(children).replace(/\n$/, "")}
-            </pre>
-          </div>
+          <MermaidDiagram 
+            chart={String(children).replace(/\n$/, "")}
+            id={`mermaid-${btoa(String(children).replace(/\n$/, "")).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`}
+          />
         );
       }
+      
+      // Fallback: Check if content looks like Mermaid even without proper language tag
+      if (!language && !inline) {
+        const content = String(children);
+        const mermaidKeywords = ['flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph'];
+        const isMermaid = mermaidKeywords.some(keyword => content.includes(keyword));
+        
+        if (isMermaid) {
+
+          return (
+            <MermaidDiagram 
+              chart={content.replace(/\n$/, "")}
+              id={`mermaid-fallback-${btoa(content.replace(/\n$/, "")).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`}
+            />
+          );
+        }
+      }
+      
+
       return (
-        <div className="not-prose">
-          <pre
-            className={className || ""}
-            style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}
-          >
-            <code className={className}>{children}</code>
-          </pre>
-        </div>
+        <pre
+          className={`${className || ""} bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto`}
+          style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}
+        >
+          <code className={`${className} bg-transparent p-0 text-sm font-mono`}>{children}</code>
+        </pre>
       );
     },
 
@@ -348,6 +375,86 @@ const GenkitChat: React.FC = () => {
       >
         {children}
       </td>
+    ),
+
+    // Headings
+    h1: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h1 className="text-2xl font-bold mt-6 mb-4" {...props}>
+        {children}
+      </h1>
+    ),
+    h2: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h2 className="text-xl font-bold mt-5 mb-3" {...props}>
+        {children}
+      </h2>
+    ),
+    h3: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h3 className="text-lg font-semibold mt-4 mb-2" {...props}>
+        {children}
+      </h3>
+    ),
+    h4: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h4 className="font-semibold mt-3 mb-2" {...props}>
+        {children}
+      </h4>
+    ),
+    h5: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h5 className="font-semibold mt-3 mb-2" {...props}>
+        {children}
+      </h5>
+    ),
+    h6: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h6 className="font-semibold mt-3 mb-2" {...props}>
+        {children}
+      </h6>
+    ),
+
+    // Links
+    a: ({ children, href, ...props }: React.PropsWithChildren<{ href?: string }>) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 dark:text-blue-400 hover:underline"
+        {...props}
+      >
+        {children}
+      </a>
+    ),
+
+    // Lists
+    ul: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <ul className="list-disc pl-6 my-3 space-y-1" {...props}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <ol className="list-decimal pl-6 my-3 space-y-1" {...props}>
+        {children}
+      </ol>
+    ),
+    li: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <li {...props}>{children}</li>
+    ),
+
+    // Blockquote
+    blockquote: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <blockquote className="border-l-4 border-muted-foreground pl-4 py-1 my-3 italic" {...props}>
+        {children}
+      </blockquote>
+    ),
+
+    // Horizontal rule
+    hr: ({ ...props }) => (
+      <hr className="my-6 border-border" {...props} />
+    ),
+
+    // Emphasis
+    em: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <em {...props}>{children}</em>
+    ),
+    strong: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <strong className="font-semibold" {...props}>{children}</strong>
     ),
   };
 
@@ -622,6 +729,22 @@ const GenkitChat: React.FC = () => {
                               title="Log message stats to console"
                             >
                               Debug Stats
+                            </button>
+                            <button
+                              onClick={() => {
+                                // Show history token statistics
+                                const stats = getHistoryTokenStats(messages, selectedGeminiModelId || selectedOpenAIModelId);
+                                console.log('[History Token Stats]', stats);
+                                toast({
+                                  title: "History Token Stats",
+                                  description: `${stats.processedMessages}/${stats.totalMessages} messages, ${stats.estimatedTokens}/${stats.tokenLimit} tokens`,
+                                  variant: stats.withinLimit ? "default" : "destructive",
+                                });
+                              }}
+                              className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
+                              title="Show conversation history token usage"
+                            >
+                              History Tokens
                             </button>
                           </div>
                         </div>

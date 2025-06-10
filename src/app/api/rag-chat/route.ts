@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     // Handle RAG chat queries (application/json)
     if (contentType.includes("application/json")) {
       try {
-        const { query, sessionId, modelId } = await req.json();
+        const { query, sessionId, modelId, history } = await req.json();
 
         // Check if session ID is provided (required for RAG)
         if (!sessionId) {
@@ -177,27 +177,21 @@ export async function POST(req: Request) {
         ) {
           if (tavilySearchEnabled) {
             toolNamesToUse.push("tavilySearch");
-            console.log("Enabling Tavily Search tool for RAG request");
           }
           if (tavilyExtractEnabled) {
             toolNamesToUse.push("tavilyExtract");
-            console.log("Enabling Tavily Extract tool for RAG request");
           }
           if (perplexitySearchEnabled) {
             toolNamesToUse.push("perplexitySearch");
-            console.log("Enabling Perplexity Search tool for RAG request");
           }
           if (perplexityDeepResearchEnabled) {
             toolNamesToUse.push("perplexityDeepResearch");
-            console.log("Enabling Perplexity Deep Research tool for RAG request");
           }
           if (context7ResolveLibraryIdEnabled) {
             toolNamesToUse.push("context7ResolveLibraryId");
-            console.log("Enabling Context7 Resolve Library ID tool for RAG request");
           }
           if (context7GetLibraryDocsEnabled) {
             toolNamesToUse.push("context7GetLibraryDocs");
-            console.log("Enabling Context7 Get Library Docs tool for RAG request");
           }
 
           // Only set toolsParam if we actually have tools to use
@@ -220,6 +214,7 @@ export async function POST(req: Request) {
                 query,
                 sessionId,
                 modelId,
+                history,
               };
               
               if (toolsParam) {

@@ -9,6 +9,7 @@ import {
   ToolInvocation,
   ParsedJsonData,
 } from "@/types/chat";
+import { convertChatMessagesToHistory } from "@/utils/messageHistory";
 // Corrected imports for custom hooks
 import { useChatMessages } from "@/hooks/chat/useChatMessages";
 import { useChatInputControls } from "@/hooks/chat/useChatInputControls";
@@ -98,24 +99,7 @@ export function useChatManager({
       if (lastMessage.sender === "bot") {
         const textLength =
           typeof lastMessage.text === "string" ? lastMessage.text.length : 0;
-        console.log(
-          `[useChatManager] Last message length: ${textLength} chars`
-        );
 
-        // Debug message contents if it's not too long
-        if (textLength > 0 && textLength < 2000) {
-          console.log(
-            `[useChatManager] Last message preview:`,
-            typeof lastMessage.text === "string"
-              ? `${lastMessage.text.substring(
-                  0,
-                  50
-                )}...${lastMessage.text.substring(
-                  Math.max(0, lastMessage.text.length - 50)
-                )}`
-              : lastMessage.text
-          );
-        }
       }
     }
   }, [messages]);
@@ -128,74 +112,17 @@ export function useChatManager({
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.sender === "bot") {
-        console.log("DEBUG: Last bot message state:", {
-          id: lastMessage.id,
-          textLength:
-            typeof lastMessage.text === "string"
-              ? lastMessage.text.length
-              : "non-string type",
-          textType: typeof lastMessage.text,
-          isTextArray: Array.isArray(lastMessage.text),
-          textStructure: Array.isArray(lastMessage.text)
-            ? `Array with ${lastMessage.text.length} items`
-            : typeof lastMessage.text === "object"
-            ? "Object"
-            : "Primitive",
-          hasToolInvocations: !!(
-            lastMessage.toolInvocations &&
-            lastMessage.toolInvocations.length > 0
-          ),
-          toolInvocationsCount: lastMessage.toolInvocations?.length || 0,
-          toolInvocations: lastMessage.toolInvocations,
-          hasSources: !!(lastMessage.sources && lastMessage.sources.length > 0),
-          sourcesCount: lastMessage.sources?.length || 0,
-        });
 
-        // Check for potential truncation issues
+        // Basic message processing for bot responses
         if (typeof lastMessage.text === "string") {
-          const suspiciousEndingPatterns = [
-            /[^.!?]\s*$/, // Ends without proper punctuation
-            /\\$/, // Ends with a backslash
-            /"\s*$/, // Ends with a quote
-            /[{[]$/, // Ends with an opening brace/bracket
-          ];
-
-          const potentialTruncation = suspiciousEndingPatterns.some((pattern) =>
-            pattern.test(
-              lastMessage.text.substring(lastMessage.text.length - 10)
-            )
-          );
-
-          if (potentialTruncation) {
-            console.warn(
-              "DEBUG: Potential message truncation detected in last bot message!"
-            );
-            console.log(
-              "DEBUG: Last 100 chars:",
-              lastMessage.text.substring(lastMessage.text.length - 100)
-            );
-          }
-        } else if (Array.isArray(lastMessage.text)) {
-          console.log(
-            "DEBUG: Bot message text is an array, might need to be joined:",
-            lastMessage.text
-              .map((chunk) =>
-                typeof chunk === "string" ? chunk.length : "non-string"
-              )
-              .join(", ")
-          );
+          // Message text is available for processing
         }
 
         if (
           lastMessage.toolInvocations &&
           lastMessage.toolInvocations.length > 0
         ) {
-          console.log(
-            "DEBUG: Tool invocations found on last bot message:",
-            JSON.stringify(lastMessage.toolInvocations, null, 2)
-          );
-        } else {
-          console.log("DEBUG: No tool invocations on last bot message.");
+          // Tool invocations are available for processing
         }
       }
     }
@@ -247,6 +174,9 @@ export function useChatManager({
       sessionIdToUse = await startNewSession();
     }
 
+    // Capture conversation history before adding the current message
+    const conversationHistory = convertChatMessagesToHistory(messages, modelIdToUse);
+
     addUserMessage(userMessageText);
     const botMessagePlaceholderId = addBotPlaceholder();
 
@@ -269,6 +199,7 @@ export function useChatManager({
         temperaturePreset: temperaturePreset,
         maxTokens: maxTokens,
         sessionId: sessionIdToUse,
+        history: conversationHistory,
         tavilySearchEnabled: tavilySearchEnabled,
         tavilyExtractEnabled: tavilyExtractEnabled,
         perplexitySearchEnabled: perplexitySearchEnabled,
@@ -307,32 +238,24 @@ export function useChatManager({
 
           // Always append the incoming chunk - let the final response handler decide what to do
           updateBotMessageText(botMessagePlaceholderId, processedChunk);
-          
-          console.log(`[useChatManager] Processed text chunk of ${processedChunk.length} chars for message ${botMessagePlaceholderId}`);
         },
         onSources: (sources: DocumentData[]) => {
           updateBotMessageSources(botMessagePlaceholderId, sources);
-          console.log(
-            `[useChatManager] Updated message ${botMessagePlaceholderId} with ${sources.length} sources via callback.`
-          );
+
         },
         onToolInvocation: (toolInvocation: ToolInvocation) => {
           addToolInvocationToBotMessage(
             botMessagePlaceholderId,
             toolInvocation
           );
-          console.log(
-            `[useChatManager] Added tool invocation ${toolInvocation.toolName} to message ${botMessagePlaceholderId} via callback.`
-          );
+
         },
         onMultipleToolInvocations: (toolInvocations: ToolInvocation[]) => {
           addMultipleToolInvocationsToBotMessage(
             botMessagePlaceholderId,
             toolInvocations
           );
-          console.log(
-            `[useChatManager] Added ${toolInvocations.length} tool invocations to message ${botMessagePlaceholderId} via callback.`
-          );
+
         },
         onFinalResponse: (
           finalData: ParsedJsonData,
@@ -340,84 +263,19 @@ export function useChatManager({
         ) => {
           if (serverSessionId && !currentSessionId) {
             setCurrentSessionId(serverSessionId);
-            console.log(
-              "[useChatManager] Session ID updated from final_response via callback:",
-              serverSessionId
-            );
           }
-
-          // Enhanced debug logging for the final response structure
-          console.log("Raw Final Response Object:", finalData);
-
-          // Debug the response structure before processing
-          console.log("[useChatManager] Final response data structure:", {
-            hasResponse: !!finalData.response,
-            responseType: typeof finalData.response,
-            responseLength:
-              typeof finalData.response === "string"
-                ? finalData.response.length
-                : "non-string",
-            hasToolInvocations:
-              Array.isArray(finalData.toolInvocations) &&
-              finalData.toolInvocations.length > 0,
-            responsePreview:
-              typeof finalData.response === "string"
-                ? `${finalData.response.substring(
-                    0,
-                    50
-                  )}...${finalData.response.substring(
-                    finalData.response.length - 50
-                  )}`
-                : JSON.stringify(finalData.response).substring(0, 100),
-          });
 
           // Log message content structure if present (Gemini format)
           if (finalData.message && finalData.message.content) {
-            console.log("Response Debug [finalResponse]");
             const contentType = Array.isArray(finalData.message.content)
               ? "array"
               : typeof finalData.message.content;
             const contentLength = Array.isArray(finalData.message.content)
               ? finalData.message.content.length
               : "n/a";
-
-            console.log(`  Analysis: {
-    totalLength: ${JSON.stringify(finalData).length},
-    isTruncated: false,
-    structureInfo: { isArray: ${Array.isArray(finalData)}, isObject: ${
-              typeof finalData === "object"
-            }, hasNestedContent: ${!!finalData.message?.content} }
-  }`);
-
-            console.log(`  Object keys: ${Object.keys(finalData)}`);
-
-            if (Array.isArray(finalData.message.content)) {
-              console.log(
-                `  Message content: Array with ${finalData.message.content.length} items`
-              );
-              finalData.message.content.forEach((item, index) => {
-                console.log(
-                  `    Item ${index}: ${
-                    typeof item === "object"
-                      ? JSON.stringify(item).substring(0, 100)
-                      : item
-                  }`
-                );
-              });
-            }
           }
 
-          console.log(
-            "[useChatManager] Calling updateBotMessageFromFinalResponse with finalData"
-          );
           updateBotMessageFromFinalResponse(botMessagePlaceholderId, finalData);
-          console.log(
-            "[useChatManager] Final response processed via callback for message:",
-            botMessagePlaceholderId,
-            "Final text length:",
-            messages.find((m) => m.id === botMessagePlaceholderId)?.text
-              ?.length || "unknown"
-          );
           // Mark this message ID as finalized
           setFinalizedMessageIds((prev) =>
             new Set(prev).add(botMessagePlaceholderId)
@@ -532,12 +390,9 @@ export function useChatManager({
           }
         },
         onStreamEnd: () => {
-          console.log("[useChatManager] Stream ended (via callback).");
         },
         onReaderDone: () => {
-          console.log(
-            "[useChatManager] Stream reader reported done (via callback)."
-          );
+
         },
       };
 

@@ -195,6 +195,68 @@ body {
     line-height: 1.6; /* Adjust line height for readability */
   }
 
+  /* Mermaid diagram styles */
+  .mermaid-container {
+    @apply w-full flex justify-center items-center;
+  }
+  
+  .mermaid-container svg {
+    @apply max-w-full h-auto;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  
+  /* Mermaid theme integration with our design system */
+  .mermaid .node rect,
+  .mermaid .node circle,
+  .mermaid .node ellipse,
+  .mermaid .node polygon {
+    fill: hsl(var(--card));
+    stroke: hsl(var(--border));
+    stroke-width: 2px;
+  }
+  
+  .mermaid .edgePath .path {
+    stroke: hsl(var(--muted-foreground));
+    stroke-width: 2px;
+  }
+  
+  .mermaid .edgeLabel {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+  
+  .mermaid .cluster rect {
+    fill: hsl(var(--muted));
+    stroke: hsl(var(--border));
+  }
+  
+  .mermaid .titleText {
+    fill: hsl(var(--foreground));
+    font-weight: 600;
+  }
+  
+  .mermaid text {
+    fill: hsl(var(--foreground));
+    font-size: 14px;
+  }
+  
+  /* Dark mode adjustments for Mermaid */
+  .dark .mermaid .node rect,
+  .dark .mermaid .node circle,
+  .dark .mermaid .node ellipse,
+  .dark .mermaid .node polygon {
+    fill: hsl(var(--card));
+    stroke: hsl(var(--border));
+  }
+  
+  .dark .mermaid .edgePath .path {
+    stroke: hsl(var(--muted-foreground));
+  }
+  
+  .dark .mermaid text {
+    fill: hsl(var(--foreground));
+  }
+
   .bouncing-loader {
     display: flex;
     justify-content: center;

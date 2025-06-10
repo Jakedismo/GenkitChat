@@ -108,6 +108,8 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         processedText = String(text || '');
       }
       
+
+      
       // Fix potential formatting issues before rendering
       processedText = processedText
         .replace(/\\"/g, '"')
@@ -121,6 +123,8 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         .replace(/\] \((?!http)/g, '](') // Only add space between markdown links if they're not already URLs
         .replace(/\n\*(.*?)\*/g, '\n* $1') // Fix bullet points
         .replace(/\n\*\*(.*?)\*\*/g, '\n* **$1**'); // Fix bold bullet points
+        
+
         
       const parts: JSX.Element[] = [];
       let lastIndex = 0;

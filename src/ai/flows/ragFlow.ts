@@ -64,6 +64,12 @@ export const RagFlowInputSchema = z.object({
   modelId: z.string().optional(),
   temperaturePreset: z.enum(['precise', 'normal', 'creative']).optional(),
   maxTokens: z.number().optional(),
+  history: z.array(z.object({
+    role: z.enum(['user', 'model']),
+    content: z.array(z.object({
+      text: z.string()
+    }))
+  })).optional(),
 });
 
 export type RagFlowInput = z.infer<typeof RagFlowInputSchema>;
@@ -250,8 +256,8 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const modelToUseKey = createModelKey(modelId); // NEW: toolsToUse argument removed
       // logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${toolNamesToUse?.join(', ') || 'none'}`); // MOVED DOWN
       
-      const history: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
-      // Note: For a full chat experience, actual session history should be loaded if sessionId is present.
+      // Use provided conversation history or fall back to current query only
+      const history: MessageData[] = input.history || [{ role: 'user', content: [{ text: query }] }];
 
       // Render the prompt to MessageData[] with defensive checks
       let currentPromptMessages: MessageData[];

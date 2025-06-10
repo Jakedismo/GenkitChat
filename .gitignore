@@ -54,3 +54,4 @@ uploads/
 .genkit_sessions/
 .augment/
 memory-bank.kuzu/
+__db_documentRagStore.json
