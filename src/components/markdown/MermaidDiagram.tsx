@@ -18,6 +18,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
   const [zoom, setZoom] = useState(1);
   const [mermaidInstance, setMermaidInstance] = useState<any>(null);
   const [rendered, setRendered] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const renderTimeoutRef = useRef<NodeJS.Timeout>();
   const { toast } = useToast();
   const { theme, resolvedTheme } = useTheme();
@@ -34,10 +35,75 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
     return chart.trim().replace(/\n$/, '');
   }, [chart]);
 
+  // Validate if chart appears to be complete Mermaid syntax
+  const validateChartCompleteness = useCallback((chart: string): { isValid: boolean; error?: string } => {
+    if (!chart || chart.trim().length === 0) {
+      return { isValid: false, error: 'Empty chart content' };
+    }
+
+    const trimmed = chart.trim();
+    
+    // Check for basic Mermaid diagram types
+    const mermaidKeywords = [
+      'flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 
+      'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph',
+      'erDiagram', 'timeline', 'mindmap', 'sankey', 'quadrantChart',
+      'requirementDiagram', 'c4context', 'block-beta'
+    ];
+    
+    const hasValidStart = mermaidKeywords.some(keyword => 
+      trimmed.toLowerCase().startsWith(keyword.toLowerCase())
+    );
+    
+    if (!hasValidStart) {
+      return { 
+        isValid: false, 
+        error: `Chart must start with a valid Mermaid diagram type. Found: "${trimmed.split('\n')[0].substring(0, 50)}..."` 
+      };
+    }
+
+    // Check for incomplete streaming (ends with incomplete syntax)
+    const suspiciousEndings = [
+      /--$/,           // Incomplete connection
+      /\|\s*$/,        // Incomplete pipe
+      /\(\s*$/,        // Incomplete parenthesis
+      /\[\s*$/,        // Incomplete bracket
+      /\{\s*$/,        // Incomplete brace
+      /->\s*$/,        // Incomplete arrow
+      /:\s*$/,         // Incomplete colon definition
+    ];
+    
+    const endsIncomplete = suspiciousEndings.some(pattern => pattern.test(trimmed));
+    if (endsIncomplete) {
+      return { 
+        isValid: false, 
+        error: 'Chart appears incomplete (streaming in progress)' 
+      };
+    }
+
+    // Check minimum length for reasonable diagram
+    if (trimmed.length < 20) {
+      return { 
+        isValid: false, 
+        error: 'Chart content too short to be a valid diagram' 
+      };
+    }
+
+    return { isValid: true };
+  }, []);
+
   // Debounced render function to prevent streaming interference
   const debouncedRender = useCallback(async () => {
     if (!cleanChart || cleanChart.length === 0) {
       setError('No chart content provided');
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate chart completeness before attempting render
+    const validation = validateChartCompleteness(cleanChart);
+    if (!validation.isValid) {
+      setError(validation.error || 'Invalid chart content');
       setIsLoading(false);
       return;
     }
@@ -47,34 +113,82 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
       setError(null);
       setRendered(false);
 
+      // Add timeout to prevent hanging
+      const renderTimeout = setTimeout(() => {
+        setError('Diagram rendering timed out after 10 seconds');
+        setIsLoading(false);
+      }, 10000);
+
       // Dynamic import to handle SSR
-      const mermaid = (await import('mermaid')).default;
+      let mermaid;
+      try {
+        mermaid = (await import('mermaid')).default;
+        if (!mermaid) {
+          throw new Error('Mermaid library failed to load');
+        }
+      } catch (importError) {
+        clearTimeout(renderTimeout);
+        throw new Error(`Failed to import Mermaid: ${importError instanceof Error ? importError.message : 'Unknown import error'}`);
+      }
       
-      // Determine theme for Mermaid
-      const mermaidTheme = resolvedTheme === 'dark' ? 'dark' : 'default';
+      // Determine theme for Mermaid with better detection
+      const mermaidTheme = resolvedTheme === 'dark' || theme === 'dark' ? 'dark' : 
+                          resolvedTheme === 'light' || theme === 'light' ? 'default' : 
+                          'default';
       
-      // Initialize mermaid with configuration
+      // Initialize mermaid with comprehensive configuration
       mermaid.initialize({
         startOnLoad: false,
         theme: mermaidTheme,
         securityLevel: 'loose',
-        fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
         fontSize: 14,
+        logLevel: 'error', // Reduce console noise
         flowchart: {
           useMaxWidth: true,
           htmlLabels: true,
+          curve: 'basis',
+          padding: 10,
         },
         sequence: {
           useMaxWidth: true,
           wrap: true,
+          diagramMarginX: 50,
+          diagramMarginY: 10,
+          boxTextMargin: 5,
+          noteMargin: 10,
+          messageMargin: 35,
         },
         gantt: {
           useMaxWidth: true,
+          leftPadding: 75,
+          gridLineStartPadding: 35,
         },
         journey: {
           useMaxWidth: true,
+          diagramMarginX: 50,
+          diagramMarginY: 10,
         },
         gitgraph: {
+          useMaxWidth: true,
+          mainBranchName: 'main',
+        },
+        pie: {
+          useMaxWidth: true,
+        },
+        timeline: {
+          useMaxWidth: true,
+        },
+        mindmap: {
+          useMaxWidth: true,
+        },
+        classDiagram: {
+          useMaxWidth: true,
+        },
+        stateDiagram: {
+          useMaxWidth: true,
+        },
+        erDiagram: {
           useMaxWidth: true,
         }
       });
@@ -89,45 +203,84 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
         try {
           const parseResult = await mermaid.parse(cleanChart);
           if (!parseResult) {
-            throw new Error('Invalid Mermaid syntax');
+            throw new Error('Mermaid parse returned false - invalid syntax');
           }
         } catch (parseError) {
+          clearTimeout(renderTimeout);
+          const errorMsg = parseError instanceof Error ? parseError.message : 'Invalid diagram syntax';
           console.error('[MermaidDiagram] Parse error:', parseError);
-          throw new Error(`Syntax error: ${parseError instanceof Error ? parseError.message : 'Invalid diagram syntax'}`);
+          throw new Error(`Syntax validation failed: ${errorMsg}\n\nChart content:\n${cleanChart.substring(0, 200)}${cleanChart.length > 200 ? '...' : ''}`);
         }
         
         // Render the diagram
         try {
-          const { svg } = await mermaid.render(diagramId, cleanChart);
+          const renderResult = await mermaid.render(diagramId, cleanChart);
+          
+          if (!renderResult || !renderResult.svg) {
+            throw new Error('Mermaid render returned no SVG content');
+          }
+          
+          const { svg } = renderResult;
+          
+          if (!svg || svg.trim().length === 0) {
+            throw new Error('Generated SVG is empty');
+          }
           
           // Only update if component is still mounted
           if (elementRef.current) {
-            elementRef.current.innerHTML = svg;
-            
-            // Add responsive styling to the SVG
-            const svgElement = elementRef.current.querySelector('svg');
-            if (svgElement) {
+            try {
+              elementRef.current.innerHTML = svg;
+              
+              // Verify SVG was inserted correctly
+              const svgElement = elementRef.current.querySelector('svg');
+              if (!svgElement) {
+                throw new Error('SVG element not found after insertion');
+              }
+              
+              // Add responsive styling to the SVG
               svgElement.style.maxWidth = '100%';
               svgElement.style.height = 'auto';
               svgElement.style.transform = `scale(${zoom})`;
               svgElement.style.transformOrigin = 'top left';
+              
+              clearTimeout(renderTimeout);
+              setRendered(true);
+            } catch (domError) {
+              clearTimeout(renderTimeout);
+              throw new Error(`DOM manipulation failed: ${domError instanceof Error ? domError.message : 'Unknown DOM error'}`);
             }
-            setRendered(true);
+          } else {
+            clearTimeout(renderTimeout);
+            throw new Error('Component element ref is no longer available');
           }
         } catch (renderError) {
+          clearTimeout(renderTimeout);
+          const errorMsg = renderError instanceof Error ? renderError.message : 'Failed to render diagram';
           console.error('[MermaidDiagram] Render error:', renderError);
-          throw new Error(`Rendering error: ${renderError instanceof Error ? renderError.message : 'Failed to render diagram'}`);
+          throw new Error(`Diagram rendering failed: ${errorMsg}`);
         }
       }
     } catch (err) {
       console.error('[MermaidDiagram] Fatal rendering error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to render diagram');
+      console.error('[MermaidDiagram] Chart content that failed:', cleanChart);
+      console.error('[MermaidDiagram] Diagram ID:', diagramId);
+      console.error('[MermaidDiagram] Theme:', resolvedTheme);
+      
+      const errorMessage = err instanceof Error ? err.message : 'Unknown rendering error';
+      setError(`Mermaid rendering failed: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
-  }, [cleanChart, diagramId, zoom, resolvedTheme, chart]);
+  }, [cleanChart, diagramId, zoom, resolvedTheme, chart, validateChartCompleteness]);
+
+  // Hydration safety - only render on client
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
+    if (!mounted) return;
+    
     // Clear any existing timeout
     if (renderTimeoutRef.current) {
       clearTimeout(renderTimeoutRef.current);
@@ -136,7 +289,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
     // Debounce rendering to prevent streaming interference
     renderTimeoutRef.current = setTimeout(() => {
       debouncedRender();
-    }, 300); // 300ms debounce
+    }, 500); // 500ms debounce for better stability
 
     // Cleanup on unmount
     return () => {
@@ -144,7 +297,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
         clearTimeout(renderTimeoutRef.current);
       }
     };
-  }, [debouncedRender]);
+  }, [debouncedRender, mounted]);
 
   const copyAsImage = async () => {
     try {
@@ -274,6 +427,17 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
     setZoom(1);
   };
 
+  // Prevent SSR rendering to avoid hydration errors
+  if (!mounted) {
+    return (
+      <div className="not-prose my-4 flex items-center justify-center p-8 border border-border rounded-lg bg-card">
+        <div className="flex flex-col items-center space-y-2">
+          <span className="text-sm text-muted-foreground">Loading diagram...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="not-prose my-4 flex items-center justify-center p-8 border border-border rounded-lg bg-card">
@@ -292,24 +456,49 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
 
   if (error) {
     return (
-      <div className="not-prose my-4 border border-destructive/50 rounded-lg p-4 bg-destructive/10">
-        <div className="flex items-start space-x-3">
-          <div className="flex-shrink-0">
-            <div className="w-5 h-5 text-destructive">⚠️</div>
-          </div>
-          <div className="flex-1">
-            <h3 className="text-sm font-medium text-destructive">
-              Diagram Rendering Error
-            </h3>
-            <p className="mt-1 text-sm text-destructive/80">{error}</p>
-            <details className="mt-2">
-              <summary className="cursor-pointer text-xs text-destructive/70 hover:text-destructive">
-                View source code
-              </summary>
-              <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-auto max-h-32">
-                {chart}
-              </pre>
-            </details>
+      <div className="not-prose my-4 border border-destructive/50 rounded-lg bg-destructive/10">
+        <div className="p-4">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <div className="w-5 h-5 text-destructive">⚠️</div>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-destructive">
+                Mermaid Diagram Error
+              </h3>
+              <p className="mt-1 text-sm text-destructive/80 whitespace-pre-wrap">{error}</p>
+              
+              {/* Fallback text representation */}
+              <div className="mt-3 p-3 bg-muted/50 rounded border">
+                <h4 className="text-xs font-medium text-muted-foreground mb-2">
+                  Fallback: Plain Text Representation
+                </h4>
+                <pre className="text-xs text-foreground whitespace-pre-wrap font-mono">
+                  {cleanChart}
+                </pre>
+              </div>
+              
+              {/* Debugging information */}
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs text-destructive/70 hover:text-destructive">
+                  Show debugging information
+                </summary>
+                <div className="mt-2 space-y-2">
+                  <div className="text-xs">
+                    <span className="font-medium">Chart length:</span> {cleanChart.length} characters
+                  </div>
+                  <div className="text-xs">
+                    <span className="font-medium">Diagram ID:</span> {diagramId}
+                  </div>
+                  <div className="text-xs">
+                    <span className="font-medium">Theme:</span> {resolvedTheme}
+                  </div>
+                  <pre className="text-xs bg-muted/30 p-2 rounded border overflow-auto max-h-32">
+{cleanChart}
+                  </pre>
+                </div>
+              </details>
+            </div>
           </div>
         </div>
       </div>
@@ -395,16 +584,18 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
       </div>
 
       {/* Source code toggle (bottom) */}
-      <details className="border-t border-border">
-        <summary className="cursor-pointer px-4 py-2 text-xs text-muted-foreground hover:bg-muted transition-colors">
-          View source code
-        </summary>
-        <div className="px-4 pb-4">
-          <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-32 border">
-            <code>{chart}</code>
-          </pre>
-        </div>
-      </details>
+      <div className="border-t border-border">
+        <details>
+          <summary className="cursor-pointer px-4 py-2 text-xs text-muted-foreground hover:bg-muted transition-colors">
+            View source code
+          </summary>
+          <div className="px-4 pb-4">
+            <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-32 border">
+              <code>{cleanChart}</code>
+            </pre>
+          </div>
+        </details>
+      </div>
     </div>
   );
 };
