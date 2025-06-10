@@ -176,9 +176,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     };
 
     if (!ragRetrieverRef) {
-      logger.error('RAG retriever reference is not configured.');
-      sendChunk({ type: 'error', error: 'RAG retriever not configured.' });
-      return "Error: RAG retriever not configured.";
+      const errorMessage = 'RAG retriever reference is not configured. Please check server configuration.';
+      logger.error(errorMessage);
+      sendChunk({ type: 'error', error: errorMessage });
+      sendChunk({
+        type: 'final_response',
+        response: errorMessage,
+        sessionId: sessionId,
+        toolInvocations: []
+      });
+      return errorMessage;
     }
 
 
