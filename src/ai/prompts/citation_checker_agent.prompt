@@ -2,7 +2,7 @@
 name: citation_checker_agent
 description: "Specialist agent to verify if a cited source URL/identifier supports the claims made in a given text segment."
 tools: [] # Assumes intrinsic ability to "access" URL content or content is provided.
-model: {{modelId}} # e.g., "googleai/gemini-2.5-flash-preview-04-17"
+model: "{{modelId}}" # e.g., "googleai/gemini-2.5-flash-preview-04-17"
 input:
   schema:
     textSegment: string

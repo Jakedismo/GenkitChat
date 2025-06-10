@@ -8,7 +8,7 @@ tools:
   - citation_checker_agent
   - fact_verifier_agent
   - summarization_agent
-model: {{modelId}}
+model: "{{modelId}}"
 input:
   schema:
     userQuery: string

@@ -2,7 +2,7 @@
 name: clarification_agent
 description: "Specialist agent that analyzes user queries for ambiguity and crafts clarifying questions to ensure research can proceed effectively."
 tools: [] # This agent primarily formulates questions, doesn't call external data tools.
-model: {{modelId}} # e.g., "openai/gpt-4.1-mini"
+model: "{{modelId}}" # e.g., "openai/gpt-4.1-mini"
 input:
   schema:
     userQuery: string

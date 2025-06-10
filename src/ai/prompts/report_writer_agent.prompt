@@ -2,7 +2,7 @@
 name: report_writer_agent
 description: "Specialist agent that synthesizes research findings and sources into a well-structured, professional report in Markdown format."
 tools: [] # This agent focuses on composing the report from provided data.
-model: {{modelId}} # e.g., "openai/gpt-4.1" or "googleai/gemini-2.5-pro..."
+model: "{{modelId}}" # e.g., "openai/gpt-4.1" or "googleai/gemini-2.5-pro..."
 input:
   schema:
     researchTopic: string

@@ -101,6 +101,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     { query, sessionId, tools: toolNamesToUse, modelId, temperaturePreset, maxTokens }: RagFlowInput,
     sideChannel: (chunk: RagStreamEvent) => void
   ) => {
+
     let filteredDocs: Document[] = [];
     let topDocs: DocumentData[] = []; 
     const pendingToolRequests = new Map<string, ToolRequestPart>();
@@ -291,27 +292,13 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           temperature: temperaturePreset === 'precise' ? 0.2 : temperaturePreset === 'creative' ? 0.9 : 0.7,
           maxOutputTokens: maxTokens,
         },
-        streamingCallback: (chunk: any) => { // Using any for chunk type temporarily
-          console.log('[RAG-STREAM-DEBUG] Received chunk:', {
-            hasText: !!chunk?.text,
-            textLength: chunk?.text?.length || 0,
-            textPreview: chunk?.text?.substring(0, 100) || 'no text',
-            chunkKeys: Object.keys(chunk || {}),
-            chunkType: typeof chunk,
-            chunkContent: chunk,
-            accumulatedLength: accumulatedLlmText.length
-          });
-
+        streamingCallback: (chunk: any) => {
           // Try different possible text properties in the chunk
           let textContent = chunk?.text || chunk?.content || chunk?.delta?.text || chunk?.choices?.[0]?.delta?.content;
 
           if (textContent) {
-            console.log('[RAG-STREAM-DEBUG] Processing text chunk:', textContent);
             sendChunk({ type: 'text', text: textContent });
             accumulatedLlmText += textContent;
-            console.log('[RAG-STREAM-DEBUG] Updated accumulated text length:', accumulatedLlmText.length);
-          } else {
-            console.log('[RAG-STREAM-DEBUG] Chunk has no text property, chunk structure:', JSON.stringify(chunk, null, 2));
           }
           // Enhanced defensive checks for tool requests
           chunk?.toolRequests?.forEach((requestPart: ToolRequestPart) => {
@@ -337,44 +324,52 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       // Moved logger.info here to accurately reflect the tools being passed
       logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
 
-      console.log('[RAG-STREAM-DEBUG] Starting LLM stream generation');
       const llmStreamResult = aiInstance.generateStream(generateOptions);
 
       let streamItemCount = 0;
       for await (const item of llmStreamResult.stream) {
         streamItemCount++;
-        console.log(`[RAG-STREAM-DEBUG] Processed stream item ${streamItemCount}:`, item);
 
-        // Process the stream item directly if the callback isn't working
-        if (item?.text && accumulatedLlmText.length === 0) {
-          console.log('[RAG-STREAM-DEBUG] Processing stream item text directly:', item.text);
-          sendChunk({ type: 'text', text: item.text });
+        // Process the stream item directly - this is the fallback mechanism
+        if (item?.text) {
+          // Add the full text to accumulated (for final response tracking)
           accumulatedLlmText += item.text;
+          
+          // Split the text into words and send individually for streaming effect
+          const words = item.text.split(' ');
+          for (let i = 0; i < words.length; i++) {
+            const word = words[i];
+            if (word) { // Skip empty strings
+              // Add space before word (except first word)
+              const textToSend = i === 0 ? word : ' ' + word;
+              sendChunk({ type: 'text', text: textToSend });
+              // Small delay to simulate token-by-token streaming
+              await new Promise(resolve => setTimeout(resolve, 20));
+            }
+          }
         }
       }
       
-      console.log(`[RAG-STREAM-DEBUG] Stream completed after ${streamItemCount} items`);
-      console.log('[RAG-STREAM-DEBUG] Accumulated text length before final response:', accumulatedLlmText.length);
-      
       const finalLlmResponse = await llmStreamResult.response;
-      console.log('[RAG-STREAM-DEBUG] Final LLM response received:', {
-        hasText: !!finalLlmResponse.text,
-        textLength: finalLlmResponse.text?.length || 0,
-        textPreview: finalLlmResponse.text?.substring(0, 100) || 'no text'
-      });
       
       await flushToolBuffer();
       
       const responseText = finalLlmResponse.text;
       if (accumulatedLlmText === '' && responseText) {
-        console.log('[RAG-STREAM-DEBUG] Using final response text as fallback');
-        sendChunk({ type: 'text', text: responseText });
+        // Split the final response into words and send individually for streaming effect
+        const words = responseText.split(' ');
+        for (let i = 0; i < words.length; i++) {
+          const word = words[i];
+          if (word) { // Skip empty strings
+            // Add space before word (except first word)
+            const textToSend = i === 0 ? word : ' ' + word;
+            sendChunk({ type: 'text', text: textToSend });
+            // Small delay to simulate token-by-token streaming
+            await new Promise(resolve => setTimeout(resolve, 25));
+          }
+        }
         accumulatedLlmText = responseText;
       }
-      
-      console.log('[RAG-STREAM-DEBUG] Final accumulated text length:', accumulatedLlmText.length);
-      console.log('[RAG-STREAM-DEBUG] Final accumulated text preview:', accumulatedLlmText.substring(0, 200) + '...');
-      console.log('[RAG-STREAM-DEBUG] Final accumulated text ending:', '...' + accumulatedLlmText.substring(Math.max(0, accumulatedLlmText.length - 100)));
       
       return accumulatedLlmText;
 

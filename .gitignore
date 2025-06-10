@@ -53,3 +53,4 @@ uploads/
 .db/
 .genkit_sessions/
 .augment/
+memory-bank.kuzu/

@@ -1,14 +1,31 @@
+import { documentQaStreamFlow, RagFlowInput } from "@/ai/flows/ragFlow";
+import { withGenkitServer } from "@/lib/server";
+import {
+    generateRagSessionId,
+    MAX_UPLOAD_SIZE,
+    processFileWithOfficeParser,
+} from "@/services/rag";
 import fs from "fs/promises"; // Add fs/promises
 import path from "path"; // Add path
-import { documentQaStreamFlow, RagFlowInput } from "@/ai/flows/ragFlow";
-import {
-  generateRagSessionId,
-  processFileWithOfficeParser,
-  MAX_UPLOAD_SIZE,
-} from "@/services/rag";
-import { withGenkitServer } from "@/lib/server";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads"); // Define base uploads dir
+
+// Define type for the final_response event payload
+interface FinalResponseData {
+  response: string;
+  toolInvocations: any[]; // Always include this array, even if empty
+  sessionId: string;
+}
+
+// Helper to format Server-Sent Events (SSE) - same as basic-chat
+function formatSSE(event: string, data: string): string {
+  // Verify data is a valid string to prevent serialization issues
+  const safeData =
+    typeof data === "string"
+      ? data
+      : JSON.stringify({ error: "Invalid data format" });
+  return `event: ${event}\ndata: ${safeData}\n\n`;
+}
 
 // Ensure uploads directory exists
 async function ensureUploadsDir() {
@@ -197,108 +214,6 @@ export async function POST(req: Request) {
             let streamClosed = false;
 
             try {
-              // Create a handler function for RAG events that formats them as SSE
-              const handleEvent = (event: any) => {
-                if (streamClosed) return;
-
-                console.log(`[RAG-DEBUG] Processing event type: ${event.type}`);
-                let sseEventString = "";
-
-                switch (event.type) {
-                  case "sources":
-                    sseEventString = `event: sources\ndata: ${JSON.stringify({
-                      sources: event.sources,
-                    })}\n\n`;
-                    break;
-                  case "text":
-                    console.log(`[RAG-DEBUG] Sending text event: "${event.text}"`);
-                    sseEventString = `event: text\ndata: ${JSON.stringify({
-                      text: event.text,
-                    })}\n\n`;
-                    break;
-                  case "tool_invocation": {
-                    // Defensive: ensure event and toolData are properly defined
-                    if (!event) {
-                      console.warn("[RAG-DEBUG] Received undefined tool_invocation event");
-                      return;
-                    }
-                    
-                    const toolData = {
-                      name: event.name || 'unknown_tool',
-                      input: event.input,
-                      output: event.output,
-                      error: event.error, // Include error if present
-                    };
-                    // No truncation: always send the full output as a single JSON event
-                    sseEventString = `event: tool_invocation\ndata: ${JSON.stringify(
-                      toolData
-                    )}\n\n`;
-                    // Debug: log outgoing event (truncated for log safety)
-                    console.debug(
-                      "[SSE] tool_invocation event:",
-                      sseEventString.slice(0, 500) +
-                        (sseEventString.length > 500
-                          ? "...[log truncated]"
-                          : "")
-                    );
-                    break;
-                  }
-                  case "tool_invocations": {
-                    // Handle the batched tool invocations case
-                    console.log(
-                      `[RAG-DEBUG] Processing batched tool invocations (${event.invocations.length} tools)`
-                    );
-
-                    // Convert each tool invocation in the batch to an individual SSE event
-                    for (const toolData of event.invocations || []) {
-                      // Add defensive check for each tool invocation
-                      if (!toolData) {
-                        console.warn("[RAG-DEBUG] Received undefined tool invocation in batch");
-                        continue;
-                      }
-                      
-                      const toolEvent = `event: tool_invocation\ndata: ${JSON.stringify(
-                        {
-                          name: toolData.name || 'unknown_tool',
-                          input: toolData.input,
-                          output: toolData.output,
-                          error: toolData.error,
-                        }
-                      )}\n\n`;
-
-                      controller.enqueue(encoder.encode(toolEvent));
-                    }
-                    // Return without setting sseEventString since we've already sent events
-                    return;
-                  }
-                  case "error":
-                    sseEventString = `event: error\ndata: ${JSON.stringify({
-                      error: event.error,
-                    })}\n\n`;
-                    // Send the error and close the stream
-                    controller.enqueue(encoder.encode(sseEventString));
-                    controller.close();
-                    streamClosed = true;
-                    return;
-                  case "final_response":
-                    sseEventString = `event: final_response\ndata: ${JSON.stringify({
-                      response: event.response,
-                      sessionId: event.sessionId,
-                      toolInvocations: event.toolInvocations || []
-                    })}\n\n`;
-                    break;
-                  default:
-                    // Log unknown event types but don't break the stream
-                    console.warn("Unknown RAG stream event type:", event);
-                    return;
-                }
-
-                // Send the formatted SSE event to the client
-                if (sseEventString) {
-                  controller.enqueue(encoder.encode(sseEventString));
-                }
-              };
-
               // Execute the RAG flow to generate the response
               // Create the input object with required parameters
               const flowInput: RagFlowInput = {
@@ -311,20 +226,51 @@ export async function POST(req: Request) {
                 flowInput.tools = toolsParam;
               }
               
-              console.log('[RAG-DEBUG] Calling documentQaStreamFlow with input:', flowInput);
-              // Call the flow directly with sideChannel parameter as defined in ragFlow.ts
+              // Call the flow with custom streaming implementation
+              // This approach intercepts streaming events from the RAG flow and forwards them
+              // as SSE chunks to provide real-time token-by-token streaming to the frontend
               try {
-                const result = await (documentQaStreamFlow as any)(flowInput, handleEvent);
-                console.log('[RAG-DEBUG] Flow completed with result length:', typeof result === 'string' ? result.length : 'not a string');
-                console.log('[RAG-DEBUG] Result preview:', typeof result === 'string' ? result.substring(0, 200) + '...' : result);
+                let streamingActive = true;
+                let fullResult = '';
+                
+                // Custom streaming handler that intercepts the flow's internal streaming
+                const customStreamHandler = (event: any) => {
+                  if (streamClosed || !streamingActive) return;
+
+                  if (event.type === "text" && event.text) {
+                    const chunkEvent = formatSSE("chunk", JSON.stringify({ text: event.text }));
+                    controller.enqueue(encoder.encode(chunkEvent));
+                    fullResult += event.text;
+                  }
+                };
+
+                // Call the flow with the custom stream handler
+                const result = await (documentQaStreamFlow as any)(flowInput, customStreamHandler);
+                streamingActive = false;
+                
+                // If no streaming occurred, fall back to word-by-word streaming of the final result
+                if (!fullResult && result) {
+                  const words = result.split(' ');
+                  for (let i = 0; i < words.length; i++) {
+                    if (streamClosed) break;
+                    const word = words[i];
+                    if (word) {
+                      const textToSend = i === 0 ? word : ' ' + word;
+                      const chunkEvent = formatSSE("chunk", JSON.stringify({ text: textToSend }));
+                      controller.enqueue(encoder.encode(chunkEvent));
+                      // Small delay for streaming effect
+                      await new Promise(resolve => setTimeout(resolve, 30));
+                    }
+                  }
+                  fullResult = result;
+                }
                 
                 // Send final_response event with the complete result
                 if (!streamClosed && result) {
                   try {
                     // Clean the result string to avoid JSON serialization issues
-                    // Only remove problematic control characters, preserve newlines and tabs for markdown
                     const cleanedResult = typeof result === 'string'
-                      ? result.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '') // Remove control chars but keep \n (0A) and \t (09)
+                      ? result.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
                       : String(result);
                     
                     const finalResponseData = {
@@ -333,58 +279,23 @@ export async function POST(req: Request) {
                       toolInvocations: []
                     };
                     
-                    // Test JSON serialization first to catch any issues
-                    const jsonString = JSON.stringify(finalResponseData);
-
-                    console.log('[RAG-DEBUG] JSON serialization successful, length:', jsonString.length);
-                    console.log('[RAG-DEBUG] Original result length:', typeof result === 'string' ? result.length : 'unknown');
-                    console.log('[RAG-DEBUG] Cleaned result length:', cleanedResult.length);
-                    console.log('[RAG-DEBUG] JSON preview:', jsonString.substring(0, 300) + '...');
-                    console.log('[RAG-DEBUG] JSON ending:', '...' + jsonString.substring(Math.max(0, jsonString.length - 100)));
-
-                    // Ensure the JSON string is properly formatted
-                    if (!jsonString.endsWith('}')) {
-                      console.error('[RAG-DEBUG] JSON string does not end with }, this will cause parsing errors');
-                      throw new Error('Malformed JSON string');
-                    }
-
-                    console.log('[RAG-DEBUG] JSON string length:', jsonString.length);
-
-                    // CRITICAL: Escape the JSON string for SSE transmission
-                    // SSE data fields cannot contain literal newlines - they must be escaped
-                    const escapedJsonString = jsonString.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
-
-                    console.log('[RAG-DEBUG] Original JSON length:', jsonString.length);
-                    console.log('[RAG-DEBUG] Escaped JSON length:', escapedJsonString.length);
-                    console.log('[RAG-DEBUG] Escaped JSON preview:', escapedJsonString.substring(0, 200));
-
-                    const finalResponseEvent = `event: final_response\ndata: ${escapedJsonString}\n\n`;
+                    const finalResponseEvent = formatSSE("final_response", JSON.stringify(finalResponseData));
                     controller.enqueue(encoder.encode(finalResponseEvent));
-                    console.log('[RAG-DEBUG] Sent response as single event with escaped JSON');
                     
-                    // Send a keep-alive comment to ensure the stream stays open
-                    const keepAlive = `: keep-alive\n\n`;
-                    controller.enqueue(encoder.encode(keepAlive));
-                    console.log('[RAG-DEBUG] Sent keep-alive comment');
-                    
-                    // Add a longer delay to ensure the final event is fully transmitted
-                    // before closing the stream to prevent race conditions
-                    await new Promise(resolve => setTimeout(resolve, 200)); // Increased delay further
-                    console.log('[RAG-DEBUG] Delay completed, preparing to close stream');
                   } catch (jsonError) {
-                    console.error('[RAG-DEBUG] JSON serialization error:', jsonError);
+                    console.error('RAG JSON serialization error:', jsonError);
                     // Send a fallback response if JSON serialization fails
                     const fallbackData = {
                       response: "Error: Response contains characters that cannot be serialized to JSON. Please try again.",
                       sessionId: sessionId,
                       toolInvocations: []
                     };
-                    const fallbackEvent = `event: final_response\ndata: ${JSON.stringify(fallbackData)}\n\n`;
+                    const fallbackEvent = formatSSE("final_response", JSON.stringify(fallbackData));
                     controller.enqueue(encoder.encode(fallbackEvent));
                   }
                 }
               } catch (error) {
-                console.error('[RAG-DEBUG] Error during documentQaStreamFlow:', error);
+                console.error('Error during documentQaStreamFlow:', error);
                 throw error; // Re-throw the error to be caught by the outer try-catch
               }
 
@@ -398,10 +309,10 @@ export async function POST(req: Request) {
               if (!streamClosed) {
                 // Try to send a final error event to the client
                 try {
-                  const errorEvent = `event: error\ndata: ${JSON.stringify({
+                  const errorEvent = formatSSE("error", JSON.stringify({
                     error:
                       error instanceof Error ? error.message : String(error),
-                  })}\n\n`;
+                  }));
                   controller.enqueue(encoder.encode(errorEvent));
                 } catch (e) {
                   console.error("Failed to send error message to client:", e);
