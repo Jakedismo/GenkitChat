@@ -149,7 +149,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
           if (childProps && 'children' in childProps) {
             if (typeof childProps.children === 'string') {
               const grandChildren = processStringWithCitations(childProps.children, `${key}-grandchild`);
-              finalChildren.push(React.cloneElement(child, { key }, grandChildren));
+              finalChildren.push(React.cloneElement(child, { key }, ...grandChildren));
             } else if (Array.isArray(childProps.children)) {
               // If children is an array, recursively process them - this is a deeper dive
               const processedGrandchildren: React.ReactNode[] = [];
