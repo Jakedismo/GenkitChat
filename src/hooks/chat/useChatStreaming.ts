@@ -100,9 +100,9 @@ export async function processStream(
           // it might be part of multi-line JSON content - add it as a continuation
           currentSSEDataLines.push(line);
         } else {
-          // Ignore other non-empty lines for robustness
-          callbacks.onText(unescapeMarkdown(line)); // Apply unescapeMarkdown here
-        }
+    // Ignore other non-empty lines for robustness (e.g. protocol messages, stray newlines)
+    // console.debug('[processStream] Ignoring non-SSE line:', line); // Optional: for debugging
+  }
       }
     } catch (error) {
       console.error("[useChatStreaming] Error reading from stream:", error);
