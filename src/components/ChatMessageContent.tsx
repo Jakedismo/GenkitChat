@@ -129,57 +129,31 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
     return parts;
   };
 
+  // Recursively process any node (string, array, React element) for citations
+  const processNodeForCitations = (node: any, keyPrefix: string): React.ReactNode => {
+    if (typeof node === 'string') {
+      return processStringWithCitations(node, keyPrefix);
+    } else if (Array.isArray(node)) {
+      return node.map((child, idx) => processNodeForCitations(child, `${keyPrefix}-arr-${idx}`));
+    } else if (React.isValidElement(node)) {
+      const childProps = node.props as any;
+      let processedChildren: React.ReactNode = undefined;
+      if (childProps && 'children' in childProps) {
+        processedChildren = processNodeForCitations(childProps.children, `${keyPrefix}-child`);
+      }
+      return React.cloneElement(node, { key: keyPrefix }, processedChildren);
+    } else if (node !== null && node !== undefined) {
+      return <React.Fragment key={keyPrefix}>{String(node)}</React.Fragment>;
+    }
+    return null;
+  };
+
   // Factory for creating element renderers that process citations in their string children
   const createElementRenderer = (ElementComponent: React.ElementType, elementTypePrefix: string) => {
     return (props: any) => {
-      const { node, children, ...rest } = props; // `node` is from react-markdown, not always needed here
-      const finalChildren: React.ReactNode[] = [];
-      let childRenderKeyCounter = 0;
-
-      React.Children.forEach(children, (child) => {
-        const key = `${elementTypePrefix}-child-${childRenderKeyCounter++}`;
-        if (typeof child === 'string') {
-          // Pass a unique key prefix for processing this specific string child
-          finalChildren.push(...processStringWithCitations(child, key));
-        } else if (React.isValidElement(child)) {
-          // Clone element to ensure it has a key if it's part of a list
-          // Also, recursively process children of this element if it's a simple wrapper (e.g. <em> or <strong>)
-          // For more complex elements, this might need adjustment or they might be passed via pageComponents.
-          const childProps = child.props as any; // Type assertion to access props safely
-          if (childProps && 'children' in childProps) {
-            if (typeof childProps.children === 'string') {
-              const grandChildren = processStringWithCitations(childProps.children, `${key}-grandchild`);
-              finalChildren.push(React.cloneElement(child, { key }, ...grandChildren));
-            } else if (Array.isArray(childProps.children)) {
-              // If children is an array, recursively process them - this is a deeper dive
-              const processedGrandchildren: React.ReactNode[] = [];
-              React.Children.forEach(childProps.children, (grandChild: any, index: number) => {
-                const grandChildKey = `${key}-grandchild-${index}`;
-                if (typeof grandChild === 'string') {
-                  processedGrandchildren.push(...processStringWithCitations(grandChild, grandChildKey));
-                } else if (React.isValidElement(grandChild)) {
-                  // This recursive step could be made more robust or limited in depth
-                  processedGrandchildren.push(React.cloneElement(grandChild, { key: grandChildKey }));
-                } else if (grandChild !== null && grandChild !== undefined) {
-                  processedGrandchildren.push(<React.Fragment key={grandChildKey}>{String(grandChild)}</React.Fragment>);
-                }
-              });
-              finalChildren.push(React.cloneElement(child, { key }, ...processedGrandchildren));
-            } else {
-              // Element has children but they're not processable (neither string nor array)
-              // Just clone the element as-is
-              finalChildren.push(React.cloneElement(child, { key }));
-            }
-          } else {
-            // Element has no children property, just clone it
-            finalChildren.push(React.cloneElement(child, { key }));
-          }
-        } else if (child !== null && child !== undefined) {
-          // Handle other primitive types if necessary (e.g., numbers)
-          finalChildren.push(<React.Fragment key={key}>{String(child)}</React.Fragment>);
-        }
-      });
-      return <ElementComponent {...rest}>{finalChildren}</ElementComponent>;
+      const { node, children, ...rest } = props;
+      const processed = processNodeForCitations(children, `${elementTypePrefix}-root`);
+      return <ElementComponent {...rest}>{processed}</ElementComponent>;
     };
   };
 
