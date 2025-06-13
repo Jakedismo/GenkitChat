@@ -67,83 +67,71 @@ export function useChatMessages(): UseChatMessagesReturn {
               .replace(/\\\\/g, '\\')
               .replace(/\\+$/, ''); // Remove trailing backslashes
             
-            console.log(`[useChatMessages] Processing chunk for message ${msg.id} (${processedChunk.length} chars)`);
+
             
             // If replacing the text, ensure the new content isn't empty
             if (options?.replace && processedChunk.trim()) {
               return {
                 ...msg,
-                text: processedChunk
+                text: processedChunk, // Corrected: Use processedChunk directly for replace
               };
             }
-            
-            // Otherwise append the text (default behavior)
-            let newText: any;
-            if (Array.isArray(msg.text)) {
-              // Create a new array. Subsequent operations (string appends or push)
-              // will operate on this new array or its string elements.
-              newText = [...msg.text];
-            } else if (msg.text && typeof msg.text === 'object' && msg.text !== null) {
-              // Create a shallow copy of the object.
-              newText = { ...msg.text };
-              // If 'parts' is an array and is modified, it also needs to be a copy.
-              if (Array.isArray(newText.parts)) {
-                newText.parts = [...newText.parts];
-              }
-            } else {
-              // For primitives (string, number, boolean) or null/undefined.
-              // Strings are immutable; += creates a new string.
-              // Other primitives are also immutable.
-              newText = msg.text;
-            }
 
-            if (Array.isArray(newText)) {
-              if (newText.length > 0 && typeof newText[newText.length - 1] === 'string') {
-                newText[newText.length - 1] += processedChunk;
+
+            // Otherwise append the text (default behavior) - IMMUTABLE
+            let finalTextToAppend: any;
+
+            if (Array.isArray(msg.text)) {
+              const originalArray = msg.text as any[];
+              if (originalArray.length > 0 && typeof originalArray[originalArray.length - 1] === 'string') {
+                finalTextToAppend = [
+                  ...originalArray.slice(0, -1),
+                  originalArray[originalArray.length - 1] + processedChunk,
+                ];
               } else {
-                newText.push(processedChunk);
+                finalTextToAppend = [...originalArray, processedChunk];
               }
-            } else if (newText && typeof newText === 'object') {
+            } else if (msg.text && typeof msg.text === 'object') {
+              const originalObject = msg.text as { text?: string; content?: string; parts?: any[]; [key: string]: any };
               let handled = false;
-              if (typeof newText.text === 'string') {
-                newText.text += processedChunk;
+
+              if (typeof originalObject.text === 'string') {
+                finalTextToAppend = { ...originalObject, text: originalObject.text + processedChunk };
                 handled = true;
-              } else if (typeof newText.content === 'string') {
-                newText.content += processedChunk;
+              } else if (typeof originalObject.content === 'string') {
+                finalTextToAppend = { ...originalObject, content: originalObject.content + processedChunk };
                 handled = true;
-              } else if (Array.isArray(newText.parts)) {
-                if (newText.parts.length > 0 && typeof newText.parts[newText.parts.length - 1] === 'string') {
-                  newText.parts[newText.parts.length - 1] += processedChunk;
+              } else if (Array.isArray(originalObject.parts)) {
+                const originalParts = originalObject.parts;
+                let updatedParts;
+                if (originalParts.length > 0 && typeof originalParts[originalParts.length - 1] === 'string') {
+                  updatedParts = [
+                    ...originalParts.slice(0, -1),
+                    originalParts[originalParts.length - 1] + processedChunk,
+                  ];
                 } else {
-                  newText.parts.push(processedChunk);
+                  updatedParts = [...originalParts, processedChunk];
                 }
+                finalTextToAppend = { ...originalObject, parts: updatedParts };
                 handled = true;
               }
 
               if (!handled) {
                 // Fallback: convert the existing object to string and append
-                // This is the previous behavior if structured append wasn't possible.
-                // Ensure type safety: only use text/content if they're strings, otherwise JSON.stringify
-                let fallbackText: string;
-                if (typeof newText.text === 'string') {
-                  fallbackText = newText.text;
-                } else if (typeof newText.content === 'string') {
-                  fallbackText = newText.content;
-                } else {
-                  fallbackText = JSON.stringify(newText);
-                }
-                newText = fallbackText + processedChunk;
+                const baseString = originalObject.text || originalObject.content || JSON.stringify(originalObject);
+                finalTextToAppend = baseString + processedChunk;
               }
-            } else if (typeof newText === 'string') {
-              newText += processedChunk;
+            } else if (typeof msg.text === 'string') {
+              finalTextToAppend = msg.text + processedChunk;
             } else {
               // Fallback for null, undefined, or other types
-              newText = String(newText || '') + processedChunk;
+              finalTextToAppend = String(msg.text || '') + processedChunk;
             }
-            
+
             return {
               ...msg,
-              text: newText,
+
+              text: finalTextToAppend, // Corrected: Use the immutably created text
             };
           }
           return msg;
@@ -245,16 +233,16 @@ export function useChatMessages(): UseChatMessagesReturn {
             try {
               // First priority: Check for Google/Gemini message.content array
               if (finalResponse.message?.content && Array.isArray(finalResponse.message.content)) {
-                console.log(`[useChatMessages] Processing message.content array with ${finalResponse.message.content.length} items`);
+
                 
                 const contentParts = finalResponse.message.content.map(extractTextFromPart);
                 const fullText = contentParts.join('');
-                console.log(`[useChatMessages] Joined message.content into text (${fullText.length} chars)`);
+
                 
                 if (fullText.trim()) {
                   // Always replace with the final response if it's longer or if existing text is very short
                   if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                    console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with final message (${fullText.length} chars)`);
+
                     updatedMsg.text = fullText;
                   } else {
                     console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
@@ -277,7 +265,7 @@ export function useChatMessages(): UseChatMessagesReturn {
                   if (fullText.trim()) {
                     // Always replace with the final response if it's longer or if existing text is very short
                     if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                      console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with candidate parts (${fullText.length} chars)`);
+
                       updatedMsg.text = fullText;
                     } else {
                       console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
@@ -317,15 +305,20 @@ export function useChatMessages(): UseChatMessagesReturn {
                   // String response
                   const fullText = finalResponse.response;
                   if (fullText.trim()) {
-                    // Always replace with the final response if it's longer or if existing text is very short
-                    // This ensures we get the complete response from the server
-                    if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                      console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with string response (${fullText.length} chars)`);
+                    // PRIORITIZE STREAMING: Only use final response if streaming failed completely
+                    if (!existingText || existingText.length === 0) {
+
                       updatedMsg.text = fullText;
+                      foundContent = true;
+                    } else if (existingText.length < fullText.length * 0.8) {
+                      // Only replace if streamed text is significantly shorter (less than 80% of final)
+
+                      updatedMsg.text = fullText;
+                      foundContent = true;
                     } else {
-                      console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
+
+                      foundContent = true; // Keep existing streamed content
                     }
-                    foundContent = true;
                   }
                 } else if (finalResponse.response && typeof finalResponse.response === 'object') {
                   // Object response, might contain nested content
@@ -333,14 +326,20 @@ export function useChatMessages(): UseChatMessagesReturn {
                     const fullText = finalResponse.response.content.map(extractTextFromPart).join('');
                     
                     if (fullText.trim()) {
-                      // Always replace with the final response if it's longer or if existing text is very short
-                      if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                        console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with object content response (${fullText.length} chars)`);
+                      // PRIORITIZE STREAMING: Only use final response if streaming failed completely
+                      if (!existingText || existingText.length === 0) {
+
                         updatedMsg.text = fullText;
+                        foundContent = true;
+                      } else if (existingText.length < fullText.length * 0.8) {
+                        // Only replace if streamed text is significantly shorter (less than 80% of final)
+
+                        updatedMsg.text = fullText;
+                        foundContent = true;
                       } else {
-                        console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
+
+                        foundContent = true; // Keep existing streamed content
                       }
-                      foundContent = true;
                     }
                   }
                 }
@@ -349,7 +348,7 @@ export function useChatMessages(): UseChatMessagesReturn {
               if (!foundContent) {
                 console.warn(`[useChatMessages] Could not extract valid content from finalResponse for message ${msg.id}`);
               } else {
-                console.log(`[useChatMessages] Updated message ${msg.id} with final response (${typeof updatedMsg.text === 'string' ? updatedMsg.text.length : 'non-string'} chars)`);
+
               }
             } catch (error) {
               console.error(`[useChatMessages] Error processing finalResponse:`, error);
