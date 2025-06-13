@@ -55,3 +55,7 @@ uploads/
 .augment/
 memory-bank.kuzu/
 __db_documentRagStore.json
+
+# IDE settings
+.windsurf/
+.windsurf/rules/
