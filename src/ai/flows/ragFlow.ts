@@ -98,6 +98,18 @@ export const createModelKey = (
   return baseModel;
 };
 
+// Helper to map temperature presets to numeric values (shared logic)
+const mapTemp = (preset?: 'precise' | 'normal' | 'creative'): number => {
+  switch (preset) {
+    case 'precise':
+      return 0.2;
+    case 'creative':
+      return 0.9;
+    default:
+      return 0.7;
+  }
+};
+
 export const documentQaStreamFlow = aiInstance.defineFlow(
   {
     name: 'documentQaStreamFlow',
@@ -301,45 +313,28 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
 
       const messagesForLlm = history.concat(currentPromptMessages);
 
+      const caps = getCapabilities(modelId);
+      const config: Record<string, unknown> = {};
+      if (caps.supportsTemperature) {
+        config.temperature = mapTemp(temperaturePreset);
+      }
+      config[caps.maxTokensParam] = maxTokens;
+
       const generateOptions: Parameters<typeof aiInstance.generateStream>[0] = {
         model: modelToUseKey,
         messages: messagesForLlm,
         context: topDocs,
-        config: {
-          temperature: temperaturePreset === 'precise' ? 0.2 : temperaturePreset === 'creative' ? 0.9 : 0.7,
-          maxOutputTokens: maxTokens,
-        },
-        streamingCallback: (chunk: any) => {
-          // Try different possible text properties in the chunk
-          let textContent = chunk?.text || chunk?.content || chunk?.delta?.text || chunk?.choices?.[0]?.delta?.content;
-
-          if (textContent) {
-            sendChunk({ type: 'text', text: textContent });
-            accumulatedLlmText += textContent;
-          }
-          // Enhanced defensive checks for tool requests
-          chunk?.toolRequests?.forEach((requestPart: ToolRequestPart) => {
-            if (requestPart?.toolRequest?.ref) {
-              pendingToolRequests.set(requestPart.toolRequest.ref, requestPart);
-            }
-          });
-          // Enhanced defensive checks for tool responses
-          chunk?.toolResponses?.forEach((responsePart: ToolResponsePart) => {
-            if (responsePart?.toolResponse?.ref) {
-              toolResponseBuffer.set(responsePart.toolResponse.ref, responsePart);
-            }
-          });
-        },
+        config,
       };
+
+      // Moved logger.info here to accurately reflect the tools being passed
+      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
 
       if (toolNamesToUse && toolNamesToUse.length > 0) {
         // This assumes that aiInstance.generateStream can handle string[] for tools
         // by looking up definitions, as implied if it works when tools are selected.
         (generateOptions as any).tools = toolNamesToUse;
       }
-
-      // Moved logger.info here to accurately reflect the tools being passed
-      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
 
       const llmStreamResult = aiInstance.generateStream(generateOptions);
 
@@ -428,15 +423,18 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         const historyForFallback: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
         const messagesForLlmFallback = historyForFallback.concat(fallbackPromptMessages);
 
+        const capsFallback = getCapabilities(modelId);
+        const fallbackConfig: Record<string, unknown> = {};
+        if (capsFallback.supportsTemperature) {
+          fallbackConfig.temperature = mapTemp(temperaturePreset);
+        }
+        fallbackConfig[capsFallback.maxTokensParam] = maxTokens;
+
         const llmStreamResultFallback = aiInstance.generateStream({
-          model: fallbackModelKey, // Simplified key
+          model: fallbackModelKey,
           messages: messagesForLlmFallback,
           context: topDocs,
-          // No tools in fallback
-          config: {
-            temperature: temperaturePreset === 'precise' ? 0.2 : temperaturePreset === 'creative' ? 0.9 : 0.7,
-            maxOutputTokens: maxTokens,
-          },
+          config: fallbackConfig,
           streamingCallback: (chunk: any) => { // Using any for chunk type temporarily
             if (chunk?.text) {
               sendChunk({ type: 'text', text: chunk.text });
