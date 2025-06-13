@@ -138,7 +138,7 @@ export function useChatMessages(): UseChatMessagesReturn {
               newText += processedChunk;
             } else {
               // Fallback for null, undefined, or other types
-              newText = JSON.stringify(newText) + processedChunk;
+              newText = String(newText || '') + processedChunk;
             }
             
             return {
@@ -253,7 +253,6 @@ export function useChatMessages(): UseChatMessagesReturn {
                 
                 if (fullText.trim()) {
                   // Always replace with the final response if it's longer or if existing text is very short
-                  // This ensures we get the complete response from the server
                   if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
                     console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with final message (${fullText.length} chars)`);
                     updatedMsg.text = fullText;
