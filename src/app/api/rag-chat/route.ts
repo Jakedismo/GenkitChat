@@ -1,9 +1,9 @@
 import { documentQaStreamFlow, RagFlowInput } from "@/ai/flows/ragFlow";
 import { withGenkitServer } from "@/lib/server";
 import {
-    generateRagSessionId,
-    MAX_UPLOAD_SIZE,
-    processFileWithOfficeParser,
+  generateRagSessionId,
+  MAX_UPLOAD_SIZE,
+  processFileWithOfficeParser,
 } from "@/services/rag";
 import fs from "fs/promises"; // Add fs/promises
 import path from "path"; // Add path
@@ -221,77 +221,56 @@ export async function POST(req: Request) {
                 flowInput.tools = toolsParam;
               }
               
-              // Call the flow with custom streaming implementation
-              // This approach intercepts streaming events from the RAG flow and forwards them
-              // as SSE chunks to provide real-time token-by-token streaming to the frontend
-              try {
-                let streamingActive = true;
-                let fullResult = '';
-                
-                // Custom streaming handler that intercepts the flow's internal streaming
-                const customStreamHandler = (event: any) => {
-                  if (streamClosed || !streamingActive) return;
+              // This handler will be passed to the Genkit flow.
+              // It converts each event from the flow into an SSE-formatted chunk.
+              const streamHandler = (event: any) => {
+                if (streamClosed) return;
 
-                  if (event.type === "text" && event.text) {
-                    const chunkEvent = formatSSE("chunk", JSON.stringify({ text: event.text }));
-                    controller.enqueue(encoder.encode(chunkEvent));
-                    fullResult += event.text;
-                  }
+                // Map the flow's event types to the SSE event types the client expects.
+                const eventMap: { [key: string]: string } = {
+                  text: "chunk",
+                  sources: "sources",
+                  tool_invocation: "tool_invocation",
+                  tool_invocations: "tool_invocations",
+                  error: "error",
                 };
 
-                // Call the flow with the custom stream handler
-                const result = await (documentQaStreamFlow as any)(flowInput, customStreamHandler);
-                streamingActive = false;
-                
-                // If no streaming occurred, fall back to word-by-word streaming of the final result
-                if (!fullResult && result) {
-                  const words = result.split(' ');
-                  for (let i = 0; i < words.length; i++) {
-                    if (streamClosed) break;
-                    const word = words[i];
-                    if (word) {
-                      const textToSend = i === 0 ? word : ' ' + word;
-                      const chunkEvent = formatSSE("chunk", JSON.stringify({ text: textToSend }));
-                      controller.enqueue(encoder.encode(chunkEvent));
-                      // Small delay for streaming effect
-                      await new Promise(resolve => setTimeout(resolve, 30));
-                    }
-                  }
-                  fullResult = result;
+                const eventType = eventMap[event.type];
+                if (eventType) {
+                  // The data payload is the rest of the event object.
+                  const dataPayload = { ...event };
+                  delete dataPayload.type; // Remove the type property as it's now the event name.
+                  
+                  const sseEvent = formatSSE(
+                    eventType,
+                    JSON.stringify(dataPayload)
+                  );
+                  controller.enqueue(encoder.encode(sseEvent));
                 }
-                
-                // Send final_response event with the complete result
-                if (!streamClosed && result) {
-                  try {
-                    // Clean the result string to avoid JSON serialization issues
-                    const cleanedResult = typeof result === 'string'
-                      ? result.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
-                      : String(result);
-                    
-                    const finalResponseData = {
-                      response: cleanedResult,
-                      sessionId: sessionId,
-                      toolInvocations: []
-                    };
-                    
-                    const finalResponseEvent = formatSSE("final_response", JSON.stringify(finalResponseData));
-                    controller.enqueue(encoder.encode(finalResponseEvent));
-                    
-                  } catch (jsonError) {
-                    console.error('RAG JSON serialization error:', jsonError);
-                    // Send a fallback response if JSON serialization fails
-                    const fallbackData = {
-                      response: "Error: Response contains characters that cannot be serialized to JSON. Please try again.",
-                      sessionId: sessionId,
-                      toolInvocations: []
-                    };
-                    const fallbackEvent = formatSSE("final_response", JSON.stringify(fallbackData));
-                    controller.enqueue(encoder.encode(fallbackEvent));
-                  }
-                }
-              } catch (error) {
-                console.error('Error during documentQaStreamFlow:', error);
-                throw error; // Re-throw the error to be caught by the outer try-catch
+              };
+
+              // Execute the flow and get the stream and output promise.
+              const flowResult = documentQaStreamFlow.stream(flowInput);
+
+              // Process the stream of events.
+              for await (const chunk of flowResult.stream) {
+                streamHandler(chunk);
+              }
+
+              // After the stream is finished, get the final output.
+              const finalOutput = await flowResult.output;
+
+              if (!streamClosed) {
+                const finalResponseData: FinalResponseData = {
+                  response: finalOutput || "Stream completed.",
+                  toolInvocations: [], // Placeholder for now.
+                  sessionId: sessionId,
+                };
+                const finalEvent = formatSSE(
+                  "final_response",
+                  JSON.stringify(finalResponseData)
+                );
+                controller.enqueue(encoder.encode(finalEvent));
               }
 
               // Close the stream when the flow is complete (if not already closed by an error)

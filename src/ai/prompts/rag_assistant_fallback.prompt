@@ -1,21 +1,4 @@
 ---
-input:
-  schema:
-    query: string
-    documents:
-      type: array
-      items:
-        type: object
-        properties:
-          text:
-            type: string
-          metadata:
-            type: object
-            properties:
-              originalFileName:
-                type: string
-              chunkIndex:
-                type: integer
 ---
 
 {{role "system"}}

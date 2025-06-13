@@ -205,46 +205,27 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     try {
       logger.info(`RAG query: \"${query}\" for session: ${sessionId}`);
       const queryDocumentForRetrieval = Document.fromText(query || '');
+      
+      const retrieveOptions: any = {
+        k: INITIAL_RETRIEVAL_COUNT,
+      };
+
+      if (sessionId) {
+        retrieveOptions.where = { sessionId };
+        logger.info(`Retriever configured with where clause for sessionId: ${sessionId}`);
+      }
+      
       const docs = await aiInstance.retrieve({
         retriever: ragRetrieverRef,
         query: queryDocumentForRetrieval,
-        options: {
-          k: INITIAL_RETRIEVAL_COUNT,
-        },
+        options: retrieveOptions,
       });
 
-      // Try to filter by session first, but fall back to all docs if no matches
-      filteredDocs = sessionId
-        ? docs.filter((doc) => doc.metadata?.sessionId === sessionId)
-        : docs;
-      
-      // If session filtering yielded no results but we have docs, fall back to all docs
-      if (sessionId && filteredDocs.length === 0 && docs.length > 0) {
-        logger.warn(`[SESSION-FALLBACK] No documents found for session ${sessionId}, falling back to all ${docs.length} documents`);
-        filteredDocs = docs;
-      }
-
-      // Enhanced debug document metadata to understand filtering issue
-      if (sessionId && docs.length > 0 && filteredDocs.length === 0) {
-        logger.warn(`[SESSION-FILTER-DEBUG] Looking for sessionId "${sessionId}"`);
-        logger.warn(`[SESSION-FILTER-DEBUG] Retrieved ${docs.length} documents, but 0 matched after filtering`);
-        
-        // Check the sessionIds present in the retrieved documents
-        const uniqueSessionIds = new Set(docs.map(doc => doc.metadata?.sessionId).filter(Boolean));
-        logger.warn(`[SESSION-FILTER-DEBUG] Unique sessionIds found in documents:`, Array.from(uniqueSessionIds));
-        
-        docs.slice(0, 5).forEach((doc, idx) => {
-          logger.warn(`[SESSION-FILTER-DEBUG] Doc ${idx}:`, {
-            sessionId: doc.metadata?.sessionId,
-            documentId: doc.metadata?.documentId,
-            fileName: doc.metadata?.originalFileName,
-            timestamp: doc.metadata?.timestamp
-          });
-        });
-      }
+      // The filtering is now done at the retriever level, so docs are already filtered.
+      const filteredDocs = docs;
 
       logger.info(
-        `Retrieved ${docs.length} documents initially, ${filteredDocs.length} after filtering for session ${sessionId}.`
+        `Retrieved ${docs.length} documents for session ${sessionId}.`
       );
 
       if (filteredDocs.length === 0) {
@@ -267,7 +248,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
                 documents: filteredDocs,
                 options: { k: FINAL_DOCUMENT_COUNT },
               });
-              topDocs = rerankedDocsOutput;
+              topDocs = rerankedDocsOutput.slice(0, FINAL_DOCUMENT_COUNT);
               logger.info(
                 `Successfully reranked ${filteredDocs.length} documents to ${topDocs.length} using ${rerankerId} for session ${sessionId}.`
               );
@@ -355,66 +336,42 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const generateOptions: Parameters<typeof aiInstance.generateStream>[0] = {
         model: modelToUseKey,
         messages: messagesForLlm,
-        context: topDocs, // Ensure context is passed here for Genkit to handle RAG
+        context: topDocs,
         config,
+        streamingCallback: (chunk) => {
+          if (chunk?.text) {
+            sendChunk({ type: 'text', text: chunk.text });
+            accumulatedLlmText += chunk.text;
+          }
+        },
       };
 
-      // Moved logger.info here to accurately reflect the tools being passed
-      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
-
       if (toolNamesToUse && toolNamesToUse.length > 0) {
-        // This assumes that aiInstance.generateStream can handle string[] for tools
-        // by looking up definitions, as implied if it works when tools are selected.
         (generateOptions as any).tools = toolNamesToUse;
       }
 
-      const llmStreamResult = aiInstance.generateStream(generateOptions);
+      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
 
-      let streamItemCount = 0;
-      for await (const item of llmStreamResult.stream) {
-        streamItemCount++;
+      const llmStream = aiInstance.generateStream(generateOptions);
 
-        // Process the stream item directly - this is the fallback mechanism
-        if (item?.text) {
-          // Add the full text to accumulated (for final response tracking)
-          accumulatedLlmText += item.text;
-          
-          // Split the text into words and send individually for streaming effect
-          const words = item.text.split(' ');
-          for (let i = 0; i < words.length; i++) {
-            const word = words[i];
-            if (word) { // Skip empty strings
-              // Add space before word (except first word)
-              const textToSend = i === 0 ? word : ' ' + word;
-              sendChunk({ type: 'text', text: textToSend });
-              // Small delay to simulate token-by-token streaming
-              await new Promise(resolve => setTimeout(resolve, 20));
-            }
-          }
-        }
+      // Consume the stream to trigger the callbacks.
+      for await (const chunk of llmStream.stream) {
+        // The streamingCallback handles text chunks.
+        // This loop drives the stream and allows for future in-loop processing if needed.
       }
-      
-      const finalLlmResponse = await llmStreamResult.response;
-      
+
       await flushToolBuffer();
-      
-      const responseText = finalLlmResponse.text;
+
+      // After the stream is fully processed, get the final response.
+      const finalResponse = await llmStream.response;
+      const responseText = finalResponse.text;
+
+      // If no text was streamed but the final response has text, send it now.
       if (accumulatedLlmText === '' && responseText) {
-        // Split the final response into words and send individually for streaming effect
-        const words = responseText.split(' ');
-        for (let i = 0; i < words.length; i++) {
-          const word = words[i];
-          if (word) { // Skip empty strings
-            // Add space before word (except first word)
-            const textToSend = i === 0 ? word : ' ' + word;
-            sendChunk({ type: 'text', text: textToSend });
-            // Small delay to simulate token-by-token streaming
-            await new Promise(resolve => setTimeout(resolve, 25));
-          }
-        }
-        accumulatedLlmText = responseText;
+        sendChunk({ type: 'text', text: responseText });
+        return responseText;
       }
-      
+
       return accumulatedLlmText;
 
     } catch (error: any) {
