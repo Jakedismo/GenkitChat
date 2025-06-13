@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
-import { DocumentData, ToolInvocation, ParsedJsonData } from "@/types/chat";
+import { DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
+import { unescapeMarkdown } from "../../utils/markdown"; // Import unescapeMarkdown
 import { processSseEvent } from "./handlers/sseEventHandlers";
 
 export interface StreamEventCallbacks {
@@ -33,8 +33,6 @@ export async function processStream(
   let currentSSEEventType: string | null = null;
   let currentSSEDataLines: string[] = [];
   let done = false;
-
-
 
   while (!done) {
     try {
@@ -73,8 +71,6 @@ export async function processStream(
       let normalizedChunk = rawChunk.replace(/\\n/g, "\n").replace(/\r/g, "");
       buffer += normalizedChunk;
 
-
-
       let lineEndPos;
       while ((lineEndPos = buffer.indexOf("\n")) !== -1) {
         const line = buffer.substring(0, lineEndPos);
@@ -105,7 +101,7 @@ export async function processStream(
           currentSSEDataLines.push(line);
         } else {
           // Ignore other non-empty lines for robustness
-
+          callbacks.onText(unescapeMarkdown(line)); // Apply unescapeMarkdown here
         }
       }
     } catch (error) {
@@ -116,7 +112,6 @@ export async function processStream(
       done = true; // Terminate loop on error
     }
   }
-
 
   if (callbacks.onStreamEnd) {
     callbacks.onStreamEnd();

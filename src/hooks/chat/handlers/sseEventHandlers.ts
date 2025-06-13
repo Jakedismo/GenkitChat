@@ -1,7 +1,7 @@
 import { safeDestr } from "destr";
 import { DocumentData, ToolInvocation, ParsedJsonData } from "@/types/chat";
 import { StreamEventCallbacks } from "../useChatStreaming";
-import { extractTextContent } from "../parsers/textParsers";
+import { extractTextContent, unescapeMarkdown } from "../parsers/textParsers";
 import {
   sanitizeJsonPayload,
   extractContext7Response,
@@ -24,7 +24,8 @@ export function handleTextEvent(
   callbacks: StreamEventCallbacks
 ): void {
 
-  const textContent = extractTextContent(dataPayload, eventType);
+  const textContentRaw = extractTextContent(dataPayload, eventType);
+  const textContent = unescapeMarkdown(textContentRaw);
 
   if (textContent) {
 
@@ -229,14 +230,20 @@ export function handleFinalResponseEvent(
         const manualExtracted = manualExtractResponse(dataPayload);
         if (manualExtracted) {
 
-          callbacks.onFinalResponse(manualExtracted, manualExtracted.sessionId);
+          callbacks.onFinalResponse({
+            ...manualExtracted,
+            response: unescapeMarkdown(manualExtracted.response || "")
+          }, manualExtracted.sessionId || "");
           return;
         }
         
         const charExtracted = characterByCharacterExtraction(dataPayload);
         if (charExtracted) {
 
-          callbacks.onFinalResponse(charExtracted, charExtracted.sessionId);
+          callbacks.onFinalResponse({
+            ...charExtracted,
+            response: unescapeMarkdown(charExtracted.response || "")
+          }, charExtracted.sessionId || "");
           return;
         }
       }
@@ -255,7 +262,10 @@ export function handleFinalResponseEvent(
         const finalExtracted = manualExtractResponse(dataPayload) || characterByCharacterExtraction(dataPayload);
         if (finalExtracted) {
 
-          callbacks.onFinalResponse(finalExtracted, finalExtracted.sessionId || "");
+          callbacks.onFinalResponse({
+            ...finalExtracted,
+            response: unescapeMarkdown(finalExtracted.response || "")
+          }, finalExtracted.sessionId || "");
           return;
         }
         
@@ -267,7 +277,10 @@ export function handleFinalResponseEvent(
     if (dataPayload.includes('Context7')) {
       const context7Data = extractContext7Response(dataPayload);
       if (context7Data) {
-        callbacks.onFinalResponse(context7Data);
+        callbacks.onFinalResponse({
+          ...context7Data,
+          response: unescapeMarkdown(context7Data.response || "")
+        });
         return;
       }
     }
@@ -280,13 +293,19 @@ export function handleFinalResponseEvent(
       // Try manual extraction methods
       const manualExtracted = manualExtractResponse(dataPayload);
       if (manualExtracted) {
-        callbacks.onFinalResponse(manualExtracted, manualExtracted.sessionId);
+        callbacks.onFinalResponse({
+          ...manualExtracted,
+          response: unescapeMarkdown(manualExtracted.response || "")
+        }, manualExtracted.sessionId || "");
         return;
       }
       
       const charExtracted = characterByCharacterExtraction(dataPayload);
       if (charExtracted) {
-        callbacks.onFinalResponse(charExtracted, charExtracted.sessionId);
+        callbacks.onFinalResponse({
+          ...charExtracted,
+          response: unescapeMarkdown(charExtracted.response || "")
+        }, charExtracted.sessionId || "");
         return;
       }
       
@@ -313,7 +332,10 @@ export function handleFinalResponseEvent(
     );
     
     callbacks.onFinalResponse(
-      jsonData as ParsedJsonData,
+      {
+        ...jsonData,
+        response: unescapeMarkdown(jsonData.response || "")
+      },
       (jsonData as ParsedJsonData).sessionId,
     );
   } catch (finalResponseError) {

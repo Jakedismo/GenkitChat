@@ -1,4 +1,3 @@
-import { safeDestr } from "destr";
 import { ParsedJsonData } from "@/types/chat";
 
 /**
@@ -7,10 +6,131 @@ import { ParsedJsonData } from "@/types/chat";
 export function sanitizeJsonPayload(payload: string, eventType: string): string {
   let sanitizedPayload = payload;
   
-  // Log raw payload for debugging serious issues
+  // Enhanced debugging for structural issues
   if (eventType === 'final_response') {
-    console.log(`[jsonRecovery] Raw ${eventType} payload: `, 
-      payload.slice(0, 100) + (payload.length > 100 ? '...' : ''));
+    console.log(`[jsonRecovery] Raw ${eventType} payload (first 200 chars): `, 
+      payload.slice(0, 200) + (payload.length > 200 ? '...' : ''));
+    console.log(`[jsonRecovery] Payload length: ${payload.length}`);
+  }
+  
+  // Pre-sanitization: Fix basic structural issues first
+  sanitizedPayload = sanitizedPayload.trim();
+  
+  // Ensure the payload starts and ends with proper JSON structure
+  if (!sanitizedPayload.startsWith('{')) {
+    console.warn(`[jsonRecovery] Payload doesn't start with '{', attempting to find JSON start`);
+    const jsonStart = sanitizedPayload.indexOf('{');
+    if (jsonStart > -1) {
+      sanitizedPayload = sanitizedPayload.slice(jsonStart);
+    } else {
+      // Create a basic JSON structure if none exists
+      sanitizedPayload = `{"response":"${sanitizedPayload}","toolInvocations":[],"sessionId":""}`;
+      console.log(`[jsonRecovery] Created basic JSON structure from raw payload`);
+      return sanitizedPayload;
+    }
+  }
+  
+  // Attempt to parse early; if it fails we try light structural fixes
+  let structuralOk = true;
+  try {
+    JSON.parse(sanitizedPayload);
+  } catch {
+    structuralOk = false;
+  }
+
+  // Only attempt quoting fixes if initial parse failed (avoids corrupting valid payloads)
+  if (!structuralOk) {
+    sanitizedPayload = sanitizedPayload
+      .replace(/([{,]\s*)([A-Za-z_][\w-]*)(\s*:)/g, '$1"$2"$3')
+      .replace(/:\s*([A-Za-z_][\w-]*)\s*([,}])/g, ':"$1"$2');
+  }
+  
+  // Handle incomplete JSON structures
+  if (!sanitizedPayload.endsWith('}')) {
+    console.warn(`[jsonRecovery] Payload doesn't end with '}', attempting repair`);
+    
+    // Try to complete the JSON structure
+    const openBraces = (sanitizedPayload.match(/{/g) || []).length;
+    const closeBraces = (sanitizedPayload.match(/}/g) || []).length;
+    const bracesToAdd = openBraces - closeBraces;
+    
+    if (bracesToAdd > 0) {
+      sanitizedPayload += '}'.repeat(bracesToAdd);
+    }
+  }
+  
+  // Try a basic parse test early to catch structural issues
+  try {
+    JSON.parse(sanitizedPayload);
+    console.log(`[jsonRecovery] Basic structure validation passed for ${eventType}`);
+  } catch (structureError) {
+    if (structureError instanceof Error) {
+      console.warn(
+        `[jsonRecovery] Basic structure validation failed:`,
+        structureError.message
+      );
+    } else {
+      console.warn(
+        `[jsonRecovery] Basic structure validation failed:`,
+        structureError
+      );
+    }
+    console.log(`[jsonRecovery] Problematic JSON: ${sanitizedPayload.slice(0, 100)}...`);
+    
+    // Emergency reconstruction - try to extract key components
+    const responseMatch = sanitizedPayload.match(/"response":"([\s\S]*?)"(?:,"toolInvocations"|}$)/);
+    const toolInvocationsMatch = sanitizedPayload.match(/"toolInvocations"\s*:\s*(\[[^\]]*\])/);
+    const sessionIdMatch = sanitizedPayload.match(/"sessionId"\s*:\s*"([^"]*)"/);
+    
+    const reconstructed = {
+      response: responseMatch ? responseMatch[1] : "Error: Could not parse response content",
+      toolInvocations: (() => {
+        if (!toolInvocationsMatch) return [];
+        try { return JSON.parse(toolInvocationsMatch[1]); }
+        catch { console.warn('[jsonRecovery] toolInvocations malformed – defaulting to []'); return []; }
+      })(),
+      sessionId: sessionIdMatch ? sessionIdMatch[1] : ""
+    };
+    
+    sanitizedPayload = JSON.stringify(reconstructed);
+    console.log(`[jsonRecovery] Emergency reconstruction applied`);
+  }
+  
+  // Now apply the comprehensive escaping to the response content
+  const toolIdx = sanitizedPayload.lastIndexOf(',"toolInvocations"');
+  const endIdx = toolIdx > -1 ? toolIdx : sanitizedPayload.lastIndexOf('}');
+  const responseFieldMatch = sanitizedPayload.match(/"response":"([\s\S]*?)"/);
+  if (responseFieldMatch && responseFieldMatch[1]) {
+    const rawResponse = responseFieldMatch[1];
+    
+    // Comprehensive JSON string escaping for markdown content
+    const escapedResponse = rawResponse
+      .replace(/\\/g, '\\\\')        // Escape backslashes first (must be first!)
+      .replace(/"/g, '\\"')          // Escape double quotes
+      .replace(/\n/g, '\\n')         // Escape newlines
+      .replace(/\r/g, '\\r')         // Escape carriage returns
+      .replace(/\t/g, '\\t')         // Escape tabs
+      .replace(/\f/g, '\\f')         // Escape form feeds
+      .replace(/\b/g, '\\b')         // Escape backspaces
+      .replace(/[\u0000-\u001F]/g, (match) => {  // Escape other control characters
+        return '\\u' + ('0000' + match.charCodeAt(0).toString(16)).slice(-4);
+      });
+    
+    // Rebuild JSON by slicing to avoid replacing inside the response itself
+    if (toolIdx > -1) {
+      const head = sanitizedPayload.slice(0, responseFieldMatch.index!);
+      const tail = sanitizedPayload.slice(endIdx);
+      sanitizedPayload = `${head}"response":"${escapedResponse}"${tail}`;
+    } else {
+      sanitizedPayload = sanitizedPayload.replace(
+        /"response":"([\s\S]*?)"/,
+        `"response":"${escapedResponse}"`
+      );
+    }
+    
+    console.log('[jsonRecovery] context around 700-750:', sanitizedPayload.slice(700,750));
+    
+    console.log(`[jsonRecovery] Applied comprehensive JSON escaping to ${eventType} response`);
   }
   
   // Handle trailing backslashes which often cause JSON parsing errors
@@ -26,27 +146,38 @@ export function sanitizeJsonPayload(payload: string, eventType: string): string 
     }
   }
   
-  // Check for and fix common JSON structure issues
-  if (sanitizedPayload.includes('"response":"')) {
-    // Check for unterminated response string
-    if (!sanitizedPayload.includes('"}') && !sanitizedPayload.match(/"response":".*?(?<!\\)"/)) {
-      console.warn(
-        `[jsonRecovery] Detected unterminated response string in ${eventType} event, attempting repair`
+  // Final validation - try to parse and catch any remaining issues
+  try {
+    const parsed = JSON.parse(sanitizedPayload);
+    console.log(`[jsonRecovery] Final JSON validation passed for ${eventType}`);
+    console.log(`[jsonRecovery] Parsed keys: ${Object.keys(parsed).join(', ')}`);
+  } catch (validationError) {
+    if (validationError instanceof Error) {
+      console.error(
+        `[jsonRecovery] Final JSON validation failed for ${eventType}:`,
+        validationError.message
       );
-      
-      // Proper termination based on context
-      if (sanitizedPayload.includes('","toolInvocations":')) {
-        const partialMatch = sanitizedPayload.match(/(.*?"response":"[^"]*)/);
-        if (partialMatch) {
-          const partial = partialMatch[1];
-          sanitizedPayload = partial + '","toolInvocations":[],"sessionId":""}';
-        } else {
-          sanitizedPayload = sanitizedPayload + '"}';
-        }
-      } else {
-        sanitizedPayload = sanitizedPayload + '","toolInvocations":[],"sessionId":""}';  
-      }
+    } else {
+      console.error(
+        `[jsonRecovery] Final JSON validation failed for ${eventType}:`,
+        validationError
+      );
     }
+    console.log(`[jsonRecovery] Final payload: ${sanitizedPayload.slice(0, 200)}...`);
+    
+    // Ultimate emergency fallback - create a minimal valid JSON structure
+    const safeContent = payload
+      .replace(/\\+/g, '')
+      .replace(/[^\x20-\x7E\n\r\t]/g, '')
+      .slice(0, 1000);
+    
+    sanitizedPayload = JSON.stringify({
+      response: `Content parsing error. Raw content: ${safeContent}`,
+      toolInvocations: [],
+      sessionId: ""
+    });
+    
+    console.log(`[jsonRecovery] Applied ultimate emergency fallback`);
   }
   
   return sanitizedPayload;

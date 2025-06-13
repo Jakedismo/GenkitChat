@@ -111,8 +111,8 @@ export async function initiateChatStream(
 
   console.log(`Enabled tools: ${enabledToolNames.join(", ")}`);
   
-  // Prepare messages array with markdown system instruction
-  const systemMarkdownMsg: GenkitMessageData = {
+  // Prepare default system message in case prompt template fails
+  const defaultSystemMessage: GenkitMessageData = {
     // @ts-ignore Genkit types may not include 'system'
     role: "system",
     content: [
@@ -123,13 +123,7 @@ export async function initiateChatStream(
     ],
   } as any;
 
-  const messages: GenkitMessageData[] = [
-    systemMarkdownMsg,
-    ...(input.history || []).map((h) => ({ role: h.role, content: h.content })),
-    { role: "user", content: [{ text: input.userMessage }] },
-  ];
-
-  // Initialize an empty system message
+  // We'll decide the final system message after attempting to load the prompt template
   let systemMessage: GenkitMessageData | null = null;
   
   try {
@@ -149,32 +143,30 @@ export async function initiateChatStream(
     }
     
     // Apply the prompt template with the user message
-    const promptResult = await promptTemplate({
-      userMessage: input.userMessage,
-    });
-    
+    const promptResult = await promptTemplate(
+      { userMessage: input.userMessage },
+      { model: createModelKey(input.modelId) }
+    );
+
     // Use the first message from the prompt result as our system prompt
     if (promptResult.messages && promptResult.messages.length > 0) {
-      // Store the system message from the prompt template
       systemMessage = promptResult.messages[0];
       console.log("System prompt from template loaded successfully");
     }
   } catch (promptError) {
     console.error("Error loading prompt template:", promptError);
     console.log("Falling back to basic system message");
-    // Create a fallback system message
-    systemMessage = { 
-      role: "system", 
-      content: [{ 
-        text: `You are a helpful assistant. You have access to the following tools: ${enabledToolNames.join(", ")}` 
-      }] 
-    };
   }
-  
-  // Add the system message to the messages array
-  if (systemMessage) {
-    messages.push(systemMessage);
-  }
+
+  // Final system message (template result, otherwise default)
+  const systemMsgToUse: GenkitMessageData = systemMessage || defaultSystemMessage;
+
+  // Build the messages array ensuring the system message is FIRST and UNIQUE
+  const messages: GenkitMessageData[] = [
+    systemMsgToUse,
+    ...(input.history || []).map((h) => ({ role: h.role, content: h.content })),
+    { role: "user", content: [{ text: input.userMessage }] },
+  ];
 
   // Tools already collected and configured above
 

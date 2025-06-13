@@ -349,12 +349,17 @@ export function useChatManager({
 
             console.error(detailedLog);
           } else {
-            console.error({
-              message: "Streaming error from useChatStreaming: " + errorMessage,
-              errorType: "stream_error",
-              timestamp: new Date().toISOString(),
-              sessionId: sessionIdToUse,
-            });
+            if (Object.keys(detailedLog).length > 1) {
+              console.error(detailedLog);
+            } else {
+              console.error({
+                message:
+                  "Streaming error from useChatStreaming: " + errorMessage,
+                errorType: "stream_error",
+                timestamp: new Date().toISOString(),
+                sessionId: sessionIdToUse,
+              });
+            }
           }
 
           // Only show a toast for errors that aren't related to content formatting
@@ -500,7 +505,18 @@ export function useChatManager({
       }
 
       // Log the structured error
-      console.error(errorLog);
+      if (Object.keys(errorLog).length > 1) {
+        console.error(errorLog);
+      } else {
+        console.error({
+          message: "Error sending message (useChatManager): " + errorMessage,
+          errorObject: error,
+          sessionId: sessionIdToUse,
+          timestamp: new Date().toISOString(),
+          modelId: modelIdToUse,
+          chatMode,
+        });
+      }
 
       // Update UI with error message if no recovery was attempted and error display isn't suppressed
       if (

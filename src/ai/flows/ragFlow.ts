@@ -136,6 +136,29 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     const toolResponseBuffer = new Map<string, ToolResponsePart>();
     let accumulatedLlmText = '';
 
+    // Helper function to construct the final messages array for the LLM
+    const constructFinalLlmMessages = (
+      historyMessages: MessageData[],
+      promptGeneratedMessages: MessageData[],
+      defaultSystemMessage: MessageData
+    ): MessageData[] => {
+      // 1. Determine the definitive system message
+      let systemMsgToUse: MessageData | undefined = promptGeneratedMessages.find(m => m.role === 'system');
+      if (!systemMsgToUse) {
+        systemMsgToUse = defaultSystemMessage;
+      }
+
+      // 2. Filter history to exclude any system messages (should be none due to Zod schema, but defensive)
+      const nonSystemHistory = historyMessages.filter(m => m.role !== 'system');
+
+      // 3. Filter prompt-generated messages to exclude ALL system messages
+      //    (because we've already selected one in step 1)
+      const nonSystemPromptMessages = promptGeneratedMessages.filter(m => m.role !== 'system');
+
+      // 4. Assemble: definitive system message first, then non-system history, then non-system prompt parts.
+      return [systemMsgToUse, ...nonSystemHistory, ...nonSystemPromptMessages];
+    };
+
     // Helper to send chunks to the stream
     const sendChunk = (data: RagStreamEvent) => {
       if (sideChannel) {
@@ -294,9 +317,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             metadata: doc.metadata || {}
           }));
           
-          const result = await ragAssistantPromptObject({ 
-            query
-          });
+          const result = await ragAssistantPromptObject(
+            { query },
+            { model: createModelKey(modelId) }
+          );
           // Assuming result is { messages: MessageData[] } or MessageData[]
           currentPromptMessages = Array.isArray(result) ? result : result?.messages || [];
           if (currentPromptMessages.length === 0 && !Array.isArray(result)) {
@@ -319,7 +343,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
       } as any;
 
-      const messagesForLlm = [markdownSystemMsg, ...history, ...currentPromptMessages];
+      const messagesForLlm = constructFinalLlmMessages(history, currentPromptMessages, markdownSystemMsg);
 
       const caps = getCapabilities(modelId);
       const config: Record<string, unknown> = {};
@@ -331,7 +355,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const generateOptions: Parameters<typeof aiInstance.generateStream>[0] = {
         model: modelToUseKey,
         messages: messagesForLlm,
-        context: topDocs,
+        context: topDocs, // Ensure context is passed here for Genkit to handle RAG
         config,
       };
 
@@ -414,9 +438,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
                 metadata: doc.metadata || {}
               }));
               
-              const result = await ragAssistantPromptObjectFallback({ 
-                query
-              });
+              const result = await ragAssistantPromptObjectFallback(
+                { query },
+                { model: createModelKey(modelId) }
+              );
               fallbackPromptMessages = Array.isArray(result) ? result : result?.messages || [];
               if (fallbackPromptMessages.length === 0 && !Array.isArray(result)) {
                    logger.warn('Fallback prompt function did not return messages, using query as prompt.');
@@ -436,7 +461,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           role: 'system',
           content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
         } as any;
-        const messagesForLlmFallback = [markdownSystemMsgFallback, ...historyForFallback, ...fallbackPromptMessages];
+        const messagesForLlmFallback = constructFinalLlmMessages(historyForFallback, fallbackPromptMessages, markdownSystemMsgFallback);
 
         const capsFallback = getCapabilities(modelId);
         const fallbackConfig: Record<string, unknown> = {};

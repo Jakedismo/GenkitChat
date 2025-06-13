@@ -210,6 +210,31 @@ export function finalizeTextContent(textContent: string): string {
 }
 
 /**
+ * Reverses the JSON escaping applied in sanitizeJsonPayload so that markdown
+ * renders correctly once it reaches the UI.
+ */
+export function unescapeMarkdown(str: string): string {
+  if (!str) return str;
+  return str
+    .replace(/\\n/g, '\n')    // newline
+    .replace(/\\r/g, '\r')    // carriage return
+    .replace(/\\t/g, '\t')    // tab
+    .replace(/\\\*/g, '*')    // asterisk
+    .replace(/\\_/g, '_')     // underscore
+    .replace(/\\`/g, '`')     // back-tick
+    .replace(/\\\{/g, '{')   // braces (rare but possible)
+    .replace(/\\\}/g, '}')
+    .replace(/\\\[/g, '[')   // brackets
+    .replace(/\\\]/g, ']')
+    .replace(/\\\(/g, '(')   // parentheses
+    .replace(/\\\)/g, ')')
+    .replace(/\\>/g, '>')     // blockquote
+    .replace(/\\#/g, '#')     // headings
+    .replace(/\\!/g, '!')
+    .replace(/\\\\/g, '\\'); // backslash (must be last)
+}
+
+/**
  * Main text extraction function that orchestrates all parsing attempts
  */
 export function extractTextContent(payload: string, eventType: string): string {

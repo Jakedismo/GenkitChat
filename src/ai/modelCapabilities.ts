@@ -40,6 +40,17 @@ const CAPABILITIES: Record<string, ModelCapabilities> = {
     maxTokensParam: "max_tokens",
     historyTokenLimit: 120_000,
   }),
+  // Added o3 family (does not support temperature)
+  "openai/o3": def({
+    supportsTemperature: false,
+    maxTokensParam: "max_tokens",
+    historyTokenLimit: 120_000,
+  }),
+  "openai/o3-mini": def({
+    supportsTemperature: false,
+    maxTokensParam: "max_tokens",
+    historyTokenLimit: 120_000,
+  }),
 };
 
 /**
