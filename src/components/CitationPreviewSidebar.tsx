@@ -1,8 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { Document, Page } from "react-pdf";
 // Use the specific pdfjs-dist version that react-pdf depends on
 // Import the main library entry; worker set separately in PdfWorkerSetup.tsx
-import * as pdfjsLib from "pdfjs-dist";
 
 // Import CSS for react-pdf default UI elements
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -10,26 +9,18 @@ import "react-pdf/dist/Page/TextLayer.css";
 // react-pdf-highlighter might be added later if needed for text highlighting functionality
 // import "react-pdf-highlighter/dist/style.css";
 
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetClose,
-  SheetDescription, // Can be used for sub-header or remove if not needed
 } from "@/components/ui/sheet";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
+import { CitationPreviewData } from "@/types/chat";
 import { X } from "lucide-react";
-
-interface CitationPreviewData {
-  fileName: string; // Original file name, still useful for title
-  pdfUrl: string; // URL to the PDF file
-  pageNumber: number; // 1-based page number for the citation
-  textToHighlight: string; // The specific text content of the chunk (for potential future highlighting)
-  documentId?: string;
-  chunkId?: string;
-}
 
 interface CitationPreviewSidebarProps {
   isOpen: boolean;
@@ -43,13 +34,49 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   previewData,
 }) => {
   // PDF worker setup is handled globally by PdfWorkerSetup.tsx
+  const [numPages, setNumPages] = useState<number | null>(null);
 
+  // 📄 ENHANCED PDF COMPONENT DEBUG LOGGING
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    console.log('📄 ===== PDF LOAD SUCCESS =====');
+    console.log('📄 PDF loaded successfully');
+    console.log('📄 Number of pages:', numPages);
+    console.log('📄 PDF URL that worked:', previewData?.pdfUrl);
+    console.log('📄 ===== PDF LOAD SUCCESS END =====');
+    setNumPages(numPages);
+  };
+
+  const onDocumentLoadError = (error: Error) => {
+    console.error('💥 ===== PDF LOAD ERROR =====');
+    console.error('💥 PDF load error:', error);
+    console.error('💥 Error message:', error.message);
+    console.error('💥 Error stack:', error.stack);
+    console.error('💥 PDF URL that failed:', previewData?.pdfUrl);
+    console.error('💥 Preview data:', previewData);
+    console.error('💥 ===== PDF LOAD ERROR END =====');
+  };
+
+  // Debug logging when component renders
+  console.log('📄 ===== PDF COMPONENT RENDER =====');
+  console.log('📄 Component isOpen:', isOpen);
+  console.log('📄 Component previewData:', previewData);
+  
   if (!isOpen || !previewData) {
+    console.log('📄 Component not rendering (isOpen:', isOpen, 'previewData:', !!previewData, ')');
+    console.log('📄 ===== PDF COMPONENT RENDER END =====');
     return null;
   }
 
   // Destructure for easier access
   const { fileName, pdfUrl, pageNumber } = previewData;
+  
+  console.log('📄 Component will render with:');
+  console.log('📄 - fileName:', fileName);
+  console.log('📄 - pdfUrl:', pdfUrl);
+  console.log('📄 - pageNumber:', pageNumber);
+  console.log('📄 - pdfUrl type:', typeof pdfUrl);
+  console.log('📄 - pdfUrl length:', pdfUrl?.length || 0);
+  console.log('📄 ===== PDF COMPONENT RENDER END =====');
 
   return (
     <Sheet
@@ -87,9 +114,8 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
             {pdfUrl ? (
               <Document
                 file={pdfUrl}
-                onLoadError={(error) =>
-                  console.error("Error loading PDF:", error.message)
-                }
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={onDocumentLoadError}
                 loading={
                   <div className="flex justify-center items-center h-full p-4">
                     <p>Loading PDF...</p>

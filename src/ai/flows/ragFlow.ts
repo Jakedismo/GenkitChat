@@ -1,5 +1,6 @@
 import { getCapabilities } from '@/ai/modelCapabilities';
 import { aiInstance, ragRetrieverRef } from '@/genkit-server';
+import { CitationMeta } from '@/types/chat';
 import { trimHistoryServer } from '@/utils/historyServer';
 import {
   DocumentData,
@@ -14,7 +15,7 @@ import { z } from 'zod';
 
 // Define the structure for events yielded by generateRagResponseStream
 export type RagStreamEvent =
-  | { type: 'sources'; sources: Document[] }
+  | { type: 'sources'; sources: (Document & { metadata: CitationMeta })[] }
   | { type: 'text'; text: string }
   | {
       type: 'tool_invocation';
@@ -275,12 +276,38 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           topDocs = filteredDocs;
           logger.info(`Using all ${topDocs.length} documents (no reranking needed) for session ${sessionId}.`);
         }
-        sendChunk({ type: 'sources', sources: topDocs as Document[] });
+        // Enrich documents with structured metadata and send to the client.
+        const enrichedDocs = topDocs.map((doc, index): Document & { metadata: CitationMeta } => {
+          const metadata = doc.metadata || {};
+          const citationMeta: CitationMeta = {
+            documentId: metadata.documentId || 'unknown-doc-id',
+            chunkId: index, // Use the numerical index as the chunkId
+            fileName: metadata.originalFileName || 'Unknown Source',
+            pageNumber: metadata.pageNumber,
+          };
+          const textContent = doc.content.map(part => ('text' in part ? part.text : '')).join('');
+          // Re-create the document to ensure it's a clean instance with the new metadata.
+          const newDoc = Document.fromText(textContent, citationMeta);
+          return newDoc as Document & { metadata: CitationMeta };
+        });
+
+        sendChunk({ type: 'sources', sources: enrichedDocs });
       }
 
-      // const modelToUseKey = createModelKey(modelId, toolNamesToUse); // OLD
-      const modelToUseKey = createModelKey(modelId); // NEW: toolsToUse argument removed
-      // logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${toolNamesToUse?.join(', ') || 'none'}`); // MOVED DOWN
+      // Create a version of the documents for the prompt, with citation markers.
+      const docsForPrompt = topDocs.map((doc, index) => {
+        const metadata = doc.metadata || {};
+        const fileName = metadata.originalFileName || 'Unknown Source';
+        const chunkId = index; // Use the numerical index
+        const citationMarker = `[Source: ${fileName}, Chunk: ${chunkId}]`;
+        const textContent = doc.content.map(part => ('text' in part ? part.text : '')).join('');
+        return Document.fromText(
+          `${citationMarker}\n${textContent}`,
+          metadata
+        );
+      });
+
+      const modelToUseKey = createModelKey(modelId);
       
       // Use centralised history trimming util for consistency
       const rawHistory: MessageData[] = incomingHistory || [{ role: 'user', content: [{ text: query }] }];
@@ -291,15 +318,8 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       try {
         const ragAssistantPromptObject = await aiInstance.prompt('rag_assistant');
         if (typeof ragAssistantPromptObject === 'function') {
-          // Ensure docs have proper structure before passing to prompt
-          const safeDocs = topDocs.map(doc => ({
-            ...doc,
-            content: doc.content || [{ text: 'No content available' }],
-            metadata: doc.metadata || {}
-          }));
-          
           const result = await ragAssistantPromptObject(
-            { query, documents: safeDocs },
+            { query, documents: docsForPrompt },
             { model: createModelKey(modelId) }
           );
           // Assuming result is { messages: MessageData[] } or MessageData[]
@@ -307,15 +327,15 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           if (currentPromptMessages.length === 0 && !Array.isArray(result)) {
               logger.warn('Prompt function did not return messages in expected structure, using query as prompt.');
               // Fallback if prompt structure is not as expected
-              currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+              currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${docsForPrompt.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
           }
         } else {
           logger.error('RAG assistant prompt object is not a function. Using query as prompt.');
-          currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+          currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${docsForPrompt.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
         }
       } catch (promptError: any) {
         logger.error(`Error in prompt function: ${promptError.message || String(promptError)}. Using fallback prompt.`);
-        currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+        currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${docsForPrompt.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
       }
 
       const markdownSystemMsg: MessageData = {

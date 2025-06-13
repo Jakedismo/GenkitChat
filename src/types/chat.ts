@@ -33,12 +33,22 @@ export interface UploadedFile {
 // as received from the backend for RAG citations and used on the frontend.
 export interface DocumentData {
   documentId: string;       // Unique ID for the original uploaded document
-  chunkId: string;          // Unique ID for this specific chunk
+  chunkId: number;          // Unique ID for this specific chunk
   originalFileName: string; // Name of the original uploaded file
   chunkIndex: number;       // 0-based index of the chunk within its original document
   content: string;          // The actual text content of the chunk
   // Optionally, add other metadata like 'score' if needed for display later
 }
+
+export type CitationMeta = {
+  documentId: string;
+  chunkId: number;
+  fileName: string;
+  originalFileName?: string; // Added for fallback
+  pageNumber?: number;
+  content?: string;
+  textToHighlight?: string;
+};
 
 // Represents a tool invocation within a chat message
 export interface ToolInvocation {
@@ -53,7 +63,7 @@ export interface ChatMessage {
   sender: 'user' | 'bot';
   text: string | string[] | { text?: string; [key: string]: any } | any; // Support various response formats
   toolInvocations?: ToolInvocation[]; // Use the specific type
-  sources?: DocumentData[]; // For RAG: stores the source documents used for this bot message
+  sources?: CitationMeta[]; // For RAG: stores the source documents used for this bot message
 }
 
 // Represents the data needed for the citation preview sidebar
@@ -64,7 +74,7 @@ export interface CitationPreviewData {
   pageNumber: number; // 1-based page number for the citation
   textToHighlight: string; // Specific text to highlight on the page
   documentId: string; // Original document ID
-  chunkId: string;    // Specific chunk ID
+  chunkId: number;    // Specific chunk ID
 }
 
 // --- Types for processing raw SSE data payloads ---

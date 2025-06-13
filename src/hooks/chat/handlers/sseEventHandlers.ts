@@ -1,17 +1,17 @@
+import { ParsedJsonData, ToolInvocation } from "@/types/chat";
 import { safeDestr } from "destr";
-import { DocumentData, ToolInvocation, ParsedJsonData } from "@/types/chat";
-import { StreamEventCallbacks } from "../useChatStreaming";
-import { extractTextContent, unescapeMarkdown } from "../parsers/textParsers";
 import {
-  sanitizeJsonPayload,
-  extractContext7Response,
-  manualExtractResponse,
   characterByCharacterExtraction,
+  extractContext7Response,
   extractFromContentArray,
   extractTextChunksWithRegex,
+  manualExtractResponse,
   processNestedJson,
+  sanitizeJsonPayload,
   validateFinalResponse
 } from "../parsers/jsonRecovery";
+import { extractTextContent, unescapeMarkdown } from "../parsers/textParsers";
+import { StreamEventCallbacks } from "../useChatStreaming";
 
 // Removed multi-part response storage since we're using single response events
 
@@ -49,27 +49,61 @@ export function handleSourcesEvent(
   try {
     const jsonData = safeDestr<any>(dataPayload);
     
+    console.log('[sseEventHandlers] Raw sources payload:', dataPayload.substring(0, 200) + '...');
+    
     if (jsonData?.sources && Array.isArray(jsonData.sources)) {
-      const mappedSources: DocumentData[] = jsonData.sources.map(
-        (doc: any) => ({
-          documentId:
-            doc.metadata?.documentId || `doc-${crypto.randomUUID()}`,
-          chunkId:
-            doc.metadata?.chunkId || `chunk-${crypto.randomUUID()}`,
-          originalFileName:
-            doc.metadata?.originalFileName || "Unknown Source",
-          pageNumber: doc.metadata?.pageNumber,
-          textToHighlight: doc.metadata?.textToHighlight,
-          content: Array.isArray(doc.content)
+      console.log('[sseEventHandlers] Processing sources data:', {
+        sourceCount: jsonData.sources.length,
+        firstSource: jsonData.sources[0] ? {
+          hasMetadata: !!jsonData.sources[0].metadata,
+          documentId: jsonData.sources[0].metadata?.documentId,
+          originalFileName: jsonData.sources[0].metadata?.originalFileName,
+          fileName: jsonData.sources[0].metadata?.fileName,
+          pageNumber: jsonData.sources[0].metadata?.pageNumber
+        } : 'No sources'
+      });
+      
+      const mappedSources = jsonData.sources.map(
+        (doc: any, index: number) => {
+          // Try multiple possible field names for filename and documentId
+          const originalFileName = doc.metadata?.originalFileName ||
+                                  doc.metadata?.fileName ||
+                                  doc.originalFileName ||
+                                  doc.fileName ||
+                                  "Unknown Source";
+          
+          const documentId = doc.metadata?.documentId ||
+                           doc.documentId ||
+                           `doc-${crypto.randomUUID()}`;
+          
+          const chunkId = doc.metadata?.chunkId ||
+                         doc.chunkId ||
+                         index; // Use index as fallback for chunkId
+          
+          const content = Array.isArray(doc.content)
             ? doc.content.map((p: any) => p?.text || "").join("\n")
             : typeof doc.content === "string"
               ? doc.content
-              : "",
-          chunkIndex:
-            typeof doc.metadata?.chunkIndex === "number"
-              ? doc.metadata.chunkIndex
-              : -1,
-        }),
+              : "";
+          
+          const mappedSource = {
+            documentId,
+            chunkId,
+            originalFileName,
+            chunkIndex: index,
+            content,
+          };
+          
+          console.log(`[sseEventHandlers] Mapped source ${index}:`, {
+            documentId: mappedSource.documentId,
+            originalFileName: mappedSource.originalFileName,
+            chunkId: mappedSource.chunkId,
+            chunkIndex: mappedSource.chunkIndex,
+            hasContent: !!mappedSource.content
+          });
+          
+          return mappedSource;
+        }
       );
       callbacks.onSources(mappedSources);
     } else {

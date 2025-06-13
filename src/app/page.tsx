@@ -5,6 +5,7 @@ import ChatInputControls from "@/components/chat/ChatInputControls";
 import ChatMessageContent from "@/components/chat/ChatMessageContent";
 import FileUploadManager from "@/components/chat/FileUploadManager";
 import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
+import MermaidDiagram from "@/components/markdown/MermaidDiagram";
 import PdfWorkerSetup from "@/components/PdfWorkerSetup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,10 +17,9 @@ import { useChatSettings } from "@/hooks/useChatSettings";
 import { useFileUploads } from "@/hooks/useFileUploads";
 import { cn } from "@/lib/utils";
 import {
-    CitationPreviewData,
-    ConnectedServer,
-    DisplayTool,
-    DocumentData
+  CitationPreviewData,
+  ConnectedServer,
+  DisplayTool
 } from "@/types/chat";
 import { getHistoryTokenStats } from "@/utils/messageHistory";
 import "highlight.js/styles/github-dark.css";
@@ -29,7 +29,6 @@ import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import MermaidDiagram from "@/components/markdown/MermaidDiagram";
 
 // Dynamically import components that might have browser-only dependencies
 const CitationPreviewSidebar = dynamic(
@@ -197,48 +196,129 @@ const GenkitChat: React.FC = () => {
   ) => {
     const message = messages.find((m) => m.id === messageId);
     if (message && message.sources && message.sources[chunkIndexInSources]) {
-      const sourceChunk = message.sources[
-        chunkIndexInSources
-      ] as DocumentData & { pageNumber?: number; textToHighlight?: string };
+      const sourceChunk = message.sources[chunkIndexInSources];
 
-      // Ensure required fields for PDF preview are present
-      if (
-        sourceChunk.originalFileName &&
-        sourceChunk.documentId &&
-        typeof sourceChunk.pageNumber === "number" &&
-        sourceChunk.textToHighlight
-      ) {
+      // 🔗 ENHANCED CLIENT-SIDE CITATION DEBUG LOGGING
+      console.log('🔗 ===== CITATION CLICK DEBUG START =====');
+      console.log('🔗 Citation sourceChunk raw data:', sourceChunk);
+      
+      // Extract filename with fallback to originalFileName
+      let docId = sourceChunk.documentId;
+      // Clean up docId if it unexpectedly contains '::'
+      if (docId && docId.includes('::')) {
+        const originalProblematicDocId = docId;
+        const idParts = docId.split('::');
+        // Assume the first part is the true ID.
+        docId = idParts[0];
+        console.warn(`[handleCitationClick] Cleaned docId from "${originalProblematicDocId}" to "${docId}"`);
+      }
+      let rawDocFileName = sourceChunk.fileName || sourceChunk.originalFileName;
+      
+      // Defensive: Ensure docFileName is just the filename part
+      if (rawDocFileName && rawDocFileName.includes('::')) {
+        console.warn(`[handleCitationClick] rawDocFileName "${rawDocFileName}" contains '::', attempting to clean.`);
+        rawDocFileName = rawDocFileName.split('::').pop() || rawDocFileName;
+        console.warn(`[handleCitationClick] Cleaned rawDocFileName: "${rawDocFileName}"`);
+      }
+      const docFileName = rawDocFileName;
+
+      console.log('🔗 Citation data validation:', {
+        documentId: docId,
+        documentIdType: typeof docId,
+        documentIdPresent: !!docId,
+        fileName: docFileName, // Log the derived fileName
+        originalFileName: sourceChunk.originalFileName, // Log originalFileName for debugging
+        fileNameFromProperty: sourceChunk.fileName, // Log direct fileName property for debugging
+        fileNameType: typeof docFileName,
+        fileNamePresent: !!docFileName,
+        pageNumber: sourceChunk.pageNumber,
+        pageNumberType: typeof sourceChunk.pageNumber,
+        textToHighlight: sourceChunk.textToHighlight ? sourceChunk.textToHighlight.substring(0, 100) + '...' : null
+      });
+
+      // Try to construct PDF URL if we have the necessary data
+      let pdfUrl = "";
+      if (docId && docFileName) {
+        const rawIdentifier = docId + '::' + docFileName;
+        console.log('🔧 Raw identifier before encoding:', rawIdentifier);
+        console.log('🔧 Raw identifier length:', rawIdentifier.length);
+        
+        const encodedIdentifier = encodeURIComponent(rawIdentifier);
+        console.log('🔒 Encoded identifier:', encodedIdentifier);
+        console.log('🔒 Encoded identifier length:', encodedIdentifier.length);
+        
+        pdfUrl = `/api/files/${encodedIdentifier}`;
+        console.log('🌐 Final PDF URL:', pdfUrl);
+        console.log('🌐 PDF URL length:', pdfUrl.length);
+      } else {
+        console.error('❌ Cannot construct PDF URL - missing documentId or fileName', {
+            missingDocumentId: !docId,
+            missingFileName: !docFileName, // Use the derived fileName for this check
+            availableOriginalFileName: !!sourceChunk.originalFileName,
+            availableFileName: !!sourceChunk.fileName
+        });
+        console.log('❌ Missing fields:', {
+          missingDocumentId: !docId,
+          missingFileName: !docFileName // Use the derived fileName for this check
+        });
+      }
+      console.log('🔗 ===== CITATION CLICK DEBUG END =====');
+
+      // Enhanced validation with detailed error messages
+      const missingFields = [];
+      if (!docFileName) missingFields.push("fileName"); // Use docFileName for validation
+      if (!docId) missingFields.push("documentId"); // Use docId for validation
+      if (typeof sourceChunk.pageNumber !== "number") missingFields.push("pageNumber");
+      if (!sourceChunk.textToHighlight) missingFields.push("textToHighlight");
+
+      if (missingFields.length === 0) {
+        // All required fields present
+        console.log('[handleCitationClick] Attempting to setCitationPreview with (SUCCESS PATH):', { docId, docFileName, pdfUrl, pageNumber: sourceChunk.pageNumber });
         setCitationPreview({
-          fileName: sourceChunk.originalFileName,
-          pdfUrl: `/api/files/${encodeURIComponent(sourceChunk.documentId)}`,
-          pageNumber: sourceChunk.pageNumber,
-          textToHighlight: sourceChunk.textToHighlight,
-          documentId: sourceChunk.documentId,
+          fileName: docFileName!, // Use docFileName
+          pdfUrl: pdfUrl,
+          pageNumber: sourceChunk.pageNumber!,
+          textToHighlight: sourceChunk.textToHighlight!,
+          documentId: docId!, // Use docId
           chunkId: sourceChunk.chunkId,
         });
         setIsCitationSidebarOpen(true);
+        console.log('Citation preview opened successfully with full data');
       } else {
-        // Fallback for older data or if critical info is missing
-        setCitationPreview({
-          fileName: sourceChunk.originalFileName || "Unknown File",
+        // Fallback handling with detailed logging
+        console.warn('Citation data missing fields:', missingFields);
+        console.log('[handleCitationClick] Attempting to setCitationPreview with (FALLBACK PATH):', { docId, docFileName, pdfUrl, pageNumber: sourceChunk.pageNumber });
+        const fallbackData = {
+          fileName: docFileName || "Unknown File", // Use docFileName
           content:
             sourceChunk.content ||
             sourceChunk.textToHighlight ||
             "No content available for preview.",
-          pdfUrl: "",
-          pageNumber: 0,
+          pdfUrl: pdfUrl, // Use constructed URL even if incomplete
+          pageNumber: sourceChunk.pageNumber || 1, // Default to page 1 instead of 0
           textToHighlight:
             sourceChunk.textToHighlight || sourceChunk.content || "",
-          documentId: sourceChunk.documentId,
-          chunkId: sourceChunk.chunkId,
-        });
+          documentId: docId || "unknown", // Use docId
+          chunkId: sourceChunk.chunkId || 0,
+        };
+        
+        setCitationPreview(fallbackData);
         setIsCitationSidebarOpen(true);
-        toast({
-          title: "Citation Preview Issue",
-          description:
-            "Could not fully load PDF preview data. Displaying available content.",
-          variant: "default",
-        });
+        
+        // Provide detailed feedback about what's missing
+        if (!pdfUrl) {
+          toast({
+            title: "PDF URL Missing",
+            description: `Missing fields: ${missingFields.join(", ")}. Cannot construct PDF URL.`,
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Citation Data Incomplete",
+            description: `Missing: ${missingFields.join(", ")}. PDF preview may work but some features unavailable.`,
+            variant: "default",
+          });
+        }
       }
     } else {
       console.warn(
