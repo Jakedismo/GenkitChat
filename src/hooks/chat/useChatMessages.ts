@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { ChatMessage, DocumentData, ToolInvocation, ParsedJsonData } from "@/types/chat";
+import { ChatMessage, DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
+import { useCallback, useState } from "react";
 
 export interface UseChatMessagesReturn {
   messages: ChatMessage[];
@@ -123,13 +123,22 @@ export function useChatMessages(): UseChatMessagesReturn {
               if (!handled) {
                 // Fallback: convert the existing object to string and append
                 // This is the previous behavior if structured append wasn't possible.
-                newText = (newText.text || newText.content || JSON.stringify(newText)) + processedChunk;
+                // Ensure type safety: only use text/content if they're strings, otherwise JSON.stringify
+                let fallbackText: string;
+                if (typeof newText.text === 'string') {
+                  fallbackText = newText.text;
+                } else if (typeof newText.content === 'string') {
+                  fallbackText = newText.content;
+                } else {
+                  fallbackText = JSON.stringify(newText);
+                }
+                newText = fallbackText + processedChunk;
               }
             } else if (typeof newText === 'string') {
               newText += processedChunk;
             } else {
               // Fallback for null, undefined, or other types
-              newText = String(newText || '') + processedChunk;
+              newText = JSON.stringify(newText) + processedChunk;
             }
             
             return {
