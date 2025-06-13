@@ -78,31 +78,46 @@ export function useChatMessages(): UseChatMessagesReturn {
             }
             
             // Otherwise append the text (default behavior)
-            // Handle different text types when appending
-            let updatedText: string;
-            
-            if (typeof msg.text === 'string') {
-              // Simple string append
-              updatedText = msg.text + processedChunk;
-            } else if (Array.isArray(msg.text)) {
-              // If text is an array, convert to string and append
-              updatedText = msg.text.map(chunk =>
-                typeof chunk === 'string' ? chunk :
-                (chunk && typeof chunk === 'object' && chunk.text) ? chunk.text :
-                JSON.stringify(chunk)
-              ).join('') + processedChunk;
-            } else if (msg.text && typeof msg.text === 'object') {
-              // If text is an object, try to extract content
-              const existingText = msg.text.text || msg.text.content || JSON.stringify(msg.text);
-              updatedText = (typeof existingText === 'string' ? existingText : JSON.stringify(existingText)) + processedChunk;
+            let newText = msg.text;
+
+            if (Array.isArray(newText)) {
+              if (newText.length > 0 && typeof newText[newText.length - 1] === 'string') {
+                newText[newText.length - 1] += processedChunk;
+              } else {
+                newText.push(processedChunk);
+              }
+            } else if (newText && typeof newText === 'object') {
+              let handled = false;
+              if (typeof newText.text === 'string') {
+                newText.text += processedChunk;
+                handled = true;
+              } else if (typeof newText.content === 'string') {
+                newText.content += processedChunk;
+                handled = true;
+              } else if (Array.isArray(newText.parts)) {
+                if (newText.parts.length > 0 && typeof newText.parts[newText.parts.length - 1] === 'string') {
+                  newText.parts[newText.parts.length - 1] += processedChunk;
+                } else {
+                  newText.parts.push(processedChunk);
+                }
+                handled = true;
+              }
+
+              if (!handled) {
+                // Fallback: convert the existing object to string and append
+                // This is the previous behavior if structured append wasn't possible.
+                newText = (newText.text || newText.content || JSON.stringify(newText)) + processedChunk;
+              }
+            } else if (typeof newText === 'string') {
+              newText += processedChunk;
             } else {
-              // Fallback for other types
-              updatedText = String(msg.text || '') + processedChunk;
+              // Fallback for null, undefined, or other types
+              newText = String(newText || '') + processedChunk;
             }
             
             return {
               ...msg,
-              text: updatedText
+              text: newText,
             };
           }
           return msg;
