@@ -1,10 +1,10 @@
-import { aiInstance } from "@/genkit-server";
 import { createModelKey } from "@/ai/flows/ragFlow"; // Corrected import path
 import { getCapabilities } from "@/ai/modelCapabilities";
+import { aiInstance } from "@/genkit-server";
 import type {
+  GenerateResponseChunk,
   GenerateResponseData,
   MessageData as GenkitMessageData,
-  GenerateResponseChunk, // Represents a chunk from ai.generateStream().stream
 } from "genkit"; // Use stable import for types
 
 import { v4 as uuidv4 } from "uuid";
@@ -137,21 +137,20 @@ export async function initiateChatStream(
     let promptTemplate;
     switch (input.temperaturePreset) {
       case "precise":
-        promptTemplate = await aiInstance.prompt("basic_chat_precise");
+        promptTemplate = aiInstance.prompt("basic_chat_precise");
         break;
       case "creative":
-        promptTemplate = await aiInstance.prompt("basic_chat_creative");
+        promptTemplate = aiInstance.prompt("basic_chat_creative");
         break;
       case "normal":
       default:
-        promptTemplate = await aiInstance.prompt("basic_chat_normal");
+        promptTemplate = aiInstance.prompt("basic_chat_normal");
         break;
     }
     
-    // Apply the prompt template with the tools
+    // Apply the prompt template with the user message
     const promptResult = await promptTemplate({
-      modelId: createModelKey(input.modelId),
-      tools: enabledToolNames,
+      userMessage: input.userMessage,
     });
     
     // Use the first message from the prompt result as our system prompt

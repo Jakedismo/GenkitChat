@@ -294,7 +294,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             metadata: doc.metadata || {}
           }));
           
-          const result = await ragAssistantPromptObject({ query, docs: safeDocs });
+          const result = await ragAssistantPromptObject({ 
+            query
+          });
           // Assuming result is { messages: MessageData[] } or MessageData[]
           currentPromptMessages = Array.isArray(result) ? result : result?.messages || [];
           if (currentPromptMessages.length === 0 && !Array.isArray(result)) {
@@ -412,7 +414,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
                 metadata: doc.metadata || {}
               }));
               
-              const result = await ragAssistantPromptObjectFallback({ query, docs: safeDocs });
+              const result = await ragAssistantPromptObjectFallback({ 
+                query
+              });
               fallbackPromptMessages = Array.isArray(result) ? result : result?.messages || [];
               if (fallbackPromptMessages.length === 0 && !Array.isArray(result)) {
                    logger.warn('Fallback prompt function did not return messages, using query as prompt.');
