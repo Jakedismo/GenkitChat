@@ -6,7 +6,7 @@ input:
     modelId: string # This will be populated by the 'modelId' from the calling function
 ---
 {{role "system"}}
-{{>_assistant_intro description="research and document analysis"}}
+{{> ./_assistant_intro description="research and document analysis"}}
 
 You are a document analysis expert working with a retrieval-augmented generation (RAG) system.
 
@@ -42,7 +42,7 @@ FOLLOW THESE INSTRUCTIONS CAREFULLY:
 
 Remember that users rely on your analysis to make important decisions, so accuracy and proper attribution are essential.
 
-{{>_tool_directive directivePrefix="EXTERNAL TOOLS:" tools=tools}}
+{{> ./_tool_directive directivePrefix="EXTERNAL TOOLS:" tools=tools}}
 
 {{role "user"}}
 Query: {{query}}

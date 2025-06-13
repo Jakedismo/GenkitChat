@@ -311,7 +311,13 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
       }
 
-      const messagesForLlm = history.concat(currentPromptMessages);
+      const markdownSystemMsg: MessageData = {
+        // @ts-ignore Genkit types may not include 'system'
+        role: 'system',
+        content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
+      } as any;
+
+      const messagesForLlm = [markdownSystemMsg, ...history, ...currentPromptMessages];
 
       const caps = getCapabilities(modelId);
       const config: Record<string, unknown> = {};
@@ -421,7 +427,12 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
         }
         const historyForFallback: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
-        const messagesForLlmFallback = historyForFallback.concat(fallbackPromptMessages);
+        const markdownSystemMsgFallback: MessageData = {
+          // @ts-ignore Genkit types may not include 'system'
+          role: 'system',
+          content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
+        } as any;
+        const messagesForLlmFallback = [markdownSystemMsgFallback, ...historyForFallback, ...fallbackPromptMessages];
 
         const capsFallback = getCapabilities(modelId);
         const fallbackConfig: Record<string, unknown> = {};

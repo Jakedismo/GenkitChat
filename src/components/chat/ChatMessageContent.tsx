@@ -22,9 +22,23 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   const [error, setError] = useState<Error | null>(null);
   const [renderedParts, setRenderedParts] = useState<JSX.Element[]>([]);
   
+  // custom code renderer to neutralise ```mermaid fences
+  const CodeBlock: React.FC<{className?: string; children: React.ReactNode}> = ({ className = '', children }) => {
+    const lang = className.replace(/language-/, '');
+    if (lang === 'mermaid') {
+      return (
+        <pre className="bg-muted p-2 rounded text-sm overflow-x-auto">
+          {typeof children === 'string' ? children : (children as any)[0]}
+        </pre>
+      );
+    }
+    return <code className={className}>{children}</code>;
+  };
+
   // Use type assertion to fix type compatibility with react-markdown
   const enhancedComponents = {
     ...components,
+    code: CodeBlock,
     // Use the type expected by react-markdown components
     a: ({ node, href, children, ...props }: any) => {
       // Open links in new tab and add proper security attributes

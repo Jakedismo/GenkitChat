@@ -58,46 +58,33 @@ function mapTemperature(preset: "precise" | "normal" | "creative"): number {
   }
 }
 
-// Adapts Genkit's GenerateResponseChunk to simple { text: string } chunks
+// Clean adapter: emit only pure text parts, filter JSON artefacts
 async function* adaptGenkitStream(
-  genkitStream: AsyncIterable<GenerateResponseChunk<unknown>>
+  genkit: AsyncIterable<GenerateResponseChunk<unknown>>
 ): AsyncIterable<{ text: string }> {
-  try {
-    for await (const chunk of genkitStream) {
-      // Handle multiple message content parts (Gemini-specific format)
-      // Use type assertion since the Genkit types don't fully reflect the actual structure
-      const anyChunk = chunk as any;
-      
-      if (anyChunk.message?.content) {
-        const content = anyChunk.message.content;
-        if (Array.isArray(content)) {
-          // Content is an array of parts, each potentially with text
-          for (const part of content) {
-            if (part.text) {
-              yield { text: part.text };
-              console.log(`Yielding text from message.content part: ${part.text.substring(0, 50)}...`);
-            }
-          }
-        }
-      }
-      
-      // Standard text field (common in most models)
-      else if (chunk.text) {
-        yield { text: chunk.text };
-      }
+  for await (const chunk of genkit) {
+    const c: any = chunk;
 
-      // Handle tool-related chunks if present
-      if (anyChunk.toolRequests) {
-        // Tool requests detected
+    // 1. GoogleAI / Gemini style
+    if (Array.isArray(c.message?.content)) {
+      for (const part of c.message.content) {
+        if (part?.text) yield { text: part.text };
       }
+      continue;
     }
-  } catch (error) {
-    console.error("Error processing stream chunks:", error);
-    yield {
-      text: `Error in stream processing: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    };
+
+    // 2. OpenAI delta style
+    const delta = c.choices?.[0]?.delta?.content;
+    if (delta) {
+      yield { text: delta };
+      continue;
+    }
+
+    // 3. Generic text field (ensure not JSON artefact)
+    if (typeof c.text === 'string' && !c.text.includes('{"text"')) {
+      yield { text: c.text };
+    }
+    // Ignore other properties (tool events etc.)
   }
 }
 
@@ -124,9 +111,24 @@ export async function initiateChatStream(
 
   console.log(`Enabled tools: ${enabledToolNames.join(", ")}`);
   
-  // Initialize messages array
-  const messages: GenkitMessageData[] = [];
-  
+  // Prepare messages array with markdown system instruction
+  const systemMarkdownMsg: GenkitMessageData = {
+    // @ts-ignore Genkit types may not include 'system'
+    role: "system",
+    content: [
+      {
+        text:
+          "When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks where appropriate.",
+      },
+    ],
+  } as any;
+
+  const messages: GenkitMessageData[] = [
+    systemMarkdownMsg,
+    ...(input.history || []).map((h) => ({ role: h.role, content: h.content })),
+    { role: "user", content: [{ text: input.userMessage }] },
+  ];
+
   // Initialize an empty system message
   let systemMessage: GenkitMessageData | null = null;
   
@@ -174,18 +176,6 @@ export async function initiateChatStream(
   if (systemMessage) {
     messages.push(systemMessage);
   }
-
-  // Prepend history if provided
-  if (input.history && input.history.length > 0) {
-    // Convert frontend MessageHistoryItem to Genkit MessageData format
-    const genkitHistory: GenkitMessageData[] = input.history.map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }));
-    messages.push(...genkitHistory);
-  }
-  // Add current user message
-  messages.push({ role: "user", content: [{ text: input.userMessage }] });
 
   // Tools already collected and configured above
 
