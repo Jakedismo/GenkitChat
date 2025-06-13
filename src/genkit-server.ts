@@ -1,21 +1,25 @@
 // src/genkit-server.ts
 // This file exports the aiInstance and server initialization functions
 
-import { genkit } from "genkit"; // Use stable import for genkit
-import { logger } from "genkit/logging"; // Added for log level
-import { googleAI } from "@genkit-ai/googleai";
-import { openAI } from "genkitx-openai";
-import { vertexAI } from "@genkit-ai/vertexai"; // Import Vertex AI for reranking
 import {
-  devLocalVectorstore,
   devLocalIndexerRef,
   devLocalRetrieverRef,
+  devLocalVectorstore,
 } from "@genkit-ai/dev-local-vectorstore";
-import { vertexAIRerankers } from "@genkit-ai/vertexai/rerankers"; // Added for Vertex AI Reranker
-import { mcpClient } from "genkitx-mcp";
-import { tavilyPlugin } from "./ai/plugins/tavily-plugin"; // Import custom Tavily plugin
 import { startFlowServer } from "@genkit-ai/express"; // For serving flows
+import { googleAI } from "@genkit-ai/googleai";
+import { availableGeminiModels, availableOpenAIModels } from "./ai/available-models"; // Import available models for validation
+import { vertexAI } from "@genkit-ai/vertexai"; // Import Vertex AI for reranking
+import { vertexAIRerankers } from "@genkit-ai/vertexai/rerankers"; // Added for Vertex AI Reranker
+import fs from 'fs'; // Add fs import for file system operations
+import { genkit } from "genkit"; // Use stable import for genkit
+import { logger } from "genkit/logging"; // Added for log level
+import { mcpClient } from "genkitx-mcp"; // Import MCP client for Context7
+import { openAI } from "genkitx-openai";
+import path from "path"; // Add path import for absolute path resolution
 import { perplexityPlugin } from "./ai/plugins/perplexity-plugin"; // Import local Perplexity plugin
+import { tavilyPlugin } from "./ai/plugins/tavily-plugin"; // Import custom Tavily plugin
+import { validateAssistantIntroPartial, validatePromptDirectory } from "./ai/validatePrompts"; // Import prompt validation functions
 
 // We'll define flow instances below after aiInstance is initialized
 
@@ -125,93 +129,85 @@ function getPlugins() {
 // Initialize Genkit with error handling
 export const aiInstance = (function () {
   try {
+    const promptDirPath = path.join(process.cwd(), "src/ai/prompts");
+    console.log(`[Genkit Init] Prompt directory resolved to: ${promptDirPath}`);
+    console.log(`[Genkit Init] Current working directory: ${process.cwd()}`);
+    
+    if (fs.existsSync(promptDirPath)) {
+      console.log(`[Genkit Init] ✓ Prompt directory exists at: ${promptDirPath}`);
+      const files = fs.readdirSync(promptDirPath);
+      console.log(`[Genkit Init] Found ${files.length} files in prompt directory:`, files.filter(f => f.endsWith('.prompt')).join(', '));
+    } else {
+      console.error(`[Genkit Init] ✗ Prompt directory NOT found at: ${promptDirPath}`);
+    }
+    
+    validatePromptDirectory(promptDirPath);
+    // validateAssistantIntroPartial(promptDirPath); // Partials are no longer used
+
     const instance = genkit({
-      promptDir: "src/ai/prompts",
-      plugins: getPlugins(),
-      // Note: mapAsMap option is not supported in GenkitOptions type
+      promptDir: promptDirPath, 
+      plugins: getPlugins()
     });
 
+    // Register custom helper using the correct syntax
+    instance.defineHelper('selectModel', (modelId: string | undefined): string => {
+      console.log(`[selectModelHelper] Invoked with modelId: '${modelId}' (type: ${typeof modelId})`);
+      
+      if (!modelId || modelId.trim() === '' || modelId.trim().toLowerCase() === 'undefined') {
+        const defaultModel = 'googleai/gemini-2.5-flash-preview-04-17';
+        console.log(`[selectModelHelper] modelId is effectively falsy or 'undefined'. Using default model: ${defaultModel}`);
+        return defaultModel;
+      }
+      
+      const allAvailableModels = [
+        ...availableGeminiModels.map(m => m.id),
+        ...availableOpenAIModels.map(m => m.id)
+      ];
+      
+      if (allAvailableModels.includes(modelId)) {
+        console.log(`[selectModelHelper] Model '${modelId}' is valid and available. Using selected model.`);
+        return modelId;
+      } else {
+        console.warn(`[selectModelHelper] Model '${modelId}' is not in the available list. Falling back to default: googleai/gemini-2.5-flash-preview-04-17`);
+        return 'googleai/gemini-2.5-flash-preview-04-17'; // Explicitly return default
+      }
+    });
+
+    console.log("[Genkit Init] ✓ Genkit custom helper 'selectModel' registered via instance.defineHelper().");
+    
     // Initialize Tavily plugin with the aiInstance
     try {
       if (process.env.TAVILY_API_KEY) {
         tavilyPlugin(instance);
-        console.log("Tavily plugin initialized successfully");
+        console.log("[Genkit Init] Tavily plugin initialized successfully");
       } else {
         console.warn(
-          "TAVILY_API_KEY not found in environment variables. Tavily tools will not be available."
+          "[Genkit Init] TAVILY_API_KEY not found. Tavily tools will not be available."
         );
       }
     } catch (e) {
-      console.warn("Failed to initialize Tavily plugin:", e);
+      console.warn("[Genkit Init] Failed to initialize Tavily plugin:", e);
     }
 
     // Initialize Perplexity plugin with the aiInstance
     try {
       if (process.env.PERPLEXITY_API_KEY) {
         perplexityPlugin(instance);
-        console.log("Perplexity plugin initialized successfully");
+        console.log("[Genkit Init] Perplexity plugin initialized successfully");
       } else {
         console.warn(
-          "PERPLEXITY_API_KEY not found in environment variables. Perplexity tools will not be available."
+          "[Genkit Init] PERPLEXITY_API_KEY not found. Perplexity tools will not be available."
         );
       }
     } catch (e) {
-      console.warn("Failed to initialize Perplexity plugin:", e);
+      console.warn("[Genkit Init] Failed to initialize Perplexity plugin:", e);
     }
 
+    console.log("[Genkit Init] ✓ Genkit instance configured successfully.");
     return instance;
-  } catch (e) {
-    console.error("Failed to initialize Genkit instance:", e);
-    // Return a stub object that won't break imports but logs errors when used
-    return {
-      generate: () => {
-        console.error(
-          "Genkit instance failed to initialize. Operations will fail."
-        );
-        return Promise.reject(new Error("Genkit not initialized"));
-      },
-      generateStream: () => {
-        console.error(
-          "Genkit instance failed to initialize. Operations will fail."
-        );
-        return {
-          stream: [],
-          response: Promise.reject(new Error("Genkit not initialized")),
-        };
-      },
-      prompt: (promptNameOrConfig: string | any) => {
-        console.error(
-          "Genkit instance failed to initialize. Operations will fail."
-        );
-        return Promise.reject(new Error("Genkit not initialized"));
-      },
-      defineFlow: () => {
-        console.error(
-          "Genkit instance failed to initialize. Operations will fail."
-        );
-        return function () {
-          return Promise.reject(new Error("Genkit not initialized"));
-        };
-      },
-      retrieve: () => {
-        console.error(
-          "Genkit instance failed to initialize. Operations will fail."
-        );
-        return Promise.reject(new Error("Genkit not initialized"));
-      },
-      index: () => {
-        console.error(
-          "Genkit instance failed to initialize. Operations will fail."
-        );
-        return Promise.reject(new Error("Genkit not initialized"));
-      },
-      rerank: () => {
-        console.error(
-          "Genkit instance failed to initialize. Operations will fail."
-        );
-        return Promise.reject(new Error("Genkit not initialized"));
-      },
-    };
+  } catch (error) {
+    console.error("[Genkit Init] ✗ Failed to initialize Genkit instance:", error);
+    throw error; // Rethrow to ensure failure is visible and server doesn't start in a broken state
   }
 })();
 

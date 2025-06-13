@@ -1,10 +1,10 @@
-import { aiInstance } from "@/genkit-server";
 import { createModelKey } from "@/ai/flows/ragFlow"; // Corrected import path
 import { getCapabilities } from "@/ai/modelCapabilities";
+import { aiInstance } from "@/genkit-server";
 import type {
+  GenerateResponseChunk,
   GenerateResponseData,
   MessageData as GenkitMessageData,
-  GenerateResponseChunk, // Represents a chunk from ai.generateStream().stream
 } from "genkit"; // Use stable import for types
 
 import { v4 as uuidv4 } from "uuid";
@@ -111,8 +111,8 @@ export async function initiateChatStream(
 
   console.log(`Enabled tools: ${enabledToolNames.join(", ")}`);
   
-  // Prepare messages array with markdown system instruction
-  const systemMarkdownMsg: GenkitMessageData = {
+  // Prepare default system message in case prompt template fails
+  const defaultSystemMessage: GenkitMessageData = {
     // @ts-ignore Genkit types may not include 'system'
     role: "system",
     content: [
@@ -123,13 +123,7 @@ export async function initiateChatStream(
     ],
   } as any;
 
-  const messages: GenkitMessageData[] = [
-    systemMarkdownMsg,
-    ...(input.history || []).map((h) => ({ role: h.role, content: h.content })),
-    { role: "user", content: [{ text: input.userMessage }] },
-  ];
-
-  // Initialize an empty system message
+  // We'll decide the final system message after attempting to load the prompt template
   let systemMessage: GenkitMessageData | null = null;
   
   try {
@@ -137,45 +131,42 @@ export async function initiateChatStream(
     let promptTemplate;
     switch (input.temperaturePreset) {
       case "precise":
-        promptTemplate = await aiInstance.prompt("basic_chat_precise");
+        promptTemplate = aiInstance.prompt("basic_chat_precise");
         break;
       case "creative":
-        promptTemplate = await aiInstance.prompt("basic_chat_creative");
+        promptTemplate = aiInstance.prompt("basic_chat_creative");
         break;
       case "normal":
       default:
-        promptTemplate = await aiInstance.prompt("basic_chat_normal");
+        promptTemplate = aiInstance.prompt("basic_chat_normal");
         break;
     }
     
-    // Apply the prompt template with the tools
-    const promptResult = await promptTemplate({
-      modelId: createModelKey(input.modelId),
-      tools: enabledToolNames,
-    });
-    
+    // Apply the prompt template with the user message
+    const promptResult = await promptTemplate(
+      { userMessage: input.userMessage },
+      { model: createModelKey(input.modelId) }
+    );
+
     // Use the first message from the prompt result as our system prompt
     if (promptResult.messages && promptResult.messages.length > 0) {
-      // Store the system message from the prompt template
       systemMessage = promptResult.messages[0];
       console.log("System prompt from template loaded successfully");
     }
   } catch (promptError) {
     console.error("Error loading prompt template:", promptError);
     console.log("Falling back to basic system message");
-    // Create a fallback system message
-    systemMessage = { 
-      role: "system", 
-      content: [{ 
-        text: `You are a helpful assistant. You have access to the following tools: ${enabledToolNames.join(", ")}` 
-      }] 
-    };
   }
-  
-  // Add the system message to the messages array
-  if (systemMessage) {
-    messages.push(systemMessage);
-  }
+
+  // Final system message (template result, otherwise default)
+  const systemMsgToUse: GenkitMessageData = systemMessage || defaultSystemMessage;
+
+  // Build the messages array ensuring the system message is FIRST and UNIQUE
+  const messages: GenkitMessageData[] = [
+    systemMsgToUse,
+    ...(input.history || []).map((h) => ({ role: h.role, content: h.content })),
+    { role: "user", content: [{ text: input.userMessage }] },
+  ];
 
   // Tools already collected and configured above
 

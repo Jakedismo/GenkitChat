@@ -1,4 +1,0 @@
-Sources to Cite:
-{{#each sources}}
-- {{this}}
-{{/each}}
