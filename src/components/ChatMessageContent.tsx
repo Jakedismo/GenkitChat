@@ -1,8 +1,8 @@
 import React from 'react';
 
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight'; // Assuming consistency with page.tsx
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessageContentProps {
   text: string | string[] | { text?: string; content?: string } | any;
@@ -19,34 +19,52 @@ const normalizeText = (text: ChatMessageContentProps['text']): string => {
   }
   
   if (Array.isArray(text)) {
-    return text.map(item => 
-      typeof item === 'string' ? item : 
-      (item && typeof item === 'object' && (item.text || item.content)) 
-        ? (item.text || item.content) 
-        : JSON.stringify(item)
-    ).join('');
+    return text.map(item => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') {
+        if (typeof item.text === 'string') return item.text;
+        if (typeof item.content === 'string') return item.content;
+        if (typeof item.value === 'string') return item.value;
+        if (typeof item.data === 'string') return item.data;
+      }
+      return JSON.stringify(item);
+    }).join('');
   }
   
   if (text && typeof text === 'object') {
+    // Order of preference: .text, .content, .value, .data
     if ('text' in text && typeof text.text === 'string') {
       return text.text;
     }
     if ('content' in text && typeof text.content === 'string') {
       return text.content;
     }
-    // Handle arrays within objects
-    if ('parts' in text && Array.isArray(text.parts)) {
-      return text.parts.map((part: any) => 
-        typeof part === 'string' ? part : 
-        (part && typeof part === 'object' && (part.text || part.content)) 
-          ? (part.text || part.content) 
-          : JSON.stringify(part)
-      ).join('');
+    if ('value' in text && typeof text.value === 'string') {
+      return text.value;
     }
+    if ('data' in text && typeof text.data === 'string') {
+      return text.data;
+    }
+
+    // Handle 'parts' array within objects, applying the same logic
+    if ('parts' in text && Array.isArray(text.parts)) {
+      return text.parts.map((part: any) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object') {
+          if (typeof part.text === 'string') return part.text;
+          if (typeof part.content === 'string') return part.content;
+          if (typeof part.value === 'string') return part.value;
+          if (typeof part.data === 'string') return part.data;
+        }
+        return JSON.stringify(part);
+      }).join('');
+    }
+    // Last resort for objects not matching known structures
     return JSON.stringify(text);
   }
   
-  return String(text || '');
+  // Fallback for null, undefined, boolean, number, etc.
+  return String(text == null ? '' : text); // Ensure null/undefined become empty string
 };
 
 // Regex to find citations like [Source: annual_report.pdf, Chunk: 0]
@@ -58,98 +76,119 @@ const citationRegex = /\[Source: (.*?), Chunk: (\d+)]/g;
 const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   text,
   onCitationClick,
-  components = {},
+  components: pageComponents = {}, // Renamed to avoid conflict with internal components variable
 }) => {
   // Normalize the text into a string format
   const normalizedText = normalizeText(text);
-  
-  const parts: JSX.Element[] = [];
-  let lastIndex = 0;
-  let match;
-  let partKey = 0; // For generating unique keys for ReactMarkdown components
 
-  // Reset regex state for global regex
-  citationRegex.lastIndex = 0;
-  
-  console.log(`[ChatMessageContent] Processing text (${typeof text}), normalized length: ${normalizedText.length}`);
+  // Helper function to process a string and replace citations with buttons
+  // Uses a local regex instance to avoid global state issues (lastIndex race condition)
+  const processStringWithCitations = (
+    text: string,
+    keyPrefix: string // Added for unique key generation
+  ): React.ReactNode[] => {
+    const parts: React.ReactNode[] = [];
+    const localCitationRegex = /\[Source: (.*?), Chunk: (\d+)]/g; // Local instance
+    let lastIndex = 0;
+    let match;
+    let partKeyCounter = 0; // Counter for keys within this specific string processing
 
-  while ((match = citationRegex.exec(normalizedText)) !== null) {
-    const [fullMatch, fileName, chunkIndexStr] = match;
-    const chunkIndex = parseInt(chunkIndexStr, 10);
+    while ((match = localCitationRegex.exec(text)) !== null) {
+      const [fullMatch, fileName, chunkIndexStr] = match;
+      const chunkIndex = parseInt(chunkIndexStr, 10);
 
-    // Add text segment before the current citation match, rendered with ReactMarkdown
-    if (match.index > lastIndex) {
-      const textSegment = normalizedText.substring(lastIndex, match.index);
+      // Add text part before the citation
+      if (match.index > lastIndex) {
+        parts.push(
+          <React.Fragment key={`${keyPrefix}-text-${partKeyCounter++}`}>
+            {text.substring(lastIndex, match.index)}
+          </React.Fragment>
+        );
+      }
+      // Add citation button
       parts.push(
-        <ReactMarkdown
-          key={`text-${partKey++}`}
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeHighlight]} // Consistent with page.tsx
-          // Pass only essential components if any are needed for these small segments.
-          // Often, code block handling might not be necessary here or could be simplified.
-          components={{
-            // Example: disable headings if they shouldn't appear in segments
-            // h1: 'p', h2: 'p', h3: 'p', h4: 'p', h5: 'p', h6: 'p',
-          }}
+        <button
+          key={`${keyPrefix}-citation-${fileName}-${chunkIndex}-${partKeyCounter++}`}
+          onClick={() => onCitationClick(chunkIndex)}
+          className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm mx-1"
+          title={`View source: ${fileName}, referenced content segment ${chunkIndex + 1}`}
         >
-          {textSegment}
-        </ReactMarkdown>
+          {fullMatch}
+        </button>
+      );
+      lastIndex = localCitationRegex.lastIndex;
+    }
+    // Add remaining text part after the last citation
+    if (lastIndex < text.length) {
+      parts.push(
+        <React.Fragment key={`${keyPrefix}-text-${partKeyCounter++}`}>
+          {text.substring(lastIndex)}
+        </React.Fragment>
       );
     }
+    return parts;
+  };
 
-    // Add the clickable citation element
-    parts.push(
-      <button
-        key={`citation-${partKey++}-${fileName}-${chunkIndex}`}
-        onClick={() => onCitationClick(chunkIndex)}
-        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm mx-1" // Added margin for spacing
-        title={`View source: ${fileName}, referenced content segment ${chunkIndex + 1}`} // chunkIndex is 0-based
-      >
-        {fullMatch}
-      </button>
-    );
+  // Recursively process any node (string, array, React element) for citations
+  const processNodeForCitations = (node: any, keyPrefix: string): React.ReactNode => {
+    if (typeof node === 'string') {
+      return processStringWithCitations(node, keyPrefix);
+    } else if (Array.isArray(node)) {
+      // Flatten nested arrays that can occur when children themselves return arrays
+      return node.flatMap((child, idx) => {
+        const processedChild = processNodeForCitations(child, `${keyPrefix}-arr-${idx}`);
+        return Array.isArray(processedChild) ? processedChild : [processedChild];
+      });
+    } else if (React.isValidElement(node)) {
+      const childProps = node.props as any;
+      let processedChildren: React.ReactNode | undefined = undefined;
+      if (childProps && 'children' in childProps) {
+        processedChildren = processNodeForCitations(childProps.children, `${keyPrefix}-child`);
+      }
+      // Preserve existing children when no citation processing was needed
+      const childrenToUse =
+        processedChildren === undefined ? childProps?.children : processedChildren;
+      return React.cloneElement(node, { key: keyPrefix }, childrenToUse);
+    } else if (node !== null && node !== undefined) {
+      return <React.Fragment key={keyPrefix}>{String(node)}</React.Fragment>;
+    }
+    return null;
+  };
 
-    lastIndex = citationRegex.lastIndex;
-  }
+  // Factory for creating element renderers that process citations in their string children
+  const createElementRenderer = (ElementComponent: React.ElementType, elementTypePrefix: string) => {
+    return (props: any) => {
+      const { node, children, ...rest } = props;
+      const processed = processNodeForCitations(children, `${elementTypePrefix}-root`);
+      return <ElementComponent {...rest}>{processed}</ElementComponent>;
+    };
+  };
 
-  // Add any remaining text after the last citation, rendered with ReactMarkdown
-  if (lastIndex < normalizedText.length) {
-    const remainingText = normalizedText.substring(lastIndex);
-    parts.push(
-      <ReactMarkdown
-        key={`text-${partKey++}`}
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={components || {
-            // Example: disable headings if they shouldn't appear in segments
-            // h1: 'p', h2: 'p', h3: 'p', h4: 'p', h5: 'p', h6: 'p',
-        }}
-      >
-        {remainingText}
-      </ReactMarkdown>
-    );
-  }
+  const customComponents: any = {
+    ...pageComponents, // Spread existing components from props
+    p: createElementRenderer('p', 'p'),
+    li: createElementRenderer('li', 'li'),
+    blockquote: createElementRenderer('blockquote', 'bq'),
+    h1: createElementRenderer('h1', 'h1'),
+    h2: createElementRenderer('h2', 'h2'),
+    h3: createElementRenderer('h3', 'h3'),
+    h4: createElementRenderer('h4', 'h4'),
+    h5: createElementRenderer('h5', 'h5'),
+    h6: createElementRenderer('h6', 'h6'),
+    // Note: The global `citationRegex` (line 74) is no longer directly used by this rendering logic.
+    // `processStringWithCitations` uses its own local regex instance.
+  };
 
-  // Render the parts. Each part is a ReactMarkdown component or a button.
-  // Using a span to allow these to flow inline if used within a larger text block.
-  // If block behavior is desired, a <div> could be used.
-  // If no parts were created (no citations found), render the entire text at once
-  if (parts.length === 0 && normalizedText.trim()) {
-    return (
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={components}
-      >
-        {normalizedText}
-      </ReactMarkdown>
-    );
-  }
+  console.log(`[ChatMessageContent] Rendering with ReactMarkdown, text length: ${normalizedText.length}`);
 
   return (
-    <span className="inline leading-relaxed"> {/* `leading-relaxed` or similar for better line height with mixed content */}
-      {parts.map((part) => part)}
-    </span>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]} // Consistent with page.tsx
+      components={customComponents} // Use the merged components
+    >
+      {normalizedText}
+    </ReactMarkdown>
   );
 };
 

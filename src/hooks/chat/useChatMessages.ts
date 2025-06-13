@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { ChatMessage, DocumentData, ToolInvocation, ParsedJsonData } from "@/types/chat";
+import { ChatMessage, DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
+import { useCallback, useState } from "react";
 
 export interface UseChatMessagesReturn {
   messages: ChatMessage[];
@@ -77,6 +77,7 @@ export function useChatMessages(): UseChatMessagesReturn {
               };
             }
 
+
             // Otherwise append the text (default behavior) - IMMUTABLE
             let finalTextToAppend: any;
 
@@ -129,6 +130,7 @@ export function useChatMessages(): UseChatMessagesReturn {
 
             return {
               ...msg,
+
               text: finalTextToAppend, // Corrected: Use the immutably created text
             };
           }
@@ -239,7 +241,6 @@ export function useChatMessages(): UseChatMessagesReturn {
                 
                 if (fullText.trim()) {
                   // Always replace with the final response if it's longer or if existing text is very short
-                  // This ensures we get the complete response from the server
                   if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
 
                     updatedMsg.text = fullText;

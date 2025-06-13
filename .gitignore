@@ -42,11 +42,13 @@ __db_ragIndex.json
 
 # Coding IDEs
 .clinerules
+.windsurf
+.augment
 memory/
 .genkit/
 .env
 .env.*
-memory-bank/
+memory-bank.kuzu/
 .roo
 .zed
 uploads/
