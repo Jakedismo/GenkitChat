@@ -73,36 +73,63 @@ export function useChatMessages(): UseChatMessagesReturn {
             if (options?.replace && processedChunk.trim()) {
               return {
                 ...msg,
-                text: processedChunk
+                text: processedChunk, // Corrected: Use processedChunk directly for replace
               };
             }
-            
-            // Otherwise append the text (default behavior)
-            // Handle different text types when appending
-            let updatedText: string;
-            
-            if (typeof msg.text === 'string') {
-              // Simple string append
-              updatedText = msg.text + processedChunk;
-            } else if (Array.isArray(msg.text)) {
-              // If text is an array, convert to string and append
-              updatedText = msg.text.map(chunk =>
-                typeof chunk === 'string' ? chunk :
-                (chunk && typeof chunk === 'object' && chunk.text) ? chunk.text :
-                JSON.stringify(chunk)
-              ).join('') + processedChunk;
+
+            // Otherwise append the text (default behavior) - IMMUTABLE
+            let finalTextToAppend: any;
+
+            if (Array.isArray(msg.text)) {
+              const originalArray = msg.text as any[];
+              if (originalArray.length > 0 && typeof originalArray[originalArray.length - 1] === 'string') {
+                finalTextToAppend = [
+                  ...originalArray.slice(0, -1),
+                  originalArray[originalArray.length - 1] + processedChunk,
+                ];
+              } else {
+                finalTextToAppend = [...originalArray, processedChunk];
+              }
             } else if (msg.text && typeof msg.text === 'object') {
-              // If text is an object, try to extract content
-              const existingText = msg.text.text || msg.text.content || JSON.stringify(msg.text);
-              updatedText = (typeof existingText === 'string' ? existingText : JSON.stringify(existingText)) + processedChunk;
+              const originalObject = msg.text as { text?: string; content?: string; parts?: any[]; [key: string]: any };
+              let handled = false;
+
+              if (typeof originalObject.text === 'string') {
+                finalTextToAppend = { ...originalObject, text: originalObject.text + processedChunk };
+                handled = true;
+              } else if (typeof originalObject.content === 'string') {
+                finalTextToAppend = { ...originalObject, content: originalObject.content + processedChunk };
+                handled = true;
+              } else if (Array.isArray(originalObject.parts)) {
+                const originalParts = originalObject.parts;
+                let updatedParts;
+                if (originalParts.length > 0 && typeof originalParts[originalParts.length - 1] === 'string') {
+                  updatedParts = [
+                    ...originalParts.slice(0, -1),
+                    originalParts[originalParts.length - 1] + processedChunk,
+                  ];
+                } else {
+                  updatedParts = [...originalParts, processedChunk];
+                }
+                finalTextToAppend = { ...originalObject, parts: updatedParts };
+                handled = true;
+              }
+
+              if (!handled) {
+                // Fallback: convert the existing object to string and append
+                const baseString = originalObject.text || originalObject.content || JSON.stringify(originalObject);
+                finalTextToAppend = baseString + processedChunk;
+              }
+            } else if (typeof msg.text === 'string') {
+              finalTextToAppend = msg.text + processedChunk;
             } else {
-              // Fallback for other types
-              updatedText = String(msg.text || '') + processedChunk;
+              // Fallback for null, undefined, or other types
+              finalTextToAppend = String(msg.text || '') + processedChunk;
             }
-            
+
             return {
               ...msg,
-              text: updatedText
+              text: finalTextToAppend, // Corrected: Use the immutably created text
             };
           }
           return msg;
