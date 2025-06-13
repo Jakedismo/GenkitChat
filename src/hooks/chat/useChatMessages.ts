@@ -78,7 +78,24 @@ export function useChatMessages(): UseChatMessagesReturn {
             }
             
             // Otherwise append the text (default behavior)
-            let newText = msg.text;
+            let newText: any;
+            if (Array.isArray(msg.text)) {
+              // Create a new array. Subsequent operations (string appends or push)
+              // will operate on this new array or its string elements.
+              newText = [...msg.text];
+            } else if (msg.text && typeof msg.text === 'object' && msg.text !== null) {
+              // Create a shallow copy of the object.
+              newText = { ...msg.text };
+              // If 'parts' is an array and is modified, it also needs to be a copy.
+              if (Array.isArray(newText.parts)) {
+                newText.parts = [...newText.parts];
+              }
+            } else {
+              // For primitives (string, number, boolean) or null/undefined.
+              // Strings are immutable; += creates a new string.
+              // Other primitives are also immutable.
+              newText = msg.text;
+            }
 
             if (Array.isArray(newText)) {
               if (newText.length > 0 && typeof newText[newText.length - 1] === 'string') {
