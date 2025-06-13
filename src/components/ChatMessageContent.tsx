@@ -165,9 +165,15 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
                 }
               });
               finalChildren.push(React.cloneElement(child, { key }, ...processedGrandchildren));
+            } else {
+              // Element has children but they're not processable (neither string nor array)
+              // Just clone the element as-is
+              finalChildren.push(React.cloneElement(child, { key }));
             }
+          } else {
+            // Element has no children property, just clone it
+            finalChildren.push(React.cloneElement(child, { key }));
           }
-          finalChildren.push(React.cloneElement(child, { key }));
         } else if (child !== null && child !== undefined) {
           // Handle other primitive types if necessary (e.g., numbers)
           finalChildren.push(<React.Fragment key={key}>{String(child)}</React.Fragment>);
