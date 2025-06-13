@@ -1,3 +1,4 @@
+import { getCapabilities } from "@/ai/modelCapabilities";
 import type { ChatMessage } from "@/types/chat";
 
 // Frontend-safe interface for message history
@@ -41,10 +42,8 @@ function estimateTokenCount(text: string): number {
  * Gets the effective token limit for conversation history based on model
  */
 function getHistoryTokenLimit(modelId?: string): number {
-  const modelKey = modelId || "default";
-  const baseLimit =
-    MODEL_TOKEN_LIMITS[modelKey] || MODEL_TOKEN_LIMITS["default"];
-  return Math.floor(baseLimit * HISTORY_TOKEN_RATIO);
+  const caps = getCapabilities(modelId);
+  return Math.floor(caps.historyTokenLimit * HISTORY_TOKEN_RATIO);
 }
 
 /**
@@ -58,7 +57,8 @@ function trimHistoryByTokens(
   // Skip trimming if disabled or no history
   if (!ENABLE_HISTORY_TRIMMING || history.length === 0) return history;
 
-  const tokenLimit = getHistoryTokenLimit(modelId);
+  // Override using capability util to ensure synced limits
+  const tokenLimit = getCapabilities(modelId).historyTokenLimit * HISTORY_TOKEN_RATIO;
 
   // Apply message count limit first
   let workingHistory = history;

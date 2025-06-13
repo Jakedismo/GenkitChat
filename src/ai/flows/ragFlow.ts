@@ -1,4 +1,6 @@
 import { aiInstance, ragIndexerRef, ragRetrieverRef } from '@/genkit-server';
+import { trimHistoryServer } from '@/utils/historyServer';
+import { getCapabilities } from '@/ai/modelCapabilities';
 import { Document } from 'genkit/retriever';
 import { logger } from 'genkit/logging';
 import {
@@ -104,7 +106,15 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     streamSchema: RagStreamEventSchemaZod,
   },
   async (
-    { query, sessionId, tools: toolNamesToUse, modelId, temperaturePreset, maxTokens }: RagFlowInput,
+    {
+      query,
+      sessionId,
+      tools: toolNamesToUse,
+      modelId,
+      temperaturePreset,
+      maxTokens,
+      history: incomingHistory,
+    }: RagFlowInput,
     sideChannel: (chunk: RagStreamEvent) => void
   ) => {
 
@@ -256,8 +266,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const modelToUseKey = createModelKey(modelId); // NEW: toolsToUse argument removed
       // logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${toolNamesToUse?.join(', ') || 'none'}`); // MOVED DOWN
       
-      // Use provided conversation history or fall back to current query only
-      const history: MessageData[] = input.history || [{ role: 'user', content: [{ text: query }] }];
+      // Use centralised history trimming util for consistency
+      const rawHistory: MessageData[] = incomingHistory || [{ role: 'user', content: [{ text: query }] }];
+      const history = trimHistoryServer(rawHistory, modelId);
 
       // Render the prompt to MessageData[] with defensive checks
       let currentPromptMessages: MessageData[];

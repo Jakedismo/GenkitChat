@@ -1,5 +1,6 @@
 import { aiInstance } from "@/genkit-server";
 import { createModelKey } from "@/ai/flows/ragFlow"; // Corrected import path
+import { getCapabilities } from "@/ai/modelCapabilities";
 import type {
   GenerateResponseData,
   MessageData as GenkitMessageData,
@@ -7,6 +8,7 @@ import type {
 } from "genkit"; // Use stable import for types
 
 import { v4 as uuidv4 } from "uuid";
+// deduplicate uuid import oversight noted in bug hunt
 import type { MessageHistoryItem } from "@/utils/messageHistory";
 
 // This interface is used by the calling API route (basic-chat/route.ts)
@@ -104,6 +106,7 @@ export async function initiateChatStream(
   input: ChatInput
 ): Promise<ChatStreamOutput> {
   const currentSessionId = input.sessionId || uuidv4();
+  const capabilities = getCapabilities(input.modelId);
   const temperature = mapTemperature(input.temperaturePreset);
 
   // Collect names of enabled tools first so we can pass them to the prompt templates
@@ -222,54 +225,30 @@ export async function initiateChatStream(
   }
 
   try {
-    // Log the maxTokens parameter for debugging
-    console.log(`Preparing to generate with maxTokens: ${input.maxTokens}`);
-
-    // Check for missing API keys for enabled tools before making the API call
-    if (input.tavilySearchEnabled && !process.env.TAVILY_API_KEY) {
-      throw new Error(
-        "Tavily Search tool requires a TAVILY_API_KEY environment variable"
-      );
-    }
-
-    if (input.tavilyExtractEnabled && !process.env.TAVILY_API_KEY) {
-      throw new Error(
-        "Tavily Extract tool requires a TAVILY_API_KEY environment variable"
-      );
-    }
-
-    if (input.perplexitySearchEnabled && !process.env.PERPLEXITY_API_KEY) {
-      throw new Error(
-        "Perplexity Search tool requires a PERPLEXITY_API_KEY environment variable"
-      );
-    }
-
-    if (
-      input.perplexityDeepResearchEnabled &&
-      !process.env.PERPLEXITY_API_KEY
-    ) {
-      throw new Error(
-        "Perplexity Deep Research tool requires a PERPLEXITY_API_KEY environment variable"
-      );
-    }
-
-    // Context7 tools don't need specific API keys as they're handled by the MCP client
-
     // Ensure maxTokens is a number and has a reasonable value
-    const maxOutputTokens = Math.max(100, Number(input.maxTokens) || 4096);
+    const maxTokensNumeric = Math.max(100, Number(input.maxTokens) || 4096);
+
+    // Build config respecting model capabilities
+    const config: Record<string, unknown> = {};
+    if (capabilities.supportsTemperature) {
+      config.temperature = temperature;
+    } else {
+      console.log(
+        `Model ${input.modelId} does not support temperature – omitting parameter.`
+      );
+    }
+    config[capabilities.maxTokensParam] = maxTokensNumeric;
+
     console.log(
-      `Using model: ${input.modelId} with maxOutputTokens: ${maxOutputTokens}`
+      `Using model: ${input.modelId}; temp supported: ${capabilities.supportsTemperature}; maxTokens param: ${capabilities.maxTokensParam}=${maxTokensNumeric}`
     );
 
     // Call Genkit's generateStream function
     // This function returns an object immediately, which contains the stream and a response promise.
     const generationAPI = aiInstance.generateStream({
-      model: createModelKey(input.modelId), // Use createModelKey helper to avoid stringification warnings
+      model: createModelKey(input.modelId),
       messages: messages,
-      config: {
-        temperature,
-        maxOutputTokens: maxOutputTokens, // Use validated maxTokens
-      },
+      config,
       tools: enabledToolNames.length > 0 ? enabledToolNames : undefined,
     });
 
