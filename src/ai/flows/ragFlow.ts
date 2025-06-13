@@ -1,15 +1,15 @@
-import { aiInstance, ragIndexerRef, ragRetrieverRef } from '@/genkit-server';
-import { trimHistoryServer } from '@/utils/historyServer';
 import { getCapabilities } from '@/ai/modelCapabilities';
-import { Document } from 'genkit/retriever';
-import { logger } from 'genkit/logging';
+import { aiInstance, ragRetrieverRef } from '@/genkit-server';
+import { trimHistoryServer } from '@/utils/historyServer';
 import {
-  ToolRequestPart,
-  ToolResponsePart,
+  DocumentData,
   MessageData,
   RankedDocument,
-  DocumentData,
+  ToolRequestPart,
+  ToolResponsePart,
 } from '@genkit-ai/ai';
+import { logger } from 'genkit/logging';
+import { Document } from 'genkit/retriever';
 import { z } from 'zod';
 
 // Define the structure for events yielded by generateRagResponseStream
@@ -318,7 +318,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           }));
           
           const result = await ragAssistantPromptObject(
-            { query },
+            { query, documents: safeDocs },
             { model: createModelKey(modelId) }
           );
           // Assuming result is { messages: MessageData[] } or MessageData[]
@@ -439,7 +439,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
               }));
               
               const result = await ragAssistantPromptObjectFallback(
-                { query },
+                { query, documents: safeDocs },
                 { model: createModelKey(modelId) }
               );
               fallbackPromptMessages = Array.isArray(result) ? result : result?.messages || [];

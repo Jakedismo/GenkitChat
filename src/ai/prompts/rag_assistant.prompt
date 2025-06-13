@@ -2,6 +2,20 @@
 input:
   schema:
     query: string
+    documents:
+      type: array
+      items:
+        type: object
+        properties:
+          text:
+            type: string
+          metadata:
+            type: object
+            properties:
+              originalFileName:
+                type: string
+              chunkIndex:
+                type: integer
 ---
 
 {{role "system"}}
@@ -32,3 +46,12 @@ Remember that users rely on your analysis to make important decisions, so accura
 
 {{role "user"}}
 Query: {{query}}
+
+Documents:
+{{#each documents}}
+---
+File: {{metadata.originalFileName}} | Chunk {{@index}}
+{{#each content}}
+{{text}}
+{{/each}}
+{{/each}}
