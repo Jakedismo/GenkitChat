@@ -134,14 +134,21 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
     if (typeof node === 'string') {
       return processStringWithCitations(node, keyPrefix);
     } else if (Array.isArray(node)) {
-      return node.map((child, idx) => processNodeForCitations(child, `${keyPrefix}-arr-${idx}`));
+      // Flatten nested arrays that can occur when children themselves return arrays
+      return node.flatMap((child, idx) => {
+        const processedChild = processNodeForCitations(child, `${keyPrefix}-arr-${idx}`);
+        return Array.isArray(processedChild) ? processedChild : [processedChild];
+      });
     } else if (React.isValidElement(node)) {
       const childProps = node.props as any;
-      let processedChildren: React.ReactNode = undefined;
+      let processedChildren: React.ReactNode | undefined = undefined;
       if (childProps && 'children' in childProps) {
         processedChildren = processNodeForCitations(childProps.children, `${keyPrefix}-child`);
       }
-      return React.cloneElement(node, { key: keyPrefix }, processedChildren);
+      // Preserve existing children when no citation processing was needed
+      const childrenToUse =
+        processedChildren === undefined ? childProps?.children : processedChildren;
+      return React.cloneElement(node, { key: keyPrefix }, childrenToUse);
     } else if (node !== null && node !== undefined) {
       return <React.Fragment key={keyPrefix}>{String(node)}</React.Fragment>;
     }
