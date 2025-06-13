@@ -83,9 +83,13 @@ body {
 
   body {
     @apply bg-background text-foreground;
-    /* Apply background gradient */
-     /* background: var(--background); Ensure solid color is applied */
-     background-color: hsl(var(--background));
+    /* Add a very subtle gradient */
+    background-image: linear-gradient(to bottom right, hsl(var(--background)), hsl(var(--muted) / 0.3));
+    min-height: 100vh;
+  }
+  /* Ensure html also takes full height for gradient to be effective */
+  html {
+    height: 100%;
   }
 
   /* Gradient classes removed */
@@ -162,4 +166,149 @@ body {
       @apply mt-6;
     }
   }
+
+  /* Custom styles for code blocks within chat messages */
+  .prose .bg-secondary pre, .prose .bg-primary pre {
+      background-color: #2d2d2d; /* A slightly different dark background for code within bot messages (secondary) */
+      padding: 0.8rem 1rem; /* Adjust padding */
+      border-radius: 0.375rem; /* Consistent with rounded-lg */
+      margin-top: 0.5em;
+      margin-bottom: 0.5em;
+  }
+
+  /* Ensure the code itself has a transparent background to show the pre's new bg */
+  .prose .bg-secondary pre code, .prose .bg-primary pre code {
+      background-color: transparent;
+  }
+
+  /* For dark mode, ensure contrast if primary/secondary change significantly */
+  .dark .prose.dark:prose-invert .bg-secondary pre, .dark .prose.dark:prose-invert .bg-primary pre {
+      background-color: #1e1e1e; /* A slightly different dark background for code in dark mode */
+  }
+  .dark .prose.dark:prose-invert .bg-secondary pre code, .dark .prose.dark:prose-invert .bg-primary pre code {
+      background-color: transparent;
+  }
+
+  /* General improvements for prose code blocks if needed, beyond highlight.js theme */
+  .prose pre code {
+    font-size: 0.875em; /* Slightly smaller font size for code if desired */
+    line-height: 1.6; /* Adjust line height for readability */
+  }
+
+  /* Mermaid diagram styles */
+  .mermaid-container {
+    @apply w-full flex justify-center items-center;
+  }
+  
+  .mermaid-container svg {
+    @apply max-w-full h-auto;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  
+  /* Mermaid theme integration with our design system */
+  .mermaid .node rect,
+  .mermaid .node circle,
+  .mermaid .node ellipse,
+  .mermaid .node polygon {
+    fill: hsl(var(--card));
+    stroke: hsl(var(--border));
+    stroke-width: 2px;
+  }
+  
+  .mermaid .edgePath .path {
+    stroke: hsl(var(--muted-foreground));
+    stroke-width: 2px;
+  }
+  
+  .mermaid .edgeLabel {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+  
+  .mermaid .cluster rect {
+    fill: hsl(var(--muted));
+    stroke: hsl(var(--border));
+  }
+  
+  .mermaid .titleText {
+    fill: hsl(var(--foreground));
+    font-weight: 600;
+  }
+  
+  .mermaid text {
+    fill: hsl(var(--foreground));
+    font-size: 14px;
+  }
+  
+  /* Dark mode adjustments for Mermaid */
+  .dark .mermaid .node rect,
+  .dark .mermaid .node circle,
+  .dark .mermaid .node ellipse,
+  .dark .mermaid .node polygon {
+    fill: hsl(var(--card));
+    stroke: hsl(var(--border));
+  }
+  
+  .dark .mermaid .edgePath .path {
+    stroke: hsl(var(--muted-foreground));
+  }
+  
+  .dark .mermaid text {
+    fill: hsl(var(--foreground));
+  }
+
+  .bouncing-loader {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .bouncing-loader > div {
+    width: 10px;
+    height: 10px;
+    margin: 3px 6px;
+    border-radius: 50%;
+    background-color: currentColor; /* Use currentColor to inherit text color */
+    opacity: 0.8;
+    animation: bouncing-loader 0.6s infinite alternate;
+  }
+
+  .bouncing-loader > div:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .bouncing-loader > div:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes bouncing-loader {
+    to {
+      opacity: 0.3;
+      transform: translateY(-8px);
+    }
+  }
+}
+
+@keyframes fadeInSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-slide-up {
+  animation: fadeInSlideUp 0.3s ease-out forwards;
+}
+
+@keyframes subtlePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-subtle-pulse {
+  animation: subtlePulse 1.5s infinite ease-in-out;
 }

@@ -1,36 +1,35 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import dynamic from "next/dynamic";
-import { Card, CardContent } from "@/components/ui/card";
+import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
+import ChatInputControls from "@/components/chat/ChatInputControls";
+import ChatMessageContent from "@/components/chat/ChatMessageContent";
+import FileUploadManager from "@/components/chat/FileUploadManager";
+import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
+import PdfWorkerSetup from "@/components/PdfWorkerSetup";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
-import { Code } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
-import ChatMessageContent from "@/components/chat/ChatMessageContent";
-import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
-import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
-import ChatInputControls from "@/components/chat/ChatInputControls";
-import FileUploadManager from "@/components/chat/FileUploadManager";
-import PdfWorkerSetup from "@/components/PdfWorkerSetup";
+import { useChatManager } from "@/hooks/useChatManager";
 import { useChatSettings } from "@/hooks/useChatSettings";
 import { useFileUploads } from "@/hooks/useFileUploads";
-import { useChatManager } from "@/hooks/useChatManager";
+import { cn } from "@/lib/utils";
 import {
-  ChatMode,
-  ConnectedServer,
-  CitationPreviewData,
-  DocumentData,
-  DisplayTool,
+    CitationPreviewData,
+    ConnectedServer,
+    DisplayTool,
+    DocumentData
 } from "@/types/chat";
+import { getHistoryTokenStats } from "@/utils/messageHistory";
 import "highlight.js/styles/github-dark.css";
-import mermaid from "mermaid";
+import { Code } from "lucide-react";
+import dynamic from "next/dynamic";
+import React, { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import remarkGfm from "remark-gfm";
+import MermaidDiagram from "@/components/markdown/MermaidDiagram";
 
 // Dynamically import components that might have browser-only dependencies
 const CitationPreviewSidebar = dynamic(
@@ -124,6 +123,7 @@ const GenkitChat: React.FC = () => {
     [],
   );
   const { toast } = useToast();
+  const animatedMessageIds = useRef(new Set<string>());
 
   // State for citation preview sidebar
   const [citationPreview, setCitationPreview] =
@@ -182,6 +182,13 @@ const GenkitChat: React.FC = () => {
     selectedGeminiModelId,
     selectedOpenAIModelId,
   ]);
+
+  // Effect to clear animatedMessageIds when messages are cleared
+  useEffect(() => {
+    if (messages.length === 0) {
+      animatedMessageIds.current.clear();
+    }
+  }, [messages]);
 
   // Citation click handler remains here as it controls local UI state
   const handleCitationClick = (
@@ -251,21 +258,25 @@ const GenkitChat: React.FC = () => {
       children,
       ...props
     }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
-      const hasPreElement = (children: React.ReactNode): boolean => {
-        return React.Children.toArray(children).some((child) => {
-          if (React.isValidElement(child)) {
-            if (child.type === "pre") return true;
-            if (child.type === "code") return true;
-            if (child.props && child.props.children) {
-              return hasPreElement(child.props.children);
-            }
+      const childrenArray = React.Children.toArray(children);
+      
+
+      
+      // Check if this paragraph contains only a single code block
+      if (childrenArray.length === 1) {
+        const child = childrenArray[0];
+        if (React.isValidElement(child) && child.type === 'code') {
+          const className = child.props?.className || '';
+
+          // If it has a language class or is not inline, it's a code block
+          if (className.includes('language-') || !child.props?.inline) {
+
+            return <>{children}</>;
           }
-          return false;
-        });
-      };
-      if (hasPreElement(children)) {
-        return <>{children}</>;
+        }
       }
+      
+
       return <p {...props}>{children}</p>;
     },
 
@@ -276,27 +287,48 @@ const GenkitChat: React.FC = () => {
     }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
+      
+
+      
       if (inline) {
-        return <code className={className}>{children}</code>;
+        return <code className={`${className} bg-muted px-1.5 py-0.5 rounded text-sm font-mono`}>{children}</code>;
       }
+      
       if (language === "mermaid") {
+
         return (
-          <div className="not-prose">
-            <pre className="mermaid" key={crypto.randomUUID()}>
-              {String(children).replace(/\n$/, "")}
-            </pre>
-          </div>
+          <MermaidDiagram 
+            chart={String(children).replace(/\n$/, "")}
+            id={`mermaid-${btoa(String(children).replace(/\n$/, "")).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`}
+          />
         );
       }
+      
+      // Fallback: Check if content looks like Mermaid even without proper language tag
+      if (!language && !inline) {
+        const content = String(children);
+        const mermaidKeywords = ['flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph'];
+        const isMermaid = mermaidKeywords.some(keyword => content.includes(keyword));
+        
+        if (isMermaid) {
+
+          return (
+            <MermaidDiagram 
+              chart={content.replace(/\n$/, "")}
+              id={`mermaid-fallback-${btoa(content.replace(/\n$/, "")).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`}
+            />
+          );
+        }
+      }
+      
+
       return (
-        <div className="not-prose">
-          <pre
-            className={className || ""}
-            style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}
-          >
-            <code className={className}>{children}</code>
-          </pre>
-        </div>
+        <pre
+          className={`${className || ""} bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto`}
+          style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}
+        >
+          <code className={`${className} bg-transparent p-0 text-sm font-mono`}>{children}</code>
+        </pre>
       );
     },
 
@@ -343,6 +375,86 @@ const GenkitChat: React.FC = () => {
       >
         {children}
       </td>
+    ),
+
+    // Headings
+    h1: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h1 className="text-2xl font-bold mt-6 mb-4" {...props}>
+        {children}
+      </h1>
+    ),
+    h2: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h2 className="text-xl font-bold mt-5 mb-3" {...props}>
+        {children}
+      </h2>
+    ),
+    h3: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h3 className="text-lg font-semibold mt-4 mb-2" {...props}>
+        {children}
+      </h3>
+    ),
+    h4: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h4 className="font-semibold mt-3 mb-2" {...props}>
+        {children}
+      </h4>
+    ),
+    h5: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h5 className="font-semibold mt-3 mb-2" {...props}>
+        {children}
+      </h5>
+    ),
+    h6: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <h6 className="font-semibold mt-3 mb-2" {...props}>
+        {children}
+      </h6>
+    ),
+
+    // Links
+    a: ({ children, href, ...props }: React.PropsWithChildren<{ href?: string }>) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 dark:text-blue-400 hover:underline"
+        {...props}
+      >
+        {children}
+      </a>
+    ),
+
+    // Lists
+    ul: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <ul className="list-disc pl-6 my-3 space-y-1" {...props}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <ol className="list-decimal pl-6 my-3 space-y-1" {...props}>
+        {children}
+      </ol>
+    ),
+    li: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <li {...props}>{children}</li>
+    ),
+
+    // Blockquote
+    blockquote: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <blockquote className="border-l-4 border-muted-foreground pl-4 py-1 my-3 italic" {...props}>
+        {children}
+      </blockquote>
+    ),
+
+    // Horizontal rule
+    hr: ({ ...props }) => (
+      <hr className="my-6 border-border" {...props} />
+    ),
+
+    // Emphasis
+    em: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <em {...props}>{children}</em>
+    ),
+    strong: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+      <strong className="font-semibold" {...props}>{children}</strong>
     ),
   };
 
@@ -401,21 +513,28 @@ const GenkitChat: React.FC = () => {
                         key={`messages-${renderKey}`}
                         data-messages-container="true"
                       >
-                    {messages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={cn(
-                          "flex w-full flex-col",
-                          message.sender === "user"
-                            ? "items-end"
-                            : "items-start",
-                        )}
-                        data-message-id={message.id}
-                        data-message-type={message.sender}
-                      >
+                    {messages.map((message) => {
+                      let M_SHOULD_ANIMATE = false;
+                      if (!animatedMessageIds.current.has(message.id)) {
+                        M_SHOULD_ANIMATE = true;
+                        animatedMessageIds.current.add(message.id);
+                      }
+                      return (
+                        <div
+                          key={message.id}
+                          className={cn(
+                            "flex w-full flex-col",
+                            message.sender === "user"
+                              ? "items-end"
+                              : "items-start",
+                            M_SHOULD_ANIMATE && "animate-fade-in-slide-up"
+                          )}
+                          data-message-id={message.id}
+                          data-message-type={message.sender}
+                        >
                         <div
                           className={cn(
-                            "max-w-[80%] rounded-lg px-4 py-2",
+                            "max-w-[85%] rounded-lg px-4 py-3",
                             "prose dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-li:my-0",
                             message.sender === "user"
                               ? "bg-primary text-primary-foreground"
@@ -505,7 +624,7 @@ const GenkitChat: React.FC = () => {
                         {message.sender === "bot" &&
                           message.toolInvocations &&
                           message.toolInvocations.length > 0 && (
-                            <div className="mt-2 w-full max-w-[80%] rounded-md border border-border bg-muted p-3 text-xs">
+                            <div className="mt-2 w-full max-w-[85%] rounded-md border border-border bg-muted p-3 text-xs">
                               <p className="mb-2 flex items-center gap-1 font-medium text-muted-foreground">
                                 <Code size={14} /> Tool Calls:{" "}
                                 <span className="ml-1 text-xs text-muted-foreground">
@@ -550,13 +669,18 @@ const GenkitChat: React.FC = () => {
                               )}
                             </div>
                           )}
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                     <div ref={messagesEndRef} />
                     {isLoading && (
-                      <div className="flex w-full flex-col items-start">
-                        <div className="max-w-[80%] rounded-lg px-4 py-2 whitespace-pre-wrap bg-secondary text-secondary-foreground opacity-70 animate-pulse">
-                          Thinking...
+                      <div className="flex w-full flex-col items-start" data-testid="loading-indicator">
+                        <div className="max-w-[85%] rounded-lg px-4 py-3 bg-secondary text-secondary-foreground">
+                          <div className="bouncing-loader">
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -605,6 +729,22 @@ const GenkitChat: React.FC = () => {
                               title="Log message stats to console"
                             >
                               Debug Stats
+                            </button>
+                            <button
+                              onClick={() => {
+                                // Show history token statistics
+                                const stats = getHistoryTokenStats(messages, selectedGeminiModelId || selectedOpenAIModelId);
+                                console.log('[History Token Stats]', stats);
+                                toast({
+                                  title: "History Token Stats",
+                                  description: `${stats.processedMessages}/${stats.totalMessages} messages, ${stats.estimatedTokens}/${stats.tokenLimit} tokens`,
+                                  variant: stats.withinLimit ? "default" : "destructive",
+                                });
+                              }}
+                              className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"
+                              title="Show conversation history token usage"
+                            >
+                              History Tokens
                             </button>
                           </div>
                         </div>

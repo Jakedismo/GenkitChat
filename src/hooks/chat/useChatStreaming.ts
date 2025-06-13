@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
-import { DocumentData, ToolInvocation, ParsedJsonData } from "@/types/chat";
+import { DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
+import { unescapeMarkdown } from "../../utils/markdown"; // Import unescapeMarkdown
 import { processSseEvent } from "./handlers/sseEventHandlers";
 
 export interface StreamEventCallbacks {
@@ -34,15 +34,13 @@ export async function processStream(
   let currentSSEDataLines: string[] = [];
   let done = false;
 
-  console.log(">>> [useChatStreaming] Entering main stream read loop");
-
   while (!done) {
     try {
       const { value, done: readerDone } = await reader.read();
       done = readerDone;
 
       if (done) {
-        console.log(">>> [useChatStreaming] Reader is done.");
+
         if (callbacks.onReaderDone) {
           callbacks.onReaderDone();
         }
@@ -51,12 +49,6 @@ export async function processStream(
         // However, SSE usually relies on the blank line for event termination.
         // If buffer has content here, it might be an incomplete event.
         if (buffer.trim()) {
-          console.warn(
-            "[useChatStreaming] Stream ended with unprocessed data in buffer:",
-            buffer.substring(0, 200) + (buffer.length > 200 ? '...' : ''),
-          );
-          console.log("[useChatStreaming] Full buffer content:", buffer);
-          
           // Try to process remaining buffer content
           const remainingLines = buffer.split('\n');
           for (const line of remainingLines) {
@@ -70,11 +62,6 @@ export async function processStream(
         
         // Final processing of any pending event data before breaking
         if (currentSSEDataLines.length > 0) {
-          console.log("[useChatStreaming] Processing final event data:", {
-            eventType: currentSSEEventType,
-            dataLines: currentSSEDataLines.length,
-            preview: currentSSEDataLines.join('').substring(0, 100) + '...'
-          });
           processSseEvent(currentSSEEventType, currentSSEDataLines, callbacks);
         }
         break;
@@ -84,8 +71,6 @@ export async function processStream(
       let normalizedChunk = rawChunk.replace(/\\n/g, "\n").replace(/\r/g, "");
       buffer += normalizedChunk;
 
-      console.log(`[useChatStreaming] Received chunk: ${rawChunk.length} bytes, buffer now: ${buffer.length} chars`);
-
       let lineEndPos;
       while ((lineEndPos = buffer.indexOf("\n")) !== -1) {
         const line = buffer.substring(0, lineEndPos);
@@ -94,8 +79,6 @@ export async function processStream(
         if (line === "") {
           // Empty line: event boundary
           if (currentSSEDataLines.length > 0) {
-            console.log(`[useChatStreaming] Processing complete SSE event: ${currentSSEEventType}, data lines: ${currentSSEDataLines.length}`);
-            console.log(`[useChatStreaming] Combined data length: ${currentSSEDataLines.join('').length} chars`);
             processSseEvent(
               currentSSEEventType,
               currentSSEDataLines,
@@ -106,18 +89,20 @@ export async function processStream(
           currentSSEDataLines = [];
         } else if (line.startsWith("event:")) {
           currentSSEEventType = line.substring(6).trim();
-          console.log(`[useChatStreaming] New SSE event type: ${currentSSEEventType}`);
+
         } else if (line.startsWith("data:")) {
-          const dataLine = line.substring(5).trim();
+          const dataLine = line.substring(5); // Don't trim - preserve spaces
           currentSSEDataLines.push(dataLine);
-          console.log(`[useChatStreaming] Added data line (${dataLine.length} chars): ${dataLine.substring(0, 100)}...`);
         } else if (line.startsWith(":")) {
           // Comment, ignore
-          console.log(`[useChatStreaming] Received comment: ${line}`);
+        } else if (currentSSEDataLines.length > 0) {
+          // If we're in the middle of collecting data lines and encounter a non-SSE line,
+          // it might be part of multi-line JSON content - add it as a continuation
+          currentSSEDataLines.push(line);
         } else {
-          // Ignore other non-empty lines for robustness
-          console.log(`[useChatStreaming] Ignoring unrecognized line: ${line.substring(0, 50)}...`);
-        }
+    // Ignore other non-empty lines for robustness (e.g. protocol messages, stray newlines)
+    // console.debug('[processStream] Ignoring non-SSE line:', line); // Optional: for debugging
+  }
       }
     } catch (error) {
       console.error("[useChatStreaming] Error reading from stream:", error);
@@ -128,7 +113,6 @@ export async function processStream(
     }
   }
 
-  console.log("<<< [useChatStreaming] Exiting main stream read loop");
   if (callbacks.onStreamEnd) {
     callbacks.onStreamEnd();
   }

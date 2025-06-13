@@ -6,10 +6,11 @@
     "dev": "next dev -p 9002",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
-    "build": "next build",
+    "build": "NODE_NO_WARNINGS=1 next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@genkit-ai/core": "^1.12.0",
@@ -51,6 +52,7 @@
     "destr": "^2.0.5",
     "firebase": "^11.3.0",
     "flatted": "^3.3.3",
+    "framer-motion": "^11.3.2",
     "fs": "^0.0.1-security",
     "genkit": "^1.12.0",
     "genkitx-anthropic": "^0.22.0",
@@ -82,6 +84,9 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.16",
+    "@testing-library/jest-dom": "^5.16.0",
+    "@testing-library/react": "^14.0.0",
+    "@types/jest": "^29.0.0",
     "@types/node": "^20",
     "@types/pdfjs-dist": "^2.10.377",
     "@types/react": "^18",
@@ -89,8 +94,12 @@
     "eslint": "9.26.0",
     "eslint-config-next": "15.3.2",
     "genkit-cli": "^1.12.0",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.0.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "ts-jest": "^29.0.0",
     "tsx": "^4.19.4",
     "typescript": "^5"
   }

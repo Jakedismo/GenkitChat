@@ -187,30 +187,12 @@ export function repairTruncatedResponse(response: any): any {
  * Logs detailed debug information about a response
  */
 export function logResponseDebugInfo(label: string, response: any): void {
-  console.group(`Response Debug [${label}]`);
-  
   const analysis = analyzeResponse(response);
-  console.log('Analysis:', analysis);
   
+  // Only log if there are issues that need attention
   if (analysis.isTruncated) {
-    console.warn('⚠️ Truncation detected', analysis.truncationDetails);
+    console.warn(`⚠️ Response truncation detected in ${label}:`, analysis.truncationDetails);
   }
-  
-  if (typeof response === 'string') {
-    console.log('Content (first 100 chars):', response.substring(0, 100));
-    console.log('Content (last 100 chars):', response.substring(response.length - 100));
-  } else if (Array.isArray(response)) {
-    console.log('Array entries:', response.length);
-    if (response.length > 0) {
-      console.log('First entry type:', typeof response[0]);
-      console.log('Last entry type:', typeof response[response.length - 1]);
-    }
-  } else if (typeof response === 'object' && response !== null) {
-    console.log('Object keys:', Object.keys(response));
-  }
-  
-  console.log('Raw value:', response);
-  console.groupEnd();
 }
 
 /**
@@ -225,7 +207,7 @@ export function storeDebugResponse(key: string, response: ParsedJsonData): void 
       analysis: analyzeResponse(response)
     };
     localStorage.setItem('debug_responses', JSON.stringify(debugStore));
-    console.log(`Stored debug response with key: ${key}`);
+    // Debug response stored successfully
   } catch (error) {
     console.error('Failed to store debug response:', error);
   }

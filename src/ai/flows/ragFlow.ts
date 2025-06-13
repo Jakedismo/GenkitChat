@@ -1,4 +1,6 @@
 import { aiInstance, ragIndexerRef, ragRetrieverRef } from '@/genkit-server';
+import { trimHistoryServer } from '@/utils/historyServer';
+import { getCapabilities } from '@/ai/modelCapabilities';
 import { Document } from 'genkit/retriever';
 import { logger } from 'genkit/logging';
 import {
@@ -64,6 +66,12 @@ export const RagFlowInputSchema = z.object({
   modelId: z.string().optional(),
   temperaturePreset: z.enum(['precise', 'normal', 'creative']).optional(),
   maxTokens: z.number().optional(),
+  history: z.array(z.object({
+    role: z.enum(['user', 'model']),
+    content: z.array(z.object({
+      text: z.string()
+    }))
+  })).optional(),
 });
 
 export type RagFlowInput = z.infer<typeof RagFlowInputSchema>;
@@ -71,7 +79,14 @@ export type RagFlowInput = z.infer<typeof RagFlowInputSchema>;
 // Constants for RAG
 const INITIAL_RETRIEVAL_COUNT = 20;
 const FINAL_DOCUMENT_COUNT = 5;
-const RERANKER_ID = 'vertexai/reranker';
+// Try different reranker IDs - the exact name may vary by Genkit version
+const POSSIBLE_RERANKER_IDS = [
+  'vertexai/semantic-ranker-512',
+  'vertexai/reranker',
+  'vertexai/text-bison-32k',
+  'semantic-ranker-512'
+];
+const RERANKER_ID = POSSIBLE_RERANKER_IDS[0]; // Start with the first one
 
 // Helper function to create a model key string
 export const createModelKey = (
@@ -83,6 +98,18 @@ export const createModelKey = (
   return baseModel;
 };
 
+// Helper to map temperature presets to numeric values (shared logic)
+const mapTemp = (preset?: 'precise' | 'normal' | 'creative'): number => {
+  switch (preset) {
+    case 'precise':
+      return 0.2;
+    case 'creative':
+      return 0.9;
+    default:
+      return 0.7;
+  }
+};
+
 export const documentQaStreamFlow = aiInstance.defineFlow(
   {
     name: 'documentQaStreamFlow',
@@ -91,14 +118,46 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     streamSchema: RagStreamEventSchemaZod,
   },
   async (
-    { query, sessionId, tools: toolNamesToUse, modelId, temperaturePreset, maxTokens }: RagFlowInput,
+    {
+      query,
+      sessionId,
+      tools: toolNamesToUse,
+      modelId,
+      temperaturePreset,
+      maxTokens,
+      history: incomingHistory,
+    }: RagFlowInput,
     sideChannel: (chunk: RagStreamEvent) => void
   ) => {
+
     let filteredDocs: Document[] = [];
     let topDocs: DocumentData[] = []; 
     const pendingToolRequests = new Map<string, ToolRequestPart>();
     const toolResponseBuffer = new Map<string, ToolResponsePart>();
     let accumulatedLlmText = '';
+
+    // Helper function to construct the final messages array for the LLM
+    const constructFinalLlmMessages = (
+      historyMessages: MessageData[],
+      promptGeneratedMessages: MessageData[],
+      defaultSystemMessage: MessageData
+    ): MessageData[] => {
+      // 1. Determine the definitive system message
+      let systemMsgToUse: MessageData | undefined = promptGeneratedMessages.find(m => m.role === 'system');
+      if (!systemMsgToUse) {
+        systemMsgToUse = defaultSystemMessage;
+      }
+
+      // 2. Filter history to exclude any system messages (should be none due to Zod schema, but defensive)
+      const nonSystemHistory = historyMessages.filter(m => m.role !== 'system');
+
+      // 3. Filter prompt-generated messages to exclude ALL system messages
+      //    (because we've already selected one in step 1)
+      const nonSystemPromptMessages = promptGeneratedMessages.filter(m => m.role !== 'system');
+
+      // 4. Assemble: definitive system message first, then non-system history, then non-system prompt parts.
+      return [systemMsgToUse, ...nonSystemHistory, ...nonSystemPromptMessages];
+    };
 
     // Helper to send chunks to the stream
     const sendChunk = (data: RagStreamEvent) => {
@@ -196,20 +255,36 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         topDocs = [];
       } else {
         if (filteredDocs.length > FINAL_DOCUMENT_COUNT) {
-          try {
-            const rerankedDocsOutput: RankedDocument[] = await aiInstance.rerank({
-              reranker: RERANKER_ID,
-              query: Document.fromText(query),
-              documents: filteredDocs,
-              options: { k: FINAL_DOCUMENT_COUNT },
-            });
-            topDocs = rerankedDocsOutput;
-            logger.info(
-              `Reranked ${filteredDocs.length} documents to ${topDocs.length} for session ${sessionId}.`
-            );
-          } catch (rerankerError: any) {
-            logger.error(`Error in RAG reranker: ${rerankerError.message || String(rerankerError)}. Falling back.`);
-            // Fallback: use simple selection of top documents
+          let rerankerSuccess = false;
+
+          // Try different reranker IDs until one works
+          for (const rerankerId of POSSIBLE_RERANKER_IDS) {
+            try {
+              logger.info(`Attempting to rerank ${filteredDocs.length} documents using ${rerankerId}`);
+              const rerankedDocsOutput: RankedDocument[] = await aiInstance.rerank({
+                reranker: rerankerId,
+                query: Document.fromText(query),
+                documents: filteredDocs,
+                options: { k: FINAL_DOCUMENT_COUNT },
+              });
+              topDocs = rerankedDocsOutput;
+              logger.info(
+                `Successfully reranked ${filteredDocs.length} documents to ${topDocs.length} using ${rerankerId} for session ${sessionId}.`
+              );
+              rerankerSuccess = true;
+              break; // Exit the loop on success
+            } catch (rerankerError: any) {
+              logger.warn(`Reranker ${rerankerId} failed: ${rerankerError.message || String(rerankerError)}`);
+              if (rerankerError.stack) {
+                logger.debug(`Reranker error stack: ${rerankerError.stack}`);
+              }
+              // Continue to try the next reranker ID
+            }
+          }
+
+          // If all rerankers failed, fall back to simple selection
+          if (!rerankerSuccess) {
+            logger.error(`All reranker IDs failed. Falling back to simple document selection.`);
             topDocs = filteredDocs.slice(0, FINAL_DOCUMENT_COUNT);
             logger.info(
               `Fallback: Selected first ${topDocs.length} documents from ${filteredDocs.length} for session ${sessionId}.`
@@ -217,6 +292,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           }
         } else {
           topDocs = filteredDocs;
+          logger.info(`Using all ${topDocs.length} documents (no reranking needed) for session ${sessionId}.`);
         }
         sendChunk({ type: 'sources', sources: topDocs as Document[] });
       }
@@ -225,8 +301,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const modelToUseKey = createModelKey(modelId); // NEW: toolsToUse argument removed
       // logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${toolNamesToUse?.join(', ') || 'none'}`); // MOVED DOWN
       
-      const history: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
-      // Note: For a full chat experience, actual session history should be loaded if sessionId is present.
+      // Use centralised history trimming util for consistency
+      const rawHistory: MessageData[] = incomingHistory || [{ role: 'user', content: [{ text: query }] }];
+      const history = trimHistoryServer(rawHistory, modelId);
 
       // Render the prompt to MessageData[] with defensive checks
       let currentPromptMessages: MessageData[];
@@ -240,7 +317,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
             metadata: doc.metadata || {}
           }));
           
-          const result = await ragAssistantPromptObject({ query, docs: safeDocs });
+          const result = await ragAssistantPromptObject(
+            { query },
+            { model: createModelKey(modelId) }
+          );
           // Assuming result is { messages: MessageData[] } or MessageData[]
           currentPromptMessages = Array.isArray(result) ? result : result?.messages || [];
           if (currentPromptMessages.length === 0 && !Array.isArray(result)) {
@@ -257,49 +337,30 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
       }
 
-      const messagesForLlm = history.concat(currentPromptMessages);
+      const markdownSystemMsg: MessageData = {
+        // @ts-ignore Genkit types may not include 'system'
+        role: 'system',
+        content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
+      } as any;
+
+      const messagesForLlm = constructFinalLlmMessages(history, currentPromptMessages, markdownSystemMsg);
+
+      const caps = getCapabilities(modelId);
+      const config: Record<string, unknown> = {};
+      if (caps.supportsTemperature) {
+        config.temperature = mapTemp(temperaturePreset);
+      }
+      config[caps.maxTokensParam] = maxTokens;
 
       const generateOptions: Parameters<typeof aiInstance.generateStream>[0] = {
         model: modelToUseKey,
         messages: messagesForLlm,
-        context: topDocs,
-        config: {
-          temperature: temperaturePreset === 'precise' ? 0.2 : temperaturePreset === 'creative' ? 0.9 : 0.7,
-          maxOutputTokens: maxTokens,
-        },
-        streamingCallback: (chunk: any) => { // Using any for chunk type temporarily
-          console.log('[RAG-STREAM-DEBUG] Received chunk:', {
-            hasText: !!chunk?.text,
-            textLength: chunk?.text?.length || 0,
-            textPreview: chunk?.text?.substring(0, 100) || 'no text',
-            chunkKeys: Object.keys(chunk || {}),
-            chunkType: typeof chunk,
-            chunkContent: chunk,
-            accumulatedLength: accumulatedLlmText.length
-          });
-          
-          if (chunk?.text) {
-            console.log('[RAG-STREAM-DEBUG] Processing text chunk:', chunk.text);
-            sendChunk({ type: 'text', text: chunk.text });
-            accumulatedLlmText += chunk.text;
-            console.log('[RAG-STREAM-DEBUG] Updated accumulated text length:', accumulatedLlmText.length);
-          } else {
-            console.log('[RAG-STREAM-DEBUG] Chunk has no text property, chunk structure:', JSON.stringify(chunk, null, 2));
-          }
-          // Enhanced defensive checks for tool requests
-          chunk?.toolRequests?.forEach((requestPart: ToolRequestPart) => {
-            if (requestPart?.toolRequest?.ref) {
-              pendingToolRequests.set(requestPart.toolRequest.ref, requestPart);
-            }
-          });
-          // Enhanced defensive checks for tool responses
-          chunk?.toolResponses?.forEach((responsePart: ToolResponsePart) => {
-            if (responsePart?.toolResponse?.ref) {
-              toolResponseBuffer.set(responsePart.toolResponse.ref, responsePart);
-            }
-          });
-        },
+        context: topDocs, // Ensure context is passed here for Genkit to handle RAG
+        config,
       };
+
+      // Moved logger.info here to accurately reflect the tools being passed
+      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
 
       if (toolNamesToUse && toolNamesToUse.length > 0) {
         // This assumes that aiInstance.generateStream can handle string[] for tools
@@ -307,42 +368,52 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         (generateOptions as any).tools = toolNamesToUse;
       }
 
-      // Moved logger.info here to accurately reflect the tools being passed
-      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
-
-      console.log('[RAG-STREAM-DEBUG] Starting LLM stream generation');
       const llmStreamResult = aiInstance.generateStream(generateOptions);
 
       let streamItemCount = 0;
-      for await (const _item of llmStreamResult.stream) {
+      for await (const item of llmStreamResult.stream) {
         streamItemCount++;
-        console.log(`[RAG-STREAM-DEBUG] Processed stream item ${streamItemCount}`);
-        // The streamingCallback handles individual chunks/items.
-        // This loop ensures the entire stream is processed.
+
+        // Process the stream item directly - this is the fallback mechanism
+        if (item?.text) {
+          // Add the full text to accumulated (for final response tracking)
+          accumulatedLlmText += item.text;
+          
+          // Split the text into words and send individually for streaming effect
+          const words = item.text.split(' ');
+          for (let i = 0; i < words.length; i++) {
+            const word = words[i];
+            if (word) { // Skip empty strings
+              // Add space before word (except first word)
+              const textToSend = i === 0 ? word : ' ' + word;
+              sendChunk({ type: 'text', text: textToSend });
+              // Small delay to simulate token-by-token streaming
+              await new Promise(resolve => setTimeout(resolve, 20));
+            }
+          }
+        }
       }
       
-      console.log(`[RAG-STREAM-DEBUG] Stream completed after ${streamItemCount} items`);
-      console.log('[RAG-STREAM-DEBUG] Accumulated text length before final response:', accumulatedLlmText.length);
-      
       const finalLlmResponse = await llmStreamResult.response;
-      console.log('[RAG-STREAM-DEBUG] Final LLM response received:', {
-        hasText: !!finalLlmResponse.text,
-        textLength: finalLlmResponse.text?.length || 0,
-        textPreview: finalLlmResponse.text?.substring(0, 100) || 'no text'
-      });
       
       await flushToolBuffer();
       
       const responseText = finalLlmResponse.text;
       if (accumulatedLlmText === '' && responseText) {
-        console.log('[RAG-STREAM-DEBUG] Using final response text as fallback');
-        sendChunk({ type: 'text', text: responseText });
+        // Split the final response into words and send individually for streaming effect
+        const words = responseText.split(' ');
+        for (let i = 0; i < words.length; i++) {
+          const word = words[i];
+          if (word) { // Skip empty strings
+            // Add space before word (except first word)
+            const textToSend = i === 0 ? word : ' ' + word;
+            sendChunk({ type: 'text', text: textToSend });
+            // Small delay to simulate token-by-token streaming
+            await new Promise(resolve => setTimeout(resolve, 25));
+          }
+        }
         accumulatedLlmText = responseText;
       }
-      
-      console.log('[RAG-STREAM-DEBUG] Final accumulated text length:', accumulatedLlmText.length);
-      console.log('[RAG-STREAM-DEBUG] Final accumulated text preview:', accumulatedLlmText.substring(0, 200) + '...');
-      console.log('[RAG-STREAM-DEBUG] Final accumulated text ending:', '...' + accumulatedLlmText.substring(Math.max(0, accumulatedLlmText.length - 100)));
       
       return accumulatedLlmText;
 
@@ -367,7 +438,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
                 metadata: doc.metadata || {}
               }));
               
-              const result = await ragAssistantPromptObjectFallback({ query, docs: safeDocs });
+              const result = await ragAssistantPromptObjectFallback(
+                { query },
+                { model: createModelKey(modelId) }
+              );
               fallbackPromptMessages = Array.isArray(result) ? result : result?.messages || [];
               if (fallbackPromptMessages.length === 0 && !Array.isArray(result)) {
                    logger.warn('Fallback prompt function did not return messages, using query as prompt.');
@@ -382,17 +456,25 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
         }
         const historyForFallback: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
-        const messagesForLlmFallback = historyForFallback.concat(fallbackPromptMessages);
+        const markdownSystemMsgFallback: MessageData = {
+          // @ts-ignore Genkit types may not include 'system'
+          role: 'system',
+          content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
+        } as any;
+        const messagesForLlmFallback = constructFinalLlmMessages(historyForFallback, fallbackPromptMessages, markdownSystemMsgFallback);
+
+        const capsFallback = getCapabilities(modelId);
+        const fallbackConfig: Record<string, unknown> = {};
+        if (capsFallback.supportsTemperature) {
+          fallbackConfig.temperature = mapTemp(temperaturePreset);
+        }
+        fallbackConfig[capsFallback.maxTokensParam] = maxTokens;
 
         const llmStreamResultFallback = aiInstance.generateStream({
-          model: fallbackModelKey, // Simplified key
+          model: fallbackModelKey,
           messages: messagesForLlmFallback,
           context: topDocs,
-          // No tools in fallback
-          config: {
-            temperature: temperaturePreset === 'precise' ? 0.2 : temperaturePreset === 'creative' ? 0.9 : 0.7,
-            maxOutputTokens: maxTokens,
-          },
+          config: fallbackConfig,
           streamingCallback: (chunk: any) => { // Using any for chunk type temporarily
             if (chunk?.text) {
               sendChunk({ type: 'text', text: chunk.text });

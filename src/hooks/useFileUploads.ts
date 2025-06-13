@@ -28,13 +28,11 @@ export function useFileUploads(
 
   // Handles the actual file selection event from the hidden input
   const handleFileChange = useCallback(async (selectedFiles: FileList | null) => {
-    console.log('[useFileUploads] handleFileChange triggered. Selected files:', selectedFiles); // Debug log
     if (!selectedFiles || selectedFiles.length === 0) {
       return; // No files selected
     }
 
     const sessionIdToUse = getCurrentSessionId();
-    console.log('[useFileUploads] sessionIdToUse:', sessionIdToUse); // <--- ADD THIS LOG
     if (!sessionIdToUse) {
         // Require session ID to exist before allowing upload
         toast({

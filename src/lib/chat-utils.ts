@@ -1,11 +1,15 @@
-import { aiInstance } from "@/genkit-server";
 import { createModelKey } from "@/ai/flows/ragFlow"; // Corrected import path
+import { getCapabilities } from "@/ai/modelCapabilities";
+import { aiInstance } from "@/genkit-server";
 import type {
+  GenerateResponseChunk,
   GenerateResponseData,
-  MessageData,
-  GenerateResponseChunk, // Represents a chunk from ai.generateStream().stream
+  MessageData as GenkitMessageData,
 } from "genkit"; // Use stable import for types
+
 import { v4 as uuidv4 } from "uuid";
+// deduplicate uuid import oversight noted in bug hunt
+import type { MessageHistoryItem } from "@/utils/messageHistory";
 
 // This interface is used by the calling API route (basic-chat/route.ts)
 // to structure tool invocation data extracted from the final response.
@@ -22,7 +26,7 @@ export interface ChatInput {
   temperaturePreset: "precise" | "normal" | "creative";
   maxTokens: number;
   sessionId?: string; // Optional session ID for continuing conversations
-  history?: MessageData[]; // Optional message history
+  history?: MessageHistoryItem[]; // Optional message history
   // Tool flags - these correspond to Genkit tool names registered with aiInstance
   tavilySearchEnabled?: boolean;
   tavilyExtractEnabled?: boolean;
@@ -54,47 +58,33 @@ function mapTemperature(preset: "precise" | "normal" | "creative"): number {
   }
 }
 
-// Adapts Genkit's GenerateResponseChunk to simple { text: string } chunks
+// Clean adapter: emit only pure text parts, filter JSON artefacts
 async function* adaptGenkitStream(
-  genkitStream: AsyncIterable<GenerateResponseChunk<unknown>>
+  genkit: AsyncIterable<GenerateResponseChunk<unknown>>
 ): AsyncIterable<{ text: string }> {
-  try {
-    for await (const chunk of genkitStream) {
-      // Handle multiple message content parts (Gemini-specific format)
-      // Use type assertion since the Genkit types don't fully reflect the actual structure
-      const anyChunk = chunk as any;
-      
-      if (anyChunk.message?.content) {
-        const content = anyChunk.message.content;
-        if (Array.isArray(content)) {
-          // Content is an array of parts, each potentially with text
-          for (const part of content) {
-            if (part.text) {
-              yield { text: part.text };
-              console.log(`Yielding text from message.content part: ${part.text.substring(0, 50)}...`);
-            }
-          }
-        }
-      }
-      
-      // Standard text field (common in most models)
-      else if (chunk.text) {
-        yield { text: chunk.text };
-        console.log(`Yielding text from chunk.text: ${chunk.text.substring(0, 50)}...`);
-      }
+  for await (const chunk of genkit) {
+    const c: any = chunk;
 
-      // Handle tool-related chunks if present
-      if (anyChunk.toolRequests) {
-        console.log(`Tool requests: ${JSON.stringify(anyChunk.toolRequests)}`);
+    // 1. GoogleAI / Gemini style
+    if (Array.isArray(c.message?.content)) {
+      for (const part of c.message.content) {
+        if (part?.text) yield { text: part.text };
       }
+      continue;
     }
-  } catch (error) {
-    console.error("Error processing stream chunks:", error);
-    yield {
-      text: `Error in stream processing: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    };
+
+    // 2. OpenAI delta style
+    const delta = c.choices?.[0]?.delta?.content;
+    if (delta) {
+      yield { text: delta };
+      continue;
+    }
+
+    // 3. Generic text field (ensure not JSON artefact)
+    if (typeof c.text === 'string' && !c.text.includes('{"text"')) {
+      yield { text: c.text };
+    }
+    // Ignore other properties (tool events etc.)
   }
 }
 
@@ -103,6 +93,7 @@ export async function initiateChatStream(
   input: ChatInput
 ): Promise<ChatStreamOutput> {
   const currentSessionId = input.sessionId || uuidv4();
+  const capabilities = getCapabilities(input.modelId);
   const temperature = mapTemperature(input.temperaturePreset);
 
   // Collect names of enabled tools first so we can pass them to the prompt templates
@@ -120,63 +111,62 @@ export async function initiateChatStream(
 
   console.log(`Enabled tools: ${enabledToolNames.join(", ")}`);
   
-  // Initialize messages array
-  const messages: MessageData[] = [];
-  
-  // Initialize an empty system message
-  let systemMessage: MessageData | null = null;
+  // Prepare default system message in case prompt template fails
+  const defaultSystemMessage: GenkitMessageData = {
+    // @ts-ignore Genkit types may not include 'system'
+    role: "system",
+    content: [
+      {
+        text:
+          "When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks where appropriate.",
+      },
+    ],
+  } as any;
+
+  // We'll decide the final system message after attempting to load the prompt template
+  let systemMessage: GenkitMessageData | null = null;
   
   try {
     // Load the appropriate prompt template based on the temperature preset
     let promptTemplate;
     switch (input.temperaturePreset) {
       case "precise":
-        promptTemplate = await aiInstance.prompt("basic_chat_precise");
+        promptTemplate = aiInstance.prompt("basic_chat_precise");
         break;
       case "creative":
-        promptTemplate = await aiInstance.prompt("basic_chat_creative");
+        promptTemplate = aiInstance.prompt("basic_chat_creative");
         break;
       case "normal":
       default:
-        promptTemplate = await aiInstance.prompt("basic_chat_normal");
+        promptTemplate = aiInstance.prompt("basic_chat_normal");
         break;
     }
     
-    // Apply the prompt template with the tools
-    const promptResult = await promptTemplate({
-      modelId: createModelKey(input.modelId),
-      tools: enabledToolNames,
-    });
-    
+    // Apply the prompt template with the user message
+    const promptResult = await promptTemplate(
+      { userMessage: input.userMessage },
+      { model: createModelKey(input.modelId) }
+    );
+
     // Use the first message from the prompt result as our system prompt
     if (promptResult.messages && promptResult.messages.length > 0) {
-      // Store the system message from the prompt template
       systemMessage = promptResult.messages[0];
       console.log("System prompt from template loaded successfully");
     }
   } catch (promptError) {
     console.error("Error loading prompt template:", promptError);
     console.log("Falling back to basic system message");
-    // Create a fallback system message
-    systemMessage = { 
-      role: "system", 
-      content: [{ 
-        text: `You are a helpful assistant. You have access to the following tools: ${enabledToolNames.join(", ")}` 
-      }] 
-    };
-  }
-  
-  // Add the system message to the messages array
-  if (systemMessage) {
-    messages.push(systemMessage);
   }
 
-  // Prepend history if provided
-  if (input.history && input.history.length > 0) {
-    messages.push(...input.history);
-  }
-  // Add current user message
-  messages.push({ role: "user", content: [{ text: input.userMessage }] });
+  // Final system message (template result, otherwise default)
+  const systemMsgToUse: GenkitMessageData = systemMessage || defaultSystemMessage;
+
+  // Build the messages array ensuring the system message is FIRST and UNIQUE
+  const messages: GenkitMessageData[] = [
+    systemMsgToUse,
+    ...(input.history || []).map((h) => ({ role: h.role, content: h.content })),
+    { role: "user", content: [{ text: input.userMessage }] },
+  ];
 
   // Tools already collected and configured above
 
@@ -216,54 +206,30 @@ export async function initiateChatStream(
   }
 
   try {
-    // Log the maxTokens parameter for debugging
-    console.log(`Preparing to generate with maxTokens: ${input.maxTokens}`);
-
-    // Check for missing API keys for enabled tools before making the API call
-    if (input.tavilySearchEnabled && !process.env.TAVILY_API_KEY) {
-      throw new Error(
-        "Tavily Search tool requires a TAVILY_API_KEY environment variable"
-      );
-    }
-
-    if (input.tavilyExtractEnabled && !process.env.TAVILY_API_KEY) {
-      throw new Error(
-        "Tavily Extract tool requires a TAVILY_API_KEY environment variable"
-      );
-    }
-
-    if (input.perplexitySearchEnabled && !process.env.PERPLEXITY_API_KEY) {
-      throw new Error(
-        "Perplexity Search tool requires a PERPLEXITY_API_KEY environment variable"
-      );
-    }
-
-    if (
-      input.perplexityDeepResearchEnabled &&
-      !process.env.PERPLEXITY_API_KEY
-    ) {
-      throw new Error(
-        "Perplexity Deep Research tool requires a PERPLEXITY_API_KEY environment variable"
-      );
-    }
-
-    // Context7 tools don't need specific API keys as they're handled by the MCP client
-
     // Ensure maxTokens is a number and has a reasonable value
-    const maxOutputTokens = Math.max(100, Number(input.maxTokens) || 4096);
+    const maxTokensNumeric = Math.max(100, Number(input.maxTokens) || 4096);
+
+    // Build config respecting model capabilities
+    const config: Record<string, unknown> = {};
+    if (capabilities.supportsTemperature) {
+      config.temperature = temperature;
+    } else {
+      console.log(
+        `Model ${input.modelId} does not support temperature – omitting parameter.`
+      );
+    }
+    config[capabilities.maxTokensParam] = maxTokensNumeric;
+
     console.log(
-      `Using model: ${input.modelId} with maxOutputTokens: ${maxOutputTokens}`
+      `Using model: ${input.modelId}; temp supported: ${capabilities.supportsTemperature}; maxTokens param: ${capabilities.maxTokensParam}=${maxTokensNumeric}`
     );
 
     // Call Genkit's generateStream function
     // This function returns an object immediately, which contains the stream and a response promise.
     const generationAPI = aiInstance.generateStream({
-      model: createModelKey(input.modelId), // Use createModelKey helper to avoid stringification warnings
+      model: createModelKey(input.modelId),
       messages: messages,
-      config: {
-        temperature,
-        maxOutputTokens: maxOutputTokens, // Use validated maxTokens
-      },
+      config,
       tools: enabledToolNames.length > 0 ? enabledToolNames : undefined,
     });
 
