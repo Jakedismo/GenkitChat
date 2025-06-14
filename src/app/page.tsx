@@ -331,210 +331,128 @@ const GenkitChat: React.FC = () => {
     }
   };
 
-  // Shared components config for ReactMarkdown with arrow function syntax
-  const markdownComponents = {
-    p: ({
-      children,
-      ...props
-    }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
-      const childrenArray = React.Children.toArray(children);
-      
-
-      
-      // Check if this paragraph contains only a single code block
-      if (childrenArray.length === 1) {
-        const child = childrenArray[0];
-        if (React.isValidElement(child) && child.type === 'code') {
-          const className = child.props?.className || '';
-
-          // If it has a language class or is not inline, it's a code block
-          if (className.includes('language-') || !child.props?.inline) {
-
-            return <>{children}</>;
-          }
-        }
-      }
-      
-
-      return <p {...props}>{children}</p>;
-    },
-
-    code: ({
-      className,
-      children,
-      inline,
-    }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
-      const match = /language-(\w+)/.exec(className || "");
-      const language = match ? match[1] : "";
-      
-
-      
-      if (inline) {
-        return <code className={`${className} bg-muted px-1.5 py-0.5 rounded text-sm font-mono`}>{children}</code>;
-      }
-      
-      if (language === "mermaid") {
-
-        return (
-          <MermaidDiagram 
-            chart={String(children).replace(/\n$/, "")}
-            id={`mermaid-${btoa(String(children).replace(/\n$/, "")).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`}
-          />
-        );
-      }
-      
-      // Fallback: Check if content looks like Mermaid even without proper language tag
-      if (!language && !inline) {
-        const content = String(children);
-        const mermaidKeywords = ['flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph'];
-        const isMermaid = mermaidKeywords.some(keyword => content.includes(keyword));
-        
-        if (isMermaid) {
-
-          return (
-            <MermaidDiagram 
-              chart={content.replace(/\n$/, "")}
-              id={`mermaid-fallback-${btoa(content.replace(/\n$/, "")).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`}
-            />
-          );
-        }
-      }
-      
-
-      return (
-        <pre
-          className={`${className || ""} bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto`}
-          style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}
-        >
-          <code className={`${className} bg-transparent p-0 text-sm font-mono`}>{children}</code>
-        </pre>
-      );
-    },
-
+  // Base components for styling that are shared between user and bot messages
+  const baseMarkdownComponents = {
     table: ({ children, ...props }: React.PropsWithChildren<React.TableHTMLAttributes<HTMLTableElement>>) => (
       <div className="overflow-x-auto">
-        <table
-          className="my-4 w-full border-collapse border border-border text-sm"
-          {...props}
-        >
-          {children}
-        </table>
+        <table className="my-4 w-full border-collapse border border-border text-sm" {...props}>{children}</table>
       </div>
     ),
-
     thead: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableSectionElement>>) => (
-      <thead className="bg-muted" {...props}>
-        {children}
-      </thead>
+      <thead className="bg-muted" {...props}>{children}</thead>
     ),
-
     tbody: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableSectionElement>>) => (
       <tbody {...props}>{children}</tbody>
     ),
-
     tr: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableRowElement>>) => (
-      <tr className="border-b border-border" {...props}>
-        {children}
-      </tr>
+      <tr className="border-b border-border" {...props}>{children}</tr>
     ),
-
     th: ({ children, ...props }: React.PropsWithChildren<React.ThHTMLAttributes<HTMLTableCellElement>>) => (
-      <th
-        className="border-r border-border px-4 py-2 text-left font-medium text-muted-foreground last:border-r-0"
-        {...props}
-      >
-        {children}
-      </th>
+      <th className="border-r border-border px-4 py-2 text-left font-medium text-muted-foreground last:border-r-0" {...props}>{children}</th>
     ),
-
     td: ({ children, ...props }: React.PropsWithChildren<React.TdHTMLAttributes<HTMLTableCellElement>>) => (
-      <td
-        className="border-r border-border px-4 py-2 last:border-r-0"
-        {...props}
-      >
-        {children}
-      </td>
+      <td className="border-r border-border px-4 py-2 last:border-r-0" {...props}>{children}</td>
     ),
-
-    // Headings
     h1: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
-      <h1 className="text-2xl font-bold mt-6 mb-4" {...props}>
-        {children}
-      </h1>
+      <h1 className="text-2xl font-bold mt-6 mb-4" {...props}>{children}</h1>
     ),
     h2: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
-      <h2 className="text-xl font-bold mt-5 mb-3" {...props}>
-        {children}
-      </h2>
+      <h2 className="text-xl font-bold mt-5 mb-3" {...props}>{children}</h2>
     ),
     h3: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
-      <h3 className="text-lg font-semibold mt-4 mb-2" {...props}>
-        {children}
-      </h3>
+      <h3 className="text-lg font-semibold mt-4 mb-2" {...props}>{children}</h3>
     ),
     h4: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
-      <h4 className="font-semibold mt-3 mb-2" {...props}>
-        {children}
-      </h4>
+      <h4 className="font-semibold mt-3 mb-2" {...props}>{children}</h4>
     ),
     h5: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
-      <h5 className="font-semibold mt-3 mb-2" {...props}>
-        {children}
-      </h5>
+      <h5 className="font-semibold mt-3 mb-2" {...props}>{children}</h5>
     ),
     h6: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
-      <h6 className="font-semibold mt-3 mb-2" {...props}>
-        {children}
-      </h6>
+      <h6 className="font-semibold mt-3 mb-2" {...props}>{children}</h6>
     ),
-
-    // Links
     a: ({ children, href, ...props }: React.PropsWithChildren<{ href?: string }>) => (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-600 dark:text-blue-400 hover:underline"
-        {...props}
-      >
-        {children}
-      </a>
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline" {...props}>{children}</a>
     ),
-
-    // Lists
     ul: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLUListElement>>) => (
-      <ul className="list-disc pl-6 my-3 space-y-1" {...props}>
-        {children}
-      </ul>
+      <ul className="list-disc pl-6 my-3 space-y-1" {...props}>{children}</ul>
     ),
     ol: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLOListElement>>) => (
-      <ol className="list-decimal pl-6 my-3 space-y-1" {...props}>
-        {children}
-      </ol>
+      <ol className="list-decimal pl-6 my-3 space-y-1" {...props}>{children}</ol>
     ),
     li: ({ children, ...props }: React.PropsWithChildren<React.LiHTMLAttributes<HTMLLIElement>>) => (
       <li {...props}>{children}</li>
     ),
-
-    // Blockquote
     blockquote: ({ children, ...props }: React.PropsWithChildren<React.BlockquoteHTMLAttributes<HTMLQuoteElement>>) => (
-      <blockquote className="border-l-4 border-muted-foreground pl-4 py-1 my-3 italic" {...props}>
-        {children}
-      </blockquote>
+      <blockquote className="border-l-4 border-muted-foreground pl-4 py-1 my-3 italic" {...props}>{children}</blockquote>
     ),
-
-    // Horizontal rule
     hr: ({ ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHRElement>>) => (
       <hr className="my-6 border-border" {...props} />
     ),
-
-    // Emphasis
     em: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLElement>>) => (
       <em {...props}>{children}</em>
     ),
     strong: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLElement>>) => (
       <strong className="font-semibold" {...props}>{children}</strong>
     ),
+  };
+
+  // Components for rendering user messages (no special diagram logic)
+  const userMarkdownComponents = {
+    ...baseMarkdownComponents,
+    p: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => <p {...props}>{children}</p>,
+    code: ({ className, children, inline }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
+      if (inline) {
+        return <code className={`${className || ''} bg-muted px-1.5 py-0.5 rounded text-sm font-mono`}>{children}</code>;
+      }
+      return (
+        <pre className={`${className || ""} bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto`} style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}>
+          <code className={`${className || ''} bg-transparent p-0 text-sm font-mono`}>{children}</code>
+        </pre>
+      );
+    },
+  };
+
+  // Components for rendering bot messages (with diagram detection)
+  const botMarkdownComponents = {
+    ...baseMarkdownComponents,
+    p: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLParagraphElement>>) => {
+      const childrenArray = React.Children.toArray(children);
+      // This logic prevents paragraphs from wrapping a lone code block, which helps with styling.
+      if (childrenArray.length === 1 && React.isValidElement(childrenArray[0]) && (childrenArray[0].type === 'pre' || (childrenArray[0].type as any).name === 'MermaidDiagram')) {
+        return <>{childrenArray[0]}</>;
+      }
+      return <p {...props}>{children}</p>;
+    },
+    code: ({ className, children, inline }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
+      const match = /language-(\w+)/.exec(className || "");
+      const language = match ? match[1] : "";
+      if (inline) {
+        return <code className={`${className || ''} bg-muted px-1.5 py-0.5 rounded text-sm font-mono`}>{children}</code>;
+      }
+      
+      const content = String(children).trim();
+      
+      // Check for tagged mermaid blocks first
+      if (language.startsWith("mermaid")) {
+        return <MermaidDiagram chart={content} />;
+      }
+      
+      // Fallback for untagged code blocks that look like mermaid
+      const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph', 'erDiagram', 'timeline', 'mindmap'];
+      const isMermaid = mermaidKeywords.some(keyword => content.toLowerCase().startsWith(keyword.toLowerCase()));
+      
+      if (!language && isMermaid) {
+        return <MermaidDiagram chart={content} />;
+      }
+
+      // Default code block rendering
+      return (
+        <pre className={`${className || ""} bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto`} style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}>
+          <code className={`${className || ''} bg-transparent p-0 text-sm font-mono`}>{children}</code>
+        </pre>
+      );
+    },
   };
 
   return (
@@ -665,7 +583,7 @@ const GenkitChat: React.FC = () => {
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
                                 rehypePlugins={[rehypeHighlight]}
-                                components={markdownComponents}
+                                components={userMarkdownComponents}
                               >
                                 {typeof message.text === "string"
                                   ? message.text
@@ -682,7 +600,7 @@ const GenkitChat: React.FC = () => {
                                     ? (chunkIndex) => handleCitationClick(message.id, chunkIndex)
                                     : () => {} // Empty handler for non-citation text
                                 }
-                                components={markdownComponents}
+                                components={botMarkdownComponents}
                               />
                             ) : null}
 
