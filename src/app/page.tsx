@@ -422,6 +422,14 @@ const GenkitChat: React.FC = () => {
       if (childrenArray.length === 1 && React.isValidElement(childrenArray[0]) && (childrenArray[0].type === 'pre' || (childrenArray[0].type as any).name === 'MermaidDiagram')) {
         return <>{childrenArray[0]}</>;
       }
+      if (childrenArray.length === 1 && typeof childrenArray[0] === 'string') {
+        const text = childrenArray[0];
+        const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph', 'erDiagram', 'timeline', 'mindmap'];
+        const mermaidRegex = new RegExp(`(^|\\s)(${mermaidKeywords.join('|')})\\s+[\\s\\S]+`);
+        if (mermaidRegex.test(text)) {
+          return <MermaidDiagram chart={text} />;
+        }
+      }
       return <p {...props}>{children}</p>;
     },
     code: ({ className, children, inline }: React.PropsWithChildren<{ className?: string; inline?: boolean }>) => {
@@ -430,23 +438,10 @@ const GenkitChat: React.FC = () => {
       if (inline) {
         return <code className={`${className || ''} bg-muted px-1.5 py-0.5 rounded text-sm font-mono`}>{children}</code>;
       }
-      
-      const content = String(children).trim();
-      
-      // Check for tagged mermaid blocks first
       if (language.startsWith("mermaid")) {
-        return <MermaidDiagram chart={content} />;
+        const chartContent = String(children).replace(/\n$/, "");
+        return <MermaidDiagram chart={chartContent} id={`mermaid-${btoa(chartContent).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`} />;
       }
-      
-      // Fallback for untagged code blocks that look like mermaid
-      const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph', 'erDiagram', 'timeline', 'mindmap'];
-      const isMermaid = mermaidKeywords.some(keyword => content.toLowerCase().startsWith(keyword.toLowerCase()));
-      
-      if (!language && isMermaid) {
-        return <MermaidDiagram chart={content} />;
-      }
-
-      // Default code block rendering
       return (
         <pre className={`${className || ""} bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto`} style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}>
           <code className={`${className || ''} bg-transparent p-0 text-sm font-mono`}>{children}</code>
