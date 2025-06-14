@@ -28,7 +28,8 @@ const customJestConfig = {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(lucide-react|react-markdown|remark-.+|rehype-.+|unified|unist-.+|hast-.+|mdast-.+|micromark-.+|vfile|bail|trough|character-.+|is-plain-obj|decode-named-character-reference|ccount|comma-separated-tokens|property-information|space-separated-tokens)/.*)',
+    // Attempting a more targeted pattern for lucide-react's ESM path
+    'node_modules/(?!lucide-react/dist/esm/.*)',
     '^.+\\.module\\.(css|sass|scss)$',
   ],
 }
