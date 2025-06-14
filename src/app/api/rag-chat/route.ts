@@ -1,4 +1,5 @@
 import { documentQaStreamFlow, RagFlowInput } from "@/ai/flows/ragFlow";
+import { ToolInvocation } from "@/lib/chat-utils";
 import { withGenkitServer } from "@/lib/server";
 import {
   generateRagSessionId,
@@ -13,7 +14,7 @@ const UPLOADS_DIR = path.join(process.cwd(), "uploads"); // Define base uploads 
 // Define type for the final_response event payload
 interface FinalResponseData {
   response: string;
-  toolInvocations: any[]; // Always include this array, even if empty
+  toolInvocations: ToolInvocation[]; // Always include this array, even if empty
   sessionId: string;
 }
 
@@ -31,7 +32,7 @@ function formatSSE(event: string, data: string): string {
 async function ensureUploadsDir() {
   try {
     await fs.access(UPLOADS_DIR);
-  } catch (error) {
+  } catch {
     await fs.mkdir(UPLOADS_DIR, { recursive: true });
   }
 }
@@ -116,7 +117,7 @@ export async function POST(req: Request) {
     // Handle RAG chat queries (application/json)
     if (contentType.includes("application/json")) {
       try {
-        const { query, sessionId, modelId, history } = await req.json();
+        const { query, sessionId, modelId, history } = await req.json() as RagFlowInput;
 
         // Check if session ID is provided (required for RAG)
         if (!sessionId) {
@@ -223,7 +224,7 @@ export async function POST(req: Request) {
               
               // This handler will be passed to the Genkit flow.
               // It converts each event from the flow into an SSE-formatted chunk.
-              const streamHandler = (event: any) => {
+              const streamHandler = (event: { type: string; [key: string]: unknown }) => {
                 if (streamClosed) return;
 
                 // Map the flow's event types to the SSE event types the client expects.
@@ -238,7 +239,7 @@ export async function POST(req: Request) {
                 const eventType = eventMap[event.type];
                 if (eventType) {
                   // The data payload is the rest of the event object.
-                  const dataPayload = { ...event };
+                  const dataPayload: Record<string, unknown> = { ...event };
                   delete dataPayload.type; // Remove the type property as it's now the event name.
                   
                   const sseEvent = formatSSE(

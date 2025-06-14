@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { ComponentProps, useEffect, useMemo, useState } from "react";
 // Import Options type for component prop typing
 import ReactMarkdown, { Options as ReactMarkdownOptions } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import remarkGfm from "remark-gfm";
 
 interface ChatMessageContentProps {
-  text: string | string[] | { text?: string; [key: string]: any } | any; // Support various text formats
+  text: string | string[] | { text?: string; [key: string]: unknown } | unknown; // Support various text formats
   onCitationClick: (chunkIndexInSources: number) => void;
   // Add components prop to accept renderers from parent
   components?: ReactMarkdownOptions["components"];
@@ -13,6 +13,19 @@ interface ChatMessageContentProps {
 
 // Regex to find citations like [Source: annual_report.pdf, Chunk: 0]
 const citationRegex = /\[Source: (.*?), Chunk: (\d+)]/g;
+
+// custom code renderer to neutralise ```mermaid fences
+const CodeBlock: React.FC<ComponentProps<'code'>> = ({ className = '', children, ...props }) => {
+  const lang = className.replace(/language-/, '');
+  if (lang === 'mermaid') {
+    return (
+      <pre className="bg-muted p-2 rounded text-sm overflow-x-auto">
+        {children}
+      </pre>
+    );
+  }
+  return <code className={className} {...props}>{children}</code>;
+};
 
 const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   text,
@@ -22,39 +35,25 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   const [error, setError] = useState<Error | null>(null);
   const [renderedParts, setRenderedParts] = useState<JSX.Element[]>([]);
   
-  // custom code renderer to neutralise ```mermaid fences
-  const CodeBlock: React.FC<{className?: string; children: React.ReactNode}> = ({ className = '', children }) => {
-    const lang = className.replace(/language-/, '');
-    if (lang === 'mermaid') {
-      return (
-        <pre className="bg-muted p-2 rounded text-sm overflow-x-auto">
-          {typeof children === 'string' ? children : (children as any)[0]}
-        </pre>
-      );
-    }
-    return <code className={className}>{children}</code>;
-  };
-
-  // Use type assertion to fix type compatibility with react-markdown
-  const enhancedComponents = {
+  const enhancedComponents: ReactMarkdownOptions['components'] = useMemo(() => ({
     ...components,
     code: CodeBlock,
     // Use the type expected by react-markdown components
-    a: ({ node, href, children, ...props }: any) => {
+    a: ({ href, children, ...props }) => {
       // Open links in new tab and add proper security attributes
       return (
-        <a 
-          href={href} 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="text-blue-600 dark:text-blue-400 hover:underline" 
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 dark:text-blue-400 hover:underline"
           {...props}
         >
           {children}
         </a>
       );
     },
-  } as ReactMarkdownOptions['components'];
+  }), [components]);
   
   useEffect(() => {
     try {
@@ -72,43 +71,42 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         // Handle array of chunks (most common case for streaming responses)
         processedText = text.map(chunk => {
           if (typeof chunk === 'string') return chunk;
+          if (chunk && typeof chunk === 'object' && 'text' in chunk && typeof chunk.text === 'string') {
+            return chunk.text;
+          }
+          if (chunk && typeof chunk === 'object' && 'content' in chunk && typeof chunk.content === 'string') {
+            return chunk.content;
+          }
           if (chunk && typeof chunk === 'object') {
-            // Extract text property if available
-            return chunk.text || chunk.content || JSON.stringify(chunk);
+            return JSON.stringify(chunk);
           }
           return String(chunk || '');
         }).join('');
       } else if (text && typeof text === 'object') {
         // Handle object with text/content property
-        if ('text' in text && text.text) {
-          processedText = typeof text.text === 'string' ? text.text : String(text.text);
+        if ('text' in text && typeof text.text === 'string') {
+          processedText = text.text;
         } else if ('content' in text && text.content) {
           // Handle nested content array
           if (Array.isArray(text.content)) {
-            processedText = text.content.map((item: any) => 
-              typeof item === 'string' ? item : 
-              (item && typeof item === 'object' && item.text) ? item.text : 
+            processedText = text.content.map((item: unknown) =>
+              typeof item === 'string' ? item :
+              (item && typeof item === 'object' && 'text' in item && typeof item.text === 'string') ? item.text :
               JSON.stringify(item)
             ).join('');
           } else {
             processedText = String(text.content);
           }
-        } else if ('message' in text && text.message) {
+        } else if ('message' in text && text.message && typeof text.message === 'object') {
           // Handle message object structure
-          if (typeof text.message === 'string') {
-            processedText = text.message;
-          } else if (typeof text.message === 'object') {
-            if (Array.isArray(text.message.content)) {
-              processedText = text.message.content.map((item: any) => 
-                typeof item === 'string' ? item : 
-                (item && typeof item === 'object' && item.text) ? item.text : 
-                JSON.stringify(item)
-              ).join('');
-            } else {
-              processedText = String(text.message);
-            }
+          if ('content' in text.message && Array.isArray(text.message.content)) {
+            processedText = text.message.content.map((item: unknown) =>
+              typeof item === 'string' ? item :
+              (item && typeof item === 'object' && 'text' in item && typeof item.text === 'string') ? item.text :
+              JSON.stringify(item)
+            ).join('');
           } else {
-            processedText = JSON.stringify(text);
+            processedText = JSON.stringify(text.message);
           }
         } else {
           // If no recognizable properties, stringify the whole object
@@ -202,7 +200,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
       console.error("Error rendering markdown content:", err);
       setError(err instanceof Error ? err : new Error(String(err)));
     }
-  }, [text, onCitationClick, components]);
+  }, [text, onCitationClick, enhancedComponents]);
 
   // If there was an error rendering, show fallback content
   if (error) {

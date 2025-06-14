@@ -1,18 +1,19 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { normalizeText } from "@/components/ChatMessageContent";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChatMessage,
   ChatMode,
-  TemperaturePreset,
-  UploadedFile,
   DocumentData,
-  ToolInvocation,
   ParsedJsonData,
+  TemperaturePreset,
+  ToolInvocation,
+  UploadedFile,
 } from "@/types/chat";
 import { convertChatMessagesToHistory } from "@/utils/messageHistory";
+import { useCallback, useEffect, useRef, useState } from "react";
 // Corrected imports for custom hooks
-import { useChatMessages } from "@/hooks/chat/useChatMessages";
 import { useChatInputControls } from "@/hooks/chat/useChatInputControls";
+import { useChatMessages } from "@/hooks/chat/useChatMessages";
 import { useChatSession } from "@/hooks/chat/useChatSession";
 
 // Corrected import for streaming utilities
@@ -83,9 +84,7 @@ export function useChatManager({
   const { currentSessionId, setCurrentSessionId, startNewSession } =
     useChatSession();
   const { toast } = useToast();
-  const [finalizedMessageIds, setFinalizedMessageIds] = useState<Set<string>>(
-    new Set()
-  );
+  const finalizedMessageIds = useRef(new Set<string>());
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -97,9 +96,9 @@ export function useChatManager({
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.sender === "bot") {
-        const textLength =
-          typeof lastMessage.text === "string" ? lastMessage.text.length : 0;
-
+        if (typeof lastMessage.text === "string") {
+          // Placeholder for future logic
+        }
       }
     }
   }, [messages]);
@@ -187,10 +186,8 @@ export function useChatManager({
       const useRag = uploadedFiles.some((f) => f.status === "success");
       const apiUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
       // Check if the user message specifically asks to use context7
-      const shouldEnableContext7 =
-        userMessageText.toLowerCase().includes("context7") ||
-        userMessageText.toLowerCase().includes("library docs") ||
-        userMessageText.toLowerCase().includes("library documentation");
+      // The user message is already passed to the backend, where tool decisions are made.
+      // This client-side check is redundant.
 
       const requestBody = {
         query: userMessageText,
@@ -266,51 +263,45 @@ export function useChatManager({
           }
 
           // Log message content structure if present (Gemini format)
-          if (finalData.message && finalData.message.content) {
-            const contentType = Array.isArray(finalData.message.content)
-              ? "array"
-              : typeof finalData.message.content;
-            const contentLength = Array.isArray(finalData.message.content)
-              ? finalData.message.content.length
-              : "n/a";
-          }
+          // This block was for debugging and is no longer needed.
 
           updateBotMessageFromFinalResponse(botMessagePlaceholderId, finalData);
           // Mark this message ID as finalized
-          setFinalizedMessageIds((prev) =>
-            new Set(prev).add(botMessagePlaceholderId)
-          );
+          finalizedMessageIds.current.add(botMessagePlaceholderId);
         },
-        onStreamError: (errorMessage: any) => {
+        onStreamError: (error: string | Error | { toString: () => string }) => {
           // Enhanced defensive coding - handle both string error messages and error objects
-          let originalError = errorMessage;
+          const originalError = error;
+          let errorMessage = '';
           
           // Convert errors to strings with special handling for common issues
-          if (typeof errorMessage !== 'string') {
-            if (errorMessage instanceof Error) {
+          if (typeof error !== 'string') {
+            if (error instanceof Error) {
               // Standard Error object
-              errorMessage = errorMessage.message;
-            } else if (errorMessage && typeof errorMessage === 'object') {
+              errorMessage = error.message;
+            } else if (error && typeof error === 'object') {
               // Handle the specific 'Cannot read properties of undefined (reading 'name')' error
-              if (errorMessage.toString().includes("Cannot read properties of undefined (reading 'name')")) {
+              if (error.toString().includes("Cannot read properties of undefined (reading 'name')")) {
                 console.error('[useChatManager] Caught tool name access error, using defensive handler');
                 errorMessage = 'Error processing tool invocation: missing tool information';
               } else {
                 // Generic object error
-                errorMessage = String(errorMessage);
+                errorMessage = String(error);
               }
             } else {
               // Fallback for any other type
-              errorMessage = String(errorMessage || 'Unknown error');
+              errorMessage = String(error || 'Unknown error');
             }
             console.error('[useChatManager] Converted error object to string:', {
               originalError,
               stringMessage: errorMessage
             });
+          } else {
+            errorMessage = error;
           }
           // Extract relevant error details for better user feedback
-          let userFriendlyMessage = errorMessage;
-          let detailedLog: Record<string, any> = {
+          let userFriendlyMessage: string | React.ReactNode = errorMessage;
+          let detailedLog: Record<string, unknown> = {
             originalError: errorMessage,
           };
           let shouldHideError = false;
@@ -384,11 +375,12 @@ export function useChatManager({
               (m) => m.id === botMessagePlaceholderId
             );
             if (currentMessage) {
+              const currentText = normalizeText(currentMessage.text);
               // Don't add the note if we've already added it
-              if (!currentMessage.text.includes(recoveryNote)) {
+              if (!currentText.includes(recoveryNote)) {
                 updateBotMessageText(
                   botMessagePlaceholderId,
-                  currentMessage.text + recoveryNote
+                  currentText + recoveryNote
                 );
               }
             }
@@ -406,11 +398,11 @@ export function useChatManager({
       // Extract and format error details
       const errorMessage =
         typeof error === "object" && error !== null && "message" in error
-          ? (error as any).message
+          ? String((error as Error).message)
           : String(error);
 
       // Create structured error log
-      const errorLog: Record<string, any> = {
+      const errorLog: Record<string, unknown> = {
         message: "Error sending message (useChatManager): " + errorMessage,
         errorObject: error,
         sessionId: sessionIdToUse,
@@ -432,7 +424,7 @@ export function useChatManager({
         const currentMessage = messages.find(
           (m) => m.id === botMessagePlaceholderId
         );
-        const existingText = currentMessage ? currentMessage.text : "";
+        const existingText = currentMessage ? normalizeText(currentMessage.text) : "";
 
         // Always attempt to preserve content for JSON errors
         suppressErrorDisplay = true;
@@ -451,7 +443,7 @@ export function useChatManager({
                 "\n\n_Note: The response was truncated due to a technical issue._";
 
               // Only add the note if it's not already there
-              if (!existingText.includes(noteText)) {
+              if (typeof existingText === 'string' && !existingText.includes(noteText)) {
                 updateBotMessageText(
                   botMessagePlaceholderId,
                   existingText + noteText
@@ -470,7 +462,7 @@ export function useChatManager({
 
           // For backslash errors, try to fix the content
           try {
-            if (botMessagePlaceholderId && existingText) {
+            if (botMessagePlaceholderId && typeof existingText === 'string') {
               // Fix common backslash issues in the existing text
               const fixedText = existingText
                 .replace(/\\+$/, "") // Remove trailing backslashes
@@ -578,7 +570,6 @@ export function useChatManager({
     tavilyExtractEnabled,
     perplexitySearchEnabled,
     perplexityDeepResearchEnabled,
-    setUserInput,
     clearUserInput,
     setIsLoading,
     addUserMessage,
@@ -590,14 +581,16 @@ export function useChatManager({
     updateBotMessageFromFinalResponse,
     injectErrorIntoBotMessage,
     toast,
-    resetUploadedFiles,
+    messages,
+    context7GetLibraryDocsEnabled,
+    context7ResolveLibraryIdEnabled,
   ]);
 
   const clearChat = useCallback(() => {
     clearMessages();
     resetUploadedFiles();
     startNewSession();
-    setFinalizedMessageIds(new Set()); // Clear the finalized IDs on chat clear
+    finalizedMessageIds.current.clear(); // Clear the finalized IDs on chat clear
     toast({
       title: "Chat Cleared",
       description: "Ready for a new conversation.",

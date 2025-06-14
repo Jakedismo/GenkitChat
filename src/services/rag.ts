@@ -192,7 +192,7 @@ export async function processFileWithOfficeParser(
       const filePath = path.join(sessionDir, fileName);
       await fs.writeFile(filePath, fileBuffer);
       console.log(`File ${fileName} saved to ${filePath} for session ${sessionId}`);
-    } catch (saveError: any) {
+    } catch (saveError: unknown) {
       console.error(`Error saving file ${fileName} for session ${sessionId}:`, saveError);
       // Decide if this error should prevent indexing or be logged and ignored
       // For now, we'll let indexing proceed but log the error.
@@ -206,11 +206,12 @@ export async function processFileWithOfficeParser(
     } else {
       return { success: false, error: "Failed to index file document after parsing." };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(
       `Error in processFileWithOfficeParser for file '${file.name}' and session '${sessionId}':`,
-      error
+      error instanceof Error ? error.message : String(error)
     );
-    return { success: false, error: error.message || "An unknown error occurred during file processing." };
+    const message = error instanceof Error ? error.message : "An unknown error occurred during file processing.";
+    return { success: false, error: message };
   }
 }

@@ -25,7 +25,7 @@ interface ResponseAnalysis {
 /**
  * Analyzes a response object to identify potential truncation or formatting issues
  */
-export function analyzeResponse(response: any): ResponseAnalysis {
+export function analyzeResponse(response: unknown): ResponseAnalysis {
   // Default result structure
   const result: ResponseAnalysis = {
     totalLength: 0,
@@ -81,17 +81,18 @@ export function analyzeResponse(response: any): ResponseAnalysis {
   // Check if response is an object
   else if (typeof response === 'object') {
     result.structureInfo.isObject = true;
+    const res = response as Record<string, any>;
     
     // Check for nested content structure
-    if (response.content && Array.isArray(response.content)) {
+    if (res.content && Array.isArray(res.content)) {
       result.structureInfo.hasNestedContent = true;
-      result.structureInfo.contentPartCount = response.content.length;
+      result.structureInfo.contentPartCount = res.content.length;
       
       // Join all content parts to check total length
       let totalTextLength = 0;
-      response.content.forEach((part: any) => {
-        const partText = typeof part === 'string' ? part : 
-                       (part?.text || JSON.stringify(part));
+      res.content.forEach((part: unknown) => {
+        const partText = typeof part === 'string' ? part :
+                       (part && typeof part === 'object' && 'text' in part && typeof (part as { text: string }).text === 'string' ? (part as { text: string }).text : JSON.stringify(part));
         totalTextLength += partText.length;
       });
       
@@ -133,7 +134,7 @@ export function analyzeResponse(response: any): ResponseAnalysis {
 /**
  * Attempts to repair common truncation issues in responses
  */
-export function repairTruncatedResponse(response: any): any {
+export function repairTruncatedResponse(response: unknown): unknown {
   if (!response) return response;
   
   // Handle string responses
@@ -171,10 +172,10 @@ export function repairTruncatedResponse(response: any): any {
   }
   
   // Handle structured object with nested content
-  if (typeof response === 'object' && response.content && Array.isArray(response.content)) {
-    const joined = response.content.map((part: any) => 
-      typeof part === 'string' ? part : 
-      (part?.text || JSON.stringify(part))
+  if (typeof response === 'object' && 'content' in response && Array.isArray((response as { content: unknown[] }).content)) {
+    const joined = (response as { content: unknown[] }).content.map((part: unknown) =>
+      typeof part === 'string' ? part :
+      (part && typeof part === 'object' && 'text' in part && typeof (part as { text: string }).text === 'string' ? (part as { text: string }).text : JSON.stringify(part))
     ).join('');
     
     return repairTruncatedResponse(joined);
@@ -186,7 +187,7 @@ export function repairTruncatedResponse(response: any): any {
 /**
  * Logs detailed debug information about a response
  */
-export function logResponseDebugInfo(label: string, response: any): void {
+export function logResponseDebugInfo(label: string, response: unknown): void {
   const analysis = analyzeResponse(response);
   
   // Only log if there are issues that need attention
@@ -213,9 +214,11 @@ export function storeDebugResponse(key: string, response: ParsedJsonData): void 
   }
 }
 
-export default {
+const responseDebug = {
   analyzeResponse,
   repairTruncatedResponse,
   logResponseDebugInfo,
   storeDebugResponse
 };
+
+export default responseDebug;

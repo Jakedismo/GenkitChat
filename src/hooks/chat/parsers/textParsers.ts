@@ -5,12 +5,12 @@ import { safeDestr } from "destr";
  */
 interface FlexibleJsonResponse {
   text?: string;
-  parts?: Array<{text?: string} | string | any>;
+  parts?: Array<{text?: string} | string | unknown>;
   content?: {text?: string} | string;
-  message?: {content?: any; text?: string};
+  message?: {content?: unknown; text?: string};
   data?: {text?: string};
-  response?: any;
-  output?: any;
+  response?: unknown;
+  output?: unknown;
   value?: string;
 }
 
@@ -47,14 +47,15 @@ export function extractTextFromJsonResponse(jsonResponse: FlexibleJsonResponse):
     // Parts array structure (from chunked responses)
     let combinedText = "";
     for (const part of jsonResponse.parts) {
-      if (part && typeof part.text === 'string') {
-        combinedText += part.text;
+      if (part && typeof (part as { text: string }).text === 'string') {
+        combinedText += (part as { text: string }).text;
       } else if (part && typeof part === 'string') {
         // Handle case where part is directly a string
         combinedText += part;
       } else if (part && typeof part === 'object') {
         // Try to extract text from nested objects
-        const extractedText = part.content || part.value || part.data || JSON.stringify(part);
+        const p = part as Record<string, any>;
+        const extractedText = p.content || p.value || p.data || JSON.stringify(p);
         combinedText += typeof extractedText === 'string' ? extractedText : JSON.stringify(extractedText);
       }
     }
@@ -94,7 +95,7 @@ export function extractTextUsingRegex(payload: string): string | null {
   try {
     // Using regular exec instead of matchAll for ES2015 compatibility
     const regex = /"(?:text|content)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g;
-    let matches = [];
+    const matches = [];
     let match;
     while ((match = regex.exec(payload)) !== null) {
       matches.push(match);
@@ -115,8 +116,7 @@ export function extractTextUsingRegex(payload: string): string | null {
     }
     
     return allMatches || null;
-  } catch (e) {
-    console.error(`[textParsers] Regex extraction failed: ${e}`);
+  } catch {
     return null;
   }
 }
@@ -150,8 +150,7 @@ export function extractTextAdvanced(payload: string): string | null {
     }
     
     return extractedText || null;
-  } catch (e) {
-    console.warn(`[textParsers] Advanced text extraction failed: ${e}`);
+  } catch {
     return null;
   }
 }
@@ -165,7 +164,7 @@ export function extractTextManual(payload: string): string | null {
   }
   
   // Existing manual extraction for {"text":"..."}
-  let extracted = payload.substring('{"text":"'.length);
+  const extracted = payload.substring('{"text":"'.length);
   if (payload.endsWith('"}')) {
     return extracted.slice(0, -2); // Remove "}
   } else if (payload.endsWith('"')) {
@@ -192,7 +191,7 @@ export function extractTextLastResort(payload: string): string | null {
     }
     
     return extractedContent || null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -263,7 +262,7 @@ export function extractTextContent(payload: string, eventType: string): string {
         parsedSuccessfully = true;
         console.log(`[textParsers] Successfully parsed JSON text of length: ${textContent.length}`);
       }
-    } catch (e) {
+    } catch {
       // JSON parsing failed with sanitized payload
       const regexExtracted = extractTextUsingRegex(safePayload);
       if (regexExtracted) {

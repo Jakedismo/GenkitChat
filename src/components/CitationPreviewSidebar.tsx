@@ -34,7 +34,7 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   previewData,
 }) => {
   // PDF worker setup is handled globally by PdfWorkerSetup.tsx
-  const [numPages, setNumPages] = useState<number | null>(null);
+  useState<number | null>(null);
 
   // 📄 ENHANCED PDF COMPONENT DEBUG LOGGING
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
@@ -43,7 +43,6 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
     console.log('📄 Number of pages:', numPages);
     console.log('📄 PDF URL that worked:', previewData?.pdfUrl);
     console.log('📄 ===== PDF LOAD SUCCESS END =====');
-    setNumPages(numPages);
   };
 
   const onDocumentLoadError = (error: Error) => {

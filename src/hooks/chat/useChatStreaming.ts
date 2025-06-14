@@ -1,7 +1,6 @@
 "use client";
 
 import { DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
-import { unescapeMarkdown } from "../../utils/markdown"; // Import unescapeMarkdown
 import { processSseEvent } from "./handlers/sseEventHandlers";
 
 export interface StreamEventCallbacks {
@@ -68,7 +67,7 @@ export async function processStream(
       }
 
       const rawChunk = decoder.decode(value, { stream: true }); // stream: true is important for multi-byte characters
-      let normalizedChunk = rawChunk.replace(/\\n/g, "\n").replace(/\r/g, "");
+      const normalizedChunk = rawChunk.replace(/\\n/g, "\n").replace(/\r/g, "");
       buffer += normalizedChunk;
 
       let lineEndPos;

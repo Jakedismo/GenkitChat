@@ -6,7 +6,6 @@ import ChatMessageContent from "@/components/chat/ChatMessageContent";
 import FileUploadManager from "@/components/chat/FileUploadManager";
 import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
 import MermaidDiagram from "@/components/markdown/MermaidDiagram";
-import PdfWorkerSetup from "@/components/PdfWorkerSetup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,6 +33,11 @@ import remarkGfm from "remark-gfm";
 const CitationPreviewSidebar = dynamic(
   () => import("@/components/CitationPreviewSidebar"),
   { ssr: false },
+);
+
+const PdfWorkerSetup = dynamic(
+  () => import("@/components/PdfWorkerSetup"),
+  { ssr: false }
 );
 
 const GenkitChat: React.FC = () => {
@@ -180,6 +184,8 @@ const GenkitChat: React.FC = () => {
     availableOpenAIModels.length,
     selectedGeminiModelId,
     selectedOpenAIModelId,
+    setContext7GetLibraryDocsEnabled,
+    setContext7ResolveLibraryIdEnabled,
   ]);
 
   // Effect to clear animatedMessageIds when messages are cleared
@@ -405,7 +411,7 @@ const GenkitChat: React.FC = () => {
       );
     },
 
-    table: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    table: ({ children, ...props }: React.PropsWithChildren<React.TableHTMLAttributes<HTMLTableElement>>) => (
       <div className="overflow-x-auto">
         <table
           className="my-4 w-full border-collapse border border-border text-sm"
@@ -416,23 +422,23 @@ const GenkitChat: React.FC = () => {
       </div>
     ),
 
-    thead: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    thead: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableSectionElement>>) => (
       <thead className="bg-muted" {...props}>
         {children}
       </thead>
     ),
 
-    tbody: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    tbody: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableSectionElement>>) => (
       <tbody {...props}>{children}</tbody>
     ),
 
-    tr: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    tr: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableRowElement>>) => (
       <tr className="border-b border-border" {...props}>
         {children}
       </tr>
     ),
 
-    th: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    th: ({ children, ...props }: React.PropsWithChildren<React.ThHTMLAttributes<HTMLTableCellElement>>) => (
       <th
         className="border-r border-border px-4 py-2 text-left font-medium text-muted-foreground last:border-r-0"
         {...props}
@@ -441,7 +447,7 @@ const GenkitChat: React.FC = () => {
       </th>
     ),
 
-    td: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    td: ({ children, ...props }: React.PropsWithChildren<React.TdHTMLAttributes<HTMLTableCellElement>>) => (
       <td
         className="border-r border-border px-4 py-2 last:border-r-0"
         {...props}
@@ -451,32 +457,32 @@ const GenkitChat: React.FC = () => {
     ),
 
     // Headings
-    h1: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    h1: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
       <h1 className="text-2xl font-bold mt-6 mb-4" {...props}>
         {children}
       </h1>
     ),
-    h2: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    h2: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
       <h2 className="text-xl font-bold mt-5 mb-3" {...props}>
         {children}
       </h2>
     ),
-    h3: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    h3: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
       <h3 className="text-lg font-semibold mt-4 mb-2" {...props}>
         {children}
       </h3>
     ),
-    h4: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    h4: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
       <h4 className="font-semibold mt-3 mb-2" {...props}>
         {children}
       </h4>
     ),
-    h5: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    h5: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
       <h5 className="font-semibold mt-3 mb-2" {...props}>
         {children}
       </h5>
     ),
-    h6: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    h6: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
       <h6 className="font-semibold mt-3 mb-2" {...props}>
         {children}
       </h6>
@@ -496,37 +502,37 @@ const GenkitChat: React.FC = () => {
     ),
 
     // Lists
-    ul: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    ul: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLUListElement>>) => (
       <ul className="list-disc pl-6 my-3 space-y-1" {...props}>
         {children}
       </ul>
     ),
-    ol: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    ol: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLOListElement>>) => (
       <ol className="list-decimal pl-6 my-3 space-y-1" {...props}>
         {children}
       </ol>
     ),
-    li: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    li: ({ children, ...props }: React.PropsWithChildren<React.LiHTMLAttributes<HTMLLIElement>>) => (
       <li {...props}>{children}</li>
     ),
 
     // Blockquote
-    blockquote: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    blockquote: ({ children, ...props }: React.PropsWithChildren<React.BlockquoteHTMLAttributes<HTMLQuoteElement>>) => (
       <blockquote className="border-l-4 border-muted-foreground pl-4 py-1 my-3 italic" {...props}>
         {children}
       </blockquote>
     ),
 
     // Horizontal rule
-    hr: ({ ...props }) => (
+    hr: ({ ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHRElement>>) => (
       <hr className="my-6 border-border" {...props} />
     ),
 
     // Emphasis
-    em: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    em: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLElement>>) => (
       <em {...props}>{children}</em>
     ),
-    strong: ({ children, ...props }: React.PropsWithChildren<{}>) => (
+    strong: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLElement>>) => (
       <strong className="font-semibold" {...props}>{children}</strong>
     ),
   };
@@ -769,7 +775,7 @@ const GenkitChat: React.FC = () => {
                             </button>
                             <button
                               onClick={() => {
-                                const fixed = fixTruncatedMessage();
+                                fixTruncatedMessage();
                                 setRenderKey(Date.now());
                               }}
                               className="px-2 py-1 text-xs bg-muted text-muted-foreground hover:bg-muted/80 rounded"

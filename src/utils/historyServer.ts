@@ -22,11 +22,11 @@ export function trimHistoryServer(
   const trimmed: MessageData[] = [];
 
   for (let i = history.length - 1; i >= 0; i--) {
-    const msg = history[i];
-    const text = msg.content?.map((p) => (p as any).text || "").join("") ?? "";
-    const tokens = estimateTokenCount(text);
-    if (total + tokens > tokenLimit) break;
-    total += tokens;
+      const msg = history[i];
+      const text = msg.content?.map((p) => (p as { text: string }).text || "").join("") ?? "";
+      const tokens = estimateTokenCount(text);
+      if (total + tokens > tokenLimit) break;
+      total += tokens;
     trimmed.unshift(msg);
   }
 

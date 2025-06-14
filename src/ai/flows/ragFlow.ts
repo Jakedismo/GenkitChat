@@ -334,8 +334,9 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           logger.error('RAG assistant prompt object is not a function. Using query as prompt.');
           currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${docsForPrompt.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
         }
-      } catch (promptError: any) {
-        logger.error(`Error in prompt function: ${promptError.message || String(promptError)}. Using fallback prompt.`);
+      } catch (promptError: unknown) {
+        const message = promptError instanceof Error ? promptError.message : String(promptError);
+        logger.error(`Error in prompt function: ${message}. Using fallback prompt.`);
         currentPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${docsForPrompt.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
       }
 
@@ -376,9 +377,12 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const llmStream = aiInstance.generateStream(generateOptions);
  
       // Consume the stream to trigger the callbacks.
-      for await (const _chunk of llmStream.stream) {
+      for await (const chunk of llmStream.stream) {
         // The streamingCallback handles text chunks.
         // This loop drives the stream and allows for future in-loop processing if needed.
+        if (chunk) {
+          // Prevent unused variable warning
+        }
       }
 
       await flushToolBuffer();
@@ -463,7 +467,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           },
         });
 
-        for await (const _ of llmStreamResultFallback.stream) { /* consume stream */ }
+        for await (const chunk of llmStreamResultFallback.stream) { if (chunk) { /* consume stream */ } }
         const finalFallbackResponse = await llmStreamResultFallback.response;
         
         const fallbackResponseText = finalFallbackResponse.text;

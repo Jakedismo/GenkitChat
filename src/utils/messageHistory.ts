@@ -7,22 +7,6 @@ export interface MessageHistoryItem {
   content: Array<{ text: string }>;
 }
 
-// Model-specific token limits (conservative estimates with buffer for system prompts)
-const MODEL_TOKEN_LIMITS: Record<string, number> = {
-  // Gemini models
-  "googleAI/gemini-2.5-flash": 1000000,
-  "googleAI/gemini-2.5-pro": 1000000,
-
-  // OpenAI models
-  "openai/gpt-4.1": 1000000,
-  "openai/gpt-4.1-mini": 200000,
-  "openai/gpt-4.1-nano": 200000,
-  "openai/o4-mini": 200000,
-
-  // Default fallback
-  default: 8000,
-};
-
 // Configuration constants (can be made configurable via props if needed)
 const HISTORY_TOKEN_RATIO = 0.6; // Maximum percentage of context window to use for history
 const MAX_HISTORY_MESSAGES = 50; // Maximum number of messages to keep in history

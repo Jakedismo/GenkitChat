@@ -85,7 +85,7 @@ export function validatePromptDirectory(promptDir: string): PromptValidationResu
             referencedPartials.add(`${partialName}.prompt`);
           });
         }
-      } catch (_error) {
+      } catch {
         // Already handled above
       }
     }

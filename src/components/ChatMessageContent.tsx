@@ -1,19 +1,19 @@
-import React from 'react';
+import React, { ComponentType, ElementType, PropsWithChildren } from 'react';
 
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight'; // Assuming consistency with page.tsx
 import remarkGfm from 'remark-gfm';
 
 interface ChatMessageContentProps {
-  text: string | string[] | { text?: string; content?: string } | any;
+  text: string | string[] | { text?: string; content?: string } | unknown;
   // Callback when a citation is clicked.
   // `chunkIndexInSources` is the index within the message's `sources` array.
   onCitationClick: (chunkIndexInSources: number) => void;
-  components?: Record<string, React.ComponentType<any>>;
+  components?: Record<string, ComponentType<PropsWithChildren<unknown>>>;
 }
 
 // Helper function to normalize different text formats into a single string
-const normalizeText = (text: ChatMessageContentProps['text']): string => {
+export const normalizeText = (text: ChatMessageContentProps['text']): string => {
   if (typeof text === 'string') {
     return text;
   }
@@ -48,7 +48,7 @@ const normalizeText = (text: ChatMessageContentProps['text']): string => {
 
     // Handle 'parts' array within objects, applying the same logic
     if ('parts' in text && Array.isArray(text.parts)) {
-      return text.parts.map((part: any) => {
+      return text.parts.map((part: { text?: string; content?: string; value?: string; data?: string }) => {
         if (typeof part === 'string') return part;
         if (part && typeof part === 'object') {
           if (typeof part.text === 'string') return part.text;
@@ -71,7 +71,6 @@ const normalizeText = (text: ChatMessageContentProps['text']): string => {
 // It captures:
 // 1. The original file name (e.g., "annual_report.pdf")
 // 2. The chunk index (e.g., "0")
-const citationRegex = /\[Source: (.*?), Chunk: (\d+)]/g;
 
 const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   text,
@@ -130,7 +129,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   };
 
   // Recursively process any node (string, array, React element) for citations
-  const processNodeForCitations = (node: any, keyPrefix: string): React.ReactNode => {
+  const processNodeForCitations = (node: React.ReactNode, keyPrefix: string): React.ReactNode => {
     if (typeof node === 'string') {
       return processStringWithCitations(node, keyPrefix);
     } else if (Array.isArray(node)) {
@@ -140,7 +139,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         return Array.isArray(processedChild) ? processedChild : [processedChild];
       });
     } else if (React.isValidElement(node)) {
-      const childProps = node.props as any;
+      const childProps = node.props as { children?: React.ReactNode };
       let processedChildren: React.ReactNode | undefined = undefined;
       if (childProps && 'children' in childProps) {
         processedChildren = processNodeForCitations(childProps.children, `${keyPrefix}-child`);
@@ -156,15 +155,19 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   };
 
   // Factory for creating element renderers that process citations in their string children
-  const createElementRenderer = (ElementComponent: React.ElementType, elementTypePrefix: string) => {
-    return (props: any) => {
-      const { node, children, ...rest } = props;
+  const createElementRenderer = (ElementComponent: ElementType, elementTypePrefix: string): ComponentType<PropsWithChildren<unknown>> => {
+    const Renderer: React.FC<PropsWithChildren<unknown>> = (props) => {
+      const { children, ...rest } = props;
       const processed = processNodeForCitations(children, `${elementTypePrefix}-root`);
       return <ElementComponent {...rest}>{processed}</ElementComponent>;
     };
+    
+    const componentName = typeof ElementComponent === 'string' ? ElementComponent : (ElementComponent.displayName || ElementComponent.name || 'Component');
+    Renderer.displayName = `WithCitations(${componentName})`;
+    return Renderer;
   };
 
-  const customComponents: any = {
+  const customComponents: Record<string, ComponentType<PropsWithChildren<unknown>>> = {
     ...pageComponents, // Spread existing components from props
     p: createElementRenderer('p', 'p'),
     li: createElementRenderer('li', 'li'),

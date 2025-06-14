@@ -8,23 +8,25 @@ This project is a web-based chat interface built with Next.js and powered by Goo
 
 * **Multi-LLM Support:** Connects to and utilizes models from:
   * Google AI (Gemini family) via `@genkit-ai/googleai`
-  * OpenAI (GPT-4o, GPT-4o Mini, etc.) via `genkitx-openai`
-  * Note: Amazon Bedrock models are listed in the UI but not currently configured in Genkit.
+  * OpenAI (GPT-4.1, GPT-4.1 Mini, etc.) via `genkitx-openai`
 * **Multiple Chat Modes:**
   * **Direct Chat:** Interact directly with selected Gemini or OpenAI models.
   * **RAG Chat:** Upload PDF documents and query their content using Retrieval-Augmented Generation. Features two-stage retrieval with Google reranking model.
-* **PDF Processing:** Uses `officeparser` on the backend to extract text from uploaded PDF files.
+* **PDF Processing & Rendering:**
+  * Uses `@papra/lecture` on the backend to extract text from uploaded documents (PDF, DOCX, etc.).
+  * Client-side PDF rendering for citation previews using `react-pdf`.
+* **Citation Preview:** When a citation is clicked in a RAG response, a sidebar opens to display the relevant page of the source PDF with the cited text highlighted.
 * **DotPrompt Management:** System prompts are managed using Genkit's DotPrompt format (`.prompt` files) located in `src/ai/prompts/`, allowing for easier iteration and versioning of prompts.
 * **Genkit Framework:** Core logic managed by Genkit flows defined in `src/lib/genkit-instance.ts`. This includes configuration for DotPrompt loading.
 * **Model Context Protocol (MCP) Integration:**
   * Uses `genkitx-mcp` plugin to connect to external MCP servers.
   * To add an MCP Server:
-    1. Install necessary Genkit MCP plugin(s) (e.g., `npm install genkitx-mcp`).
-    2. In `src/lib/genkit-instance.ts`, import `mcpClient` from `genkitx-mcp`.
-    3. Configure a new `mcpClient` instance with a unique `name` and the `serverProcess` details (command and args) for your desired MCP server.
-    4. Add the configured client instance to the `plugins` array within the `genkit({...})` call.
+        1. Install necessary Genkit MCP plugin(s) (e.g., `npm install genkitx-mcp`).
+        2. In `src/lib/genkit-instance.ts`, import `mcpClient` from `genkitx-mcp`.
+        3. Configure a new `mcpClient` instance with a unique `name` and the `serverProcess` details (command and args) for your desired MCP server.
+        4. Add the configured client instance to the `plugins` array within the `genkit({...})` call.
   * Tools exposed by connected MCP servers are made available to LLMs (when specified in the `tools` array during generation/prompt definition).
-  * The UI displays connected server status (based on configuration) and lists available tools (currently hardcoded in `/api/tools`).
+  * The UI displays connected server status (based on configuration) and lists available tools.
 * **Streaming Responses:** LLM responses are streamed token-by-token to the UI for a fluid user experience.
 * **Markdown & Mermaid Rendering:** Chat responses are rendered as Markdown, including support for GitHub Flavored Markdown (GFM) and Mermaid diagram rendering.
 * **Tool Call Visualization:** When an LLM uses a tool (like Context7), the tool name, input payload, and output payload are displayed beneath the message.
@@ -45,6 +47,7 @@ This project is a web-based chat interface built with Next.js and powered by Goo
   * Express/Next.js Handler Plugin: `@genkit-ai/express` (Provides API route handlers)
 * **UI:** React, Tailwind CSS, shadcn/ui
 * **Markdown/Diagrams:** `react-markdown`, `remark-gfm`, `rehype-highlight`, `mermaid`
+* **PDF Handling:** `@papra/lecture` (backend text extraction), `react-pdf` & `pdfjs-dist` (client-side rendering)
 
 ## Getting Started
 
@@ -114,8 +117,8 @@ The application will start, initialize Genkit, load plugins (including starting 
 
 ## Usage
 
-1. **Select Chat Mode:** Choose between "RAG (Bedrock)", "Direct (Gemini)", or "Direct (OpenAI)".
-2. **Configure Models:** Select the desired LLM (Gemini, OpenAI, or Bedrock for RAG mode) and RAG endpoint (if applicable).
+1. **Select Chat Mode:** Choose between "RAG", "Direct (Gemini)", or "Direct (OpenAI)".
+2. **Configure Models:** Select the desired LLM (Gemini, OpenAI) and RAG endpoint (if applicable).
 3. **Adjust Parameters:** Set the "Creativity" preset and "Max Response Length".
 4. **Chat:** Type your message in the input box and press Enter or click "Send".
 5. **Observe:**
@@ -128,19 +131,21 @@ The application will start, initialize Genkit, load plugins (including starting 
 ## Project Structure
 
 * `src/app/`: Next.js App Router pages and API routes.
-  * `page.tsx`: The main chat UI component, handles file uploads.
+  * `page.tsx`: The main chat UI component, handles file uploads and citation sidebar logic.
   * `api/basic-chat/route.ts`: API endpoint for direct Gemini/OpenAI chat (streaming).
-  * `api/rag-chat/route.ts`: API endpoint handling both file uploads (for indexing via `officeparser`) and RAG queries (streaming).
-  * `api/tools/route.ts`: API endpoint to list available tools (currently hardcoded).
-* `src/lib/genkit-instance.ts`: Central location for Genkit initialization (including `promptDir` configuration for DotPrompts), plugin configuration, and flow definitions. Manages loading and execution of DotPrompts for basic chat modes.
-* `src/components/`: Reusable React UI components (shadcn/ui based).
-* `src/services/rag.ts`: Contains the core RAG logic, including text extraction via `officeparser`, chunking, indexing, retrieval, and reranking logic. Uses a DotPrompt file for its system prompt.
-* `src/ai/prompts/`: Contains `.prompt` files (using Genkit's DotPrompt format) that define system prompts for various chat functionalities (RAG, basic chat modes).
+  * `api/rag-chat/route.ts`: API endpoint handling both file uploads (for indexing via `@papra/lecture`) and RAG queries (streaming).
+  * `api/tools/route.ts`: API endpoint to list available tools.
+* `src/lib/genkit-instance.ts`: Central location for Genkit initialization, plugin configuration, and flow definitions.
+* `src/components/`: Reusable React UI components.
+  * `CitationPreviewSidebar.tsx`: Component for displaying PDF source previews.
+  * `PdfWorkerSetup.tsx`: Dynamically loaded component to configure the `react-pdf` worker.
+* `src/services/rag.ts`: Contains the core RAG logic, including text extraction via `@papra/lecture`, chunking, and indexing.
+* `src/ai/prompts/`: Contains `.prompt` files that define system prompts for various chat functionalities.
 * `src/ai/available-models.ts`: Static definitions of models available in the UI selectors.
 
 ## Notes & Future Work
 
-* **RAG Enhancement:** The current RAG implementation uses a simple keyword-based similarity score for reranking. This could be improved by integrating a more sophisticated reranker model (e.g., from Vertex AI or Cohere) if available through Genkit plugins or external APIs. Document processing currently focuses on PDFs via `officeparser`; support for other formats it handles (DOCX, PPTX, etc.) could be enabled.
+* **RAG Enhancement:** The current RAG implementation uses a simple keyword-based similarity score for reranking. This could be improved by integrating a more sophisticated reranker model (e.g., from Vertex AI or Cohere).
 * **Tool Listing:** The `/api/tools` endpoint currently returns a hardcoded list for Context7 because dynamically listing tools registered via MCP client plugins proved difficult without relying on the `genkit start` Reflection API.
 * **Session Storage:** Conversation history currently uses Genkit's default in-memory store. For production or multi-user scenarios, a persistent store (like Firestore via `@genkit-ai/firebase`) should be configured.
 * **Error Handling:** Error handling in API routes and frontend fetch calls is basic and could be enhanced.

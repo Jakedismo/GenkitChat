@@ -71,7 +71,7 @@ function formatSSE(event: string, data: string): string {
           // 2. Try to parse the sanitized data
           const parsedData = JSON.parse(sanitizedData);
           return `event: ${event}\ndata: ${JSON.stringify(parsedData)}\n\n`;
-        } catch (_sanitizeError: unknown) {
+        } catch {
 
           // 3. Try extracting just the response field with regex if it exists
           const responseMatch = sanitizedData.match(
@@ -245,7 +245,7 @@ export async function POST(request: Request) {
                     // Try to repair truncated content
                     finalResponseData.response = repairTruncatedResponse(
                       candidate.content.parts
-                    );
+                    ) as string;
                   }
                 } else {
                   finalResponseData.response = candidate.content?.text || "";
@@ -265,7 +265,7 @@ export async function POST(request: Request) {
                 );
                 finalResponseData.response = repairTruncatedResponse(
                   finalResponseData.response
-                );
+                ) as string;
               }
 
               // If we collected chunks during streaming, use them as a backup

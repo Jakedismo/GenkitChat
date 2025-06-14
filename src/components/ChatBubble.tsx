@@ -11,7 +11,7 @@ interface ChatBubbleProps {
  * Renders a single chat bubble with GitHub-flavoured markdown support.
  * Uses remark-gfm for tables, strikethrough, task-lists, etc.
  */
-const ChatBubble: React.FC<ChatBubbleProps> = ({ content, role }) => {
+const ChatBubble: React.FC<ChatBubbleProps> = ({ role, content }) => {
   return (
     <div
       className={`chat-bubble rounded-lg px-4 py-3 mb-3 whitespace-pre-wrap prose prose-slate dark:prose-invert max-w-full ${
@@ -21,7 +21,6 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ content, role }) => {
       }`}
     >
       <ReactMarkdown
-        children={content}
         remarkPlugins={[remarkGfm]}
         components={{
           a({href, children, ...props}) {
@@ -55,7 +54,9 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ content, role }) => {
             );
           },
         }}
-      />
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 };

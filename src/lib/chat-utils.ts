@@ -60,13 +60,13 @@ function mapTemperature(preset: "precise" | "normal" | "creative"): number {
 
 // Clean adapter: emit only pure text parts, filter JSON artefacts
 async function* adaptGenkitStream(
-  genkit: AsyncIterable<GenerateResponseChunk<unknown>>
+  genkitStream: AsyncIterable<GenerateResponseChunk<unknown>>
 ): AsyncIterable<{ text: string }> {
-  for await (const chunk of genkit) {
-    const c: any = chunk;
+  for await (const chunk of genkitStream) {
+    const c = chunk as Record<string, any>;
 
     // 1. GoogleAI / Gemini style
-    if (Array.isArray(c.message?.content)) {
+    if (c.message && Array.isArray(c.message.content)) {
       for (const part of c.message.content) {
         if (part?.text) yield { text: part.text };
       }
@@ -74,10 +74,12 @@ async function* adaptGenkitStream(
     }
 
     // 2. OpenAI delta style
-    const delta = c.choices?.[0]?.delta?.content;
-    if (delta) {
-      yield { text: delta };
-      continue;
+    if (c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content) {
+      const delta = c.choices[0].delta.content;
+      if (delta) {
+        yield { text: delta };
+        continue;
+      }
     }
 
     // 3. Generic text field (ensure not JSON artefact)
@@ -113,7 +115,6 @@ export async function initiateChatStream(
   
   // Prepare default system message in case prompt template fails
   const defaultSystemMessage: GenkitMessageData = {
-    // @ts-ignore Genkit types may not include 'system'
     role: "system",
     content: [
       {
@@ -121,7 +122,7 @@ export async function initiateChatStream(
           "When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks where appropriate.",
       },
     ],
-  } as any;
+  } as GenkitMessageData;
 
   // We'll decide the final system message after attempting to load the prompt template
   let systemMessage: GenkitMessageData | null = null;

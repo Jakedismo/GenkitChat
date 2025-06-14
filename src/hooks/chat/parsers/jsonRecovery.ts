@@ -266,7 +266,6 @@ export function characterByCharacterExtraction(payload: string): ParsedJsonData 
   
   startIdx += '"response":"'.length;
   let extractedContent = "";
-  let inString = true;
   let escaped = false;
   
   // Process the entire string character by character
@@ -277,11 +276,10 @@ export function characterByCharacterExtraction(payload: string): ParsedJsonData 
       escaped = true;
       continue;
     }
-    
     if (char === '"' && !escaped) {
-      inString = false;
       break; // End of string reached
     }
+    
     
     if (escaped) {
       // Handle escaped characters
@@ -396,14 +394,15 @@ export function extractTextChunksWithRegex(payload: string): ParsedJsonData | nu
 /**
  * Process nested JSON structures in the response
  */
-export function processNestedJson(jsonData: any): void {
+export function processNestedJson(jsonData: Record<string, unknown>): void {
+  const message = jsonData.message as Record<string, unknown> | undefined;
   // Check for raw message structure with content array
-  if (jsonData.message && jsonData.message.content && Array.isArray(jsonData.message.content)) {
-    console.log(`[jsonRecovery] Found message.content array with ${jsonData.message.content.length} items`);
+  if (message && typeof message === 'object' && message.content && Array.isArray(message.content)) {
+    console.log(`[jsonRecovery] Found message.content array with ${message.content.length} items`);
     try {
-      const contentParts = jsonData.message.content.map((part: any) => {
+      const contentParts = message.content.map((part: unknown) => {
         if (typeof part === 'string') return part;
-        if (part && typeof part === 'object' && part.text) return part.text;
+        if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') return part.text;
         return JSON.stringify(part);
       });
       const joinedContent = contentParts.join('');
@@ -417,14 +416,16 @@ export function processNestedJson(jsonData: any): void {
     }
   }
   // Check for candidates array structure
-  else if (jsonData.custom && jsonData.custom.candidates && Array.isArray(jsonData.custom.candidates) && jsonData.custom.candidates.length > 0) {
-    const candidate = jsonData.custom.candidates[0];
-    if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
-      console.log(`[jsonRecovery] Found candidate content parts array with ${candidate.content.parts.length} items`);
+  else if (jsonData.custom && typeof jsonData.custom === 'object' && Array.isArray((jsonData.custom as Record<string, unknown>).candidates) && ((jsonData.custom as Record<string, unknown>).candidates as unknown[]).length > 0) {
+    const customData = jsonData.custom as Record<string, unknown>;
+    const candidate = (customData.candidates as Record<string, unknown>[])[0];
+    if (candidate.content && (candidate.content as Record<string, unknown>).parts && Array.isArray((candidate.content as Record<string, unknown>).parts)) {
+      const parts = (candidate.content as Record<string, unknown>).parts as unknown[];
+      console.log(`[jsonRecovery] Found candidate content parts array with ${parts.length} items`);
       try {
-        const contentParts = candidate.content.parts.map((part: any) => {
+        const contentParts = parts.map((part: unknown) => {
           if (typeof part === 'string') return part;
-          if (part && typeof part === 'object' && part.text) return part.text;
+          if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') return part.text;
           return JSON.stringify(part);
         });
         const joinedContent = contentParts.join('');
@@ -451,9 +452,9 @@ export function processNestedJson(jsonData: any): void {
         console.log("[jsonRecovery] Extracted content from nested Tavily response.");
       } else if (nestedJson.message && nestedJson.message.content && Array.isArray(nestedJson.message.content)) {
         // Handle nested message structure
-        const contentParts = nestedJson.message.content.map((part: any) => {
+        const contentParts = nestedJson.message.content.map((part: unknown) => {
           if (typeof part === 'string') return part;
-          if (part && typeof part === 'object' && part.text) return part.text;
+          if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') return part.text;
           return JSON.stringify(part);
         });
         jsonData.response = contentParts.join('');
@@ -468,7 +469,7 @@ export function processNestedJson(jsonData: any): void {
 /**
  * Validates and ensures all required fields exist in the final response
  */
-export function validateFinalResponse(jsonData: any): void {
+export function validateFinalResponse(jsonData: Record<string, unknown>): void {
   // Ensure response is a string
   if (jsonData.response !== undefined) {
     if (typeof jsonData.response !== 'string') {
@@ -476,11 +477,11 @@ export function validateFinalResponse(jsonData: any): void {
     }
     
     // Check if the response appears truncated
-    const responseText = jsonData.response;
-    const isSuspiciousTruncation = 
-      responseText.endsWith('\\') || 
+    const responseText = jsonData.response as string;
+    const isSuspiciousTruncation =
+      responseText.endsWith('\\') ||
       responseText.endsWith('"') ||
-      responseText.endsWith('{') || 
+      responseText.endsWith('{') ||
       responseText.endsWith('[') ||
       (responseText.match(/```/g)?.length || 0) % 2 !== 0; // Unclosed code block
       
@@ -489,9 +490,10 @@ export function validateFinalResponse(jsonData: any): void {
     }
     
     // Try text() function extraction if response is empty
-    if (!jsonData.response && jsonData.message && typeof jsonData.message.text === 'function') {
+    const message = jsonData.message as Record<string, unknown> | undefined;
+    if (!jsonData.response && message && typeof message.text === 'function') {
       try {
-        const extractedText = jsonData.message.text();
+        const extractedText = message.text();
         if (extractedText && typeof extractedText === 'string') {
           jsonData.response = extractedText;
           console.log(`[jsonRecovery] Extracted text from message.text() function`);

@@ -47,7 +47,7 @@ export function handleSourcesEvent(
   callbacks: StreamEventCallbacks
 ): void {
   try {
-    const jsonData = safeDestr<any>(dataPayload);
+    const jsonData = safeDestr<{ sources?: { metadata?: Record<string, string>; content?: { text?: string }[] }[] }>(dataPayload);
     
     console.log('[sseEventHandlers] Raw sources payload:', dataPayload.substring(0, 200) + '...');
     
@@ -64,7 +64,7 @@ export function handleSourcesEvent(
       });
       
       const mappedSources = jsonData.sources.map(
-        (doc: any, index: number) => {
+        (doc: { metadata?: Record<string, string>; content?: { text?: string }[] | string, originalFileName?: string, fileName?: string, documentId?: string, chunkId?: string | number }, index: number) => {
           // Try multiple possible field names for filename and documentId
           const originalFileName = doc.metadata?.originalFileName ||
                                   doc.metadata?.fileName ||
@@ -76,12 +76,10 @@ export function handleSourcesEvent(
                            doc.documentId ||
                            `doc-${crypto.randomUUID()}`;
           
-          const chunkId = doc.metadata?.chunkId ||
-                         doc.chunkId ||
-                         index; // Use index as fallback for chunkId
+          const chunkId = parseInt(String(doc.metadata?.chunkId || doc.chunkId), 10) || index;
           
           const content = Array.isArray(doc.content)
-            ? doc.content.map((p: any) => p?.text || "").join("\n")
+            ? doc.content.map((p: { text?: string }) => p?.text || "").join("\n")
             : typeof doc.content === "string"
               ? doc.content
               : "";
@@ -239,7 +237,7 @@ export function handleFinalResponseEvent(
 
 
 
-    let jsonData: any;
+    let jsonData: ParsedJsonData | undefined;
     
     // Check if JSON appears to be truncated
     const isTruncated = !dataPayload.trim().endsWith('}') && !dataPayload.trim().endsWith('"}');
@@ -249,7 +247,7 @@ export function handleFinalResponseEvent(
     
     // Try direct parsing first with unescaped payload
     try {
-      jsonData = safeDestr<any>(unescapedPayload);
+      jsonData = safeDestr<ParsedJsonData>(unescapedPayload);
 
 
     } catch (parseError) {
@@ -266,7 +264,7 @@ export function handleFinalResponseEvent(
 
           callbacks.onFinalResponse({
             ...manualExtracted,
-            response: unescapeMarkdown(manualExtracted.response || "")
+            response: unescapeMarkdown(String(manualExtracted.response || ""))
           }, manualExtracted.sessionId || "");
           return;
         }
@@ -276,7 +274,7 @@ export function handleFinalResponseEvent(
 
           callbacks.onFinalResponse({
             ...charExtracted,
-            response: unescapeMarkdown(charExtracted.response || "")
+            response: unescapeMarkdown(String(charExtracted.response || ""))
           }, charExtracted.sessionId || "");
           return;
         }
@@ -287,7 +285,7 @@ export function handleFinalResponseEvent(
 
       
       try {
-        jsonData = safeDestr<any>(sanitizedPayload);
+        jsonData = safeDestr<ParsedJsonData>(sanitizedPayload);
 
       } catch (sanitizedError) {
         console.error(`[sseEventHandlers] Sanitized parsing also failed: ${sanitizedError}`);
@@ -298,7 +296,7 @@ export function handleFinalResponseEvent(
 
           callbacks.onFinalResponse({
             ...finalExtracted,
-            response: unescapeMarkdown(finalExtracted.response || "")
+            response: unescapeMarkdown(String(finalExtracted.response || ""))
           }, finalExtracted.sessionId || "");
           return;
         }
@@ -313,7 +311,7 @@ export function handleFinalResponseEvent(
       if (context7Data) {
         callbacks.onFinalResponse({
           ...context7Data,
-          response: unescapeMarkdown(context7Data.response || "")
+          response: unescapeMarkdown(String(context7Data.response || ""))
         });
         return;
       }
@@ -329,7 +327,7 @@ export function handleFinalResponseEvent(
       if (manualExtracted) {
         callbacks.onFinalResponse({
           ...manualExtracted,
-          response: unescapeMarkdown(manualExtracted.response || "")
+          response: unescapeMarkdown(String(manualExtracted.response || ""))
         }, manualExtracted.sessionId || "");
         return;
       }
@@ -338,7 +336,7 @@ export function handleFinalResponseEvent(
       if (charExtracted) {
         callbacks.onFinalResponse({
           ...charExtracted,
-          response: unescapeMarkdown(charExtracted.response || "")
+          response: unescapeMarkdown(String(charExtracted.response || ""))
         }, charExtracted.sessionId || "");
         return;
       }
@@ -353,25 +351,27 @@ export function handleFinalResponseEvent(
       return;
     }
     
-    // Process nested JSON structures
-    processNestedJson(jsonData);
-    
-    // Validate and ensure all required fields
-    validateFinalResponse(jsonData);
-    
-    console.log(
-      `[sseEventHandlers] Final response processing complete, text length: ${
-        typeof jsonData.response === 'string' ? jsonData.response.length : 'unknown'
-      }`
-    );
-    
-    callbacks.onFinalResponse(
-      {
-        ...jsonData,
-        response: unescapeMarkdown(jsonData.response || "")
-      },
-      (jsonData as ParsedJsonData).sessionId,
-    );
+    if (jsonData) {
+      // Process nested JSON structures
+      processNestedJson(jsonData);
+      
+      // Validate and ensure all required fields
+      validateFinalResponse(jsonData);
+      
+      console.log(
+        `[sseEventHandlers] Final response processing complete, text length: ${
+          typeof jsonData.response === 'string' ? jsonData.response.length : 'unknown'
+        }`
+      );
+      
+      callbacks.onFinalResponse(
+        {
+          ...jsonData,
+          response: unescapeMarkdown(String(jsonData.response || ""))
+        },
+        (jsonData as ParsedJsonData).sessionId,
+      );
+    }
   } catch (finalResponseError) {
     console.error(
       `[sseEventHandlers] Error processing final_response data: ${finalResponseError}`,

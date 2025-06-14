@@ -1,5 +1,5 @@
-import { SessionStore, SessionData } from 'genkit/beta'; // Or 'genkit/flow' if types moved
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { SessionData, SessionStore } from 'genkit/beta'; // Or 'genkit/flow' if types moved
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 
 // Define a directory to store session files.
@@ -7,7 +7,7 @@ import * as path from 'node:path';
 // and ideally outside your source control if sessions are temporary/dev-only.
 const SESSIONS_DIR = path.resolve(process.cwd(), '.genkit_sessions');
 
-export class JsonSessionStore<S = any> implements SessionStore<S> {
+export class JsonSessionStore<S = Record<string, unknown>> implements SessionStore<S> {
   private sessionsDir: string;
 
   constructor(sessionsDirectory: string = SESSIONS_DIR) {
@@ -53,8 +53,8 @@ export class JsonSessionStore<S = any> implements SessionStore<S> {
       }
       console.warn(`[JsonSessionStore] Data in ${filePath} does not match SessionData structure (missing id).`);
       return undefined;
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
         // File not found, which is normal for a new session ID
         return undefined;
       }

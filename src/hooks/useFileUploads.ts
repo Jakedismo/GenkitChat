@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast'; // Assuming useToast is correctly located
 import { UploadedFile } from '@/types/chat'; // Import shared type
+import { useCallback, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique file IDs
 // import { generateRagSessionId } from '@/services/rag'; // Optional: Only if needed for auto-generation
 
@@ -87,11 +87,11 @@ export function useFileUploads(
         let errorData: { 
           error?: string; 
           message?: string; 
-          details?: { 
+          details?: {
             invalidFiles?: string[] | string;
             allowedTypes?: string[];
-            [key: string]: any; 
-          } 
+            [key: string]: unknown;
+          }
         } = {};
         
         try {
