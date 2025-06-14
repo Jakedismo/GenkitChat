@@ -85,7 +85,7 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
       }
 
       const { textToHighlight } = previewData;
-      const escapedHighlightText = textToHighlight.replace(/[.*+?^${}()|[\]\]/g, '\$&');
+      const escapedHighlightText = textToHighlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(`(${escapedHighlightText})`, 'gi');
 
       return str.replace(regex, (match) => `<mark>${match}</mark>`);
