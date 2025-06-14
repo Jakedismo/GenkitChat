@@ -29,6 +29,95 @@ const empty = "./stubs/empty.js";
 export default {
   output: "standalone",
 
+  // Transpile specific packages that use ESM
+  transpilePackages: [
+    'bail',
+    'ccount',
+    'character-entities',
+    'character-entities-legacy',
+    'character-reference-invalid',
+    'comma-separated-tokens',
+    'decode-named-character-reference',
+    'devlop',
+    'escape-string-regexp',
+    'estree-util-is-identifier-name',
+    'hast-util-is-element',
+    'hast-util-to-jsx-runtime',
+    'hast-util-to-text',
+    'hast-util-whitespace',
+    'html-url-attributes',
+    'is-alphanumerical',
+    'is-decimal',
+    'is-hexadecimal',
+    'is-plain-obj',
+    'longest-streak',
+    'lowlight',
+    'lucide-react',
+    'markdown-table',
+    'mdast-util-find-and-replace',
+    'mdast-util-from-markdown',
+    'mdast-util-gfm',
+    'mdast-util-gfm-autolink-literal',
+    'mdast-util-gfm-footnote',
+    'mdast-util-gfm-strikethrough',
+    'mdast-util-gfm-table',
+    'mdast-util-gfm-task-list-item',
+    'mdast-util-mdx-expression',
+    'mdast-util-mdx-jsx',
+    'mdast-util-mdxjs-esm',
+    'mdast-util-phrasing',
+    'mdast-util-to-hast',
+    'mdast-util-to-markdown',
+    'mdast-util-to-string',
+    'micromark',
+    'micromark-core-commonmark',
+    'micromark-extension-gfm',
+    'micromark-extension-gfm-autolink-literal',
+    'micromark-extension-gfm-footnote',
+    'micromark-extension-gfm-strikethrough',
+    'micromark-extension-gfm-table',
+    'micromark-extension-gfm-tagfilter',
+    'micromark-extension-gfm-task-list-item',
+    'micromark-factory-destination',
+    'micromark-factory-label',
+    'micromark-factory-space',
+    'micromark-factory-title',
+    'micromark-factory-whitespace',
+    'micromark-util-character',
+    'micromark-util-chunked',
+    'micromark-util-classify-character',
+    'micromark-util-combine-extensions',
+    'micromark-util-decode-numeric-character-reference',
+    'micromark-util-decode-string',
+    'micromark-util-encode',
+    'micromark-util-html-tag-name',
+    'micromark-util-normalize-identifier',
+    'micromark-util-resolve-all',
+    'micromark-util-sanitize-uri',
+    'micromark-util-subtokenize',
+    'property-information',
+    'react-markdown',
+    'rehype-highlight',
+    'remark-gfm',
+    'remark-parse',
+    'remark-rehype',
+    'remark-stringify',
+    'space-separated-tokens',
+    'stringify-entities',
+    'trim-lines',
+    'trough',
+    'unified',
+    'unist-util-find-after',
+    'unist-util-is',
+    'unist-util-position',
+    'unist-util-stringify-position',
+    'unist-util-visit',
+    'unist-util-visit-parents',
+    'vfile',
+    'vfile-message',
+    'zwitch',
+  ],
+
   // Turbopack configuration ──────────────────────────────────────────
   turbopack: {
     resolveAlias: {
@@ -68,92 +157,6 @@ export default {
       "@opentelemetry/exporter-jaeger": { browser: empty },
     },
   },
-
-  // WEBPACK CONFIGURATION - COMMENTED OUT FOR TURBOPACK MIGRATION
-  // ──────────────────────────────────────────────────────────────────
-  // The following webpack configuration has been disabled as part of the
-  // webpack-to-turbopack migration. It is preserved for potential rollback
-  // if turbopack compatibility issues arise.
-  //
-  // Original webpack optimizations handled:
-  // - Canvas module replacement for react-pdf compatibility
-  // - Server-side pdfjs-dist legacy build aliasing
-  // - Node.js core module fallbacks for browser builds
-  // - Optimization settings to prevent variable hoisting issues
-  //
-  /*
-  webpack: (config, { isServer, webpack }) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      canvas: path.resolve(__dirname, 'src/stubs/empty.js'),
-    };
-
-    if (isServer) {
-      // Use legacy build of pdfjs-dist for SSR to avoid browser-specific API errors
-      // Ensure the path to pdf.js is correct based on your project structure
-      config.resolve.alias['pdfjs-dist/build/pdf.mjs'] = path.resolve(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.js');
-    }
-
-    if (!isServer) {
-      // For react-pdf to prevent issues with canvas module resolution on client-side
-      // Using NormalModuleReplacementPlugin for 'canvas'
-      config.plugins.push(
-        new webpack.NormalModuleReplacementPlugin(
-          /canvas/,
-          path.resolve(process.cwd(), 'src/stubs/empty.js') // Use absolute path to stub
-        )
-      );
-      
-      // Remove the direct alias for canvas as the plugin handles it more robustly
-      // if (config.resolve.alias && config.resolve.alias.canvas) {
-      //   delete config.resolve.alias.canvas;
-      // }
-
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-        dns: false,
-        child_process: false,
-        async_hooks: false,
-        dgram: false,
-        http2: false,
-        "fs/promises": false,
-        http: false,
-        https: false,
-        os: false,
-        path: false,
-        stream: false,
-        crypto: false,
-        zlib: false,
-        util: false,
-        assert: false,
-        events: false,
-        url: false,
-        buffer: false,
-        querystring: false,
-        "@opentelemetry/exporter-jaeger": false,
-      };
-    }
-    
-    // Adjust optimization settings to help with initialization order issues
-    if (!config.optimization) {
-      config.optimization = {};
-    }
-    
-    // Prevent variable hoisting issues
-    if (!config.optimization.minimizer) {
-      config.optimization.minimizer = [];
-    }
-    
-    // Update terser options to preserve variable initialization order
-    config.optimization.usedExports = false;
-    config.optimization.sideEffects = false;
-    
-    return config;
-  },
-  */
 
   // Ignore ESLint errors and type checking during build
   eslint: {

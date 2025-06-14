@@ -1,11 +1,11 @@
-import React from 'react';
-import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
+import React from 'react';
 // Assuming SidebarGroup and SidebarGroupLabel are correctly exported from your main sidebar component.
 // If not, you might need to replace them with appropriate JSX or ensure they are exported.
 import { SidebarGroup, SidebarGroupLabel } from '@/components/ui/sidebar/index'; // Explicitly point to index
-import { Server } from 'lucide-react';
 import { ConnectedServer } from '@/types/chat'; // Import shared types
+import { Server } from 'lucide-react';
 
 // Local type definitions removed, using shared types now.
 
@@ -34,13 +34,13 @@ const ServerStatusDisplay: React.FC<ServerStatusDisplayProps> = ({
                )}>{server.status}</span>
             </div>
             {server.status === 'Connected' && (
-              <ul className="list-disc list-inside pl-4 text-xs text-muted-foreground space-y-1">
+              <ul key={`${server.name}-tools`} className="list-disc list-inside pl-4 text-xs text-muted-foreground space-y-1">
                 {server.tools.length > 0 ? (
                   server.tools.map(tool => (
                     <li key={tool.name} title={tool.description}>{tool.name}</li>
                   ))
                 ) : (
-                  <li>No tools listed for this server.</li>
+                  <li key="no-tools">No tools listed for this server.</li>
                 )}
               </ul>
             )}
