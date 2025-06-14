@@ -29,7 +29,7 @@ const customJestConfig = {
   },
   transformIgnorePatterns: [
     // Attempting a more targeted pattern for lucide-react's ESM path
-    'node_modules/(?!lucide-react/dist/esm/.*)',
+    'node_modules/(?!(lucide-react/dist/esm)/)',
     '^.+\\.module\\.(css|sass|scss)$',
   ],
 }
