@@ -1,0 +1,28 @@
+/* Highlight Style Classes */
+
+/* Default yellow highlight */
+.pdf-viewer-container [data-pdf-highlight="true"] {
+  background-color: rgba(255, 255, 0, 0.3);
+  transition: background-color 0.2s ease-in-out;
+}
+
+/* Style-specific highlights */
+.highlight-style-red [data-pdf-highlight="true"] {
+  background-color: rgba(255, 205, 210, 0.4) !important;
+}
+
+.highlight-style-green [data-pdf-highlight="true"] {
+  background-color: rgba(200, 230, 201, 0.4) !important;
+}
+
+.highlight-style-blue [data-pdf-highlight="true"] {
+  background-color: rgba(187, 222, 251, 0.4) !important;
+}
+
+.highlight-style-purple [data-pdf-highlight="true"] {
+  background-color: rgba(225, 190, 231, 0.4) !important;
+}
+
+.highlight-style-orange [data-pdf-highlight="true"] {
+  background-color: rgba(255, 224, 178, 0.4) !important;
+}

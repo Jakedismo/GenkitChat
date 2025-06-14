@@ -1,8 +1,8 @@
 // src/ai/validatePrompts.ts
 // Utility to validate prompt files and partials are correctly loaded
 
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface PromptValidationResult {
   success: boolean;

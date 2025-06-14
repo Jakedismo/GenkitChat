@@ -1,5 +1,5 @@
-import { getCapabilities } from "@/ai/modelCapabilities";
 import type { MessageData } from "@genkit-ai/ai";
+import { getCapabilities } from "../ai/modelCapabilities";
 
 // Very light token estimator – ~4 characters per token
 function estimateTokenCount(text: string): number {

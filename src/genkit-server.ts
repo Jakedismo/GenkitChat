@@ -8,18 +8,18 @@ import {
 } from "@genkit-ai/dev-local-vectorstore";
 import { startFlowServer } from "@genkit-ai/express"; // For serving flows
 import { googleAI } from "@genkit-ai/googleai";
-import { availableGeminiModels, availableOpenAIModels } from "./ai/available-models"; // Import available models for validation
 import { vertexAI } from "@genkit-ai/vertexai"; // Import Vertex AI for reranking
 import { vertexAIRerankers } from "@genkit-ai/vertexai/rerankers"; // Added for Vertex AI Reranker
-import fs from 'fs'; // Add fs import for file system operations
+import * as fs from 'fs'; // Add fs import for file system operations
 import { genkit } from "genkit"; // Use stable import for genkit
 import { logger } from "genkit/logging"; // Added for log level
 import { mcpClient } from "genkitx-mcp"; // Import MCP client for Context7
 import { openAI } from "genkitx-openai";
-import path from "path"; // Add path import for absolute path resolution
+import * as path from "path"; // Add path import for absolute path resolution
+import { availableGeminiModels, availableOpenAIModels } from "./ai/available-models"; // Import available models for validation
 import { perplexityPlugin } from "./ai/plugins/perplexity-plugin"; // Import local Perplexity plugin
 import { tavilyPlugin } from "./ai/plugins/tavily-plugin"; // Import custom Tavily plugin
-import { validateAssistantIntroPartial, validatePromptDirectory } from "./ai/validatePrompts"; // Import prompt validation functions
+import { validatePromptDirectory } from "./ai/validatePrompts"; // Import prompt validation functions
 
 // We'll define flow instances below after aiInstance is initialized
 

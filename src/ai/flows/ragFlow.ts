@@ -1,7 +1,3 @@
-import { getCapabilities } from '@/ai/modelCapabilities';
-import { aiInstance, ragRetrieverRef } from '@/genkit-server';
-import { CitationMeta } from '@/types/chat';
-import { trimHistoryServer } from '@/utils/historyServer';
 import {
   DocumentData,
   MessageData,
@@ -12,10 +8,36 @@ import {
 import { logger } from 'genkit/logging';
 import { Document } from 'genkit/retriever';
 import { z } from 'zod';
+import { aiInstance, ragRetrieverRef } from '../../genkit-server';
+import { CitationMeta, HighlightCoordinates } from '../../types/chat';
+import { convertChunkPositionToHighlightCoordinates } from '../../utils/coordinateUtils'; // Added import
+import { trimHistoryServer } from '../../utils/historyServer';
+import { getCapabilities } from '../modelCapabilities';
+
+/**
+ * Enhanced citation metadata including coordinate information for PDF highlighting
+ */
+export interface EnhancedCitationMeta extends CitationMeta {
+  /** Whether coordinate data is available for this citation */
+  hasCoordinateData?: boolean;
+  /** Method used for text extraction (server or client-side) */
+  textExtractionMethod?: 'server' | 'client' | 'none';
+  /** Total number of pages in the document */
+  totalPages?: number;
+  /** Precise coordinate data for highlighting text */
+  highlightCoordinates?: HighlightCoordinates[];
+  /** Processing statistics for debugging and performance analysis */
+  processingStats?: {
+    textExtractionTime?: number;
+    coordinatesComputeTime?: number;
+    chunksWithCoordinates?: number;
+    totalChunks?: number;
+  };
+}
 
 // Define the structure for events yielded by generateRagResponseStream
 export type RagStreamEvent =
-  | { type: 'sources'; sources: (Document & { metadata: CitationMeta })[] }
+  | { type: 'sources'; sources: (Document & { metadata: EnhancedCitationMeta })[] }
   | { type: 'text'; text: string }
   | {
       type: 'tool_invocation';
@@ -35,8 +57,48 @@ export type RagStreamEvent =
     }
   | { type: 'error'; error: string };
 
+// Define EnhancedCitationMeta properties for Zod validation
+const EnhancedCitationMetaSchema = z.object({
+  // Base CitationMeta fields
+  documentId: z.string(),
+  chunkId: z.union([z.string(), z.number()]),
+  fileName: z.string(),
+  pageNumber: z.union([z.number(), z.string(), z.undefined()]),
+  textToHighlight: z.string().optional(),
+  // Enhanced fields
+  hasCoordinateData: z.boolean().optional(),
+  textExtractionMethod: z.enum(['server', 'client', 'none']).optional(),
+  totalPages: z.number().optional(),
+  highlightCoordinates: z.array(z.any()).optional(),
+  processingStats: z.object({
+    textExtractionTime: z.number().optional(),
+    coordinatesComputeTime: z.number().optional(),
+    chunksWithCoordinates: z.number().optional(),
+    totalChunks: z.number().optional()
+  }).optional()
+});
+
+// Type guard to check if an object is a valid EnhancedCitationMeta
+function isEnhancedCitationMeta(obj: any): obj is EnhancedCitationMeta {
+  return obj &&
+         typeof obj === 'object' &&
+         (typeof obj.documentId === 'string' || obj.documentId === undefined) &&
+         (typeof obj.chunkId === 'string' || typeof obj.chunkId === 'number' || obj.chunkId === undefined) &&
+         (typeof obj.fileName === 'string' || obj.fileName === undefined);
+}
+
+// Define a type for Document with enhanced metadata
+const DocumentWithEnhancedMetadataSchema = z.custom<Document>().and(
+  z.object({
+    metadata: EnhancedCitationMetaSchema
+  })
+);
+
 export const RagStreamEventSchemaZod = z.union([
-  z.object({ type: z.literal('sources'), sources: z.array(z.custom<Document>()) }),
+  z.object({
+    type: z.literal('sources'),
+    sources: z.array(DocumentWithEnhancedMetadataSchema)
+  }),
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({
     type: z.literal('tool_invocation'),
@@ -277,31 +339,66 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           topDocs = filteredDocs;
           logger.info(`Using all ${topDocs.length} documents (no reranking needed) for session ${sessionId}.`);
         }
-        // Enrich documents with structured metadata and send to the client.
-        const enrichedDocs = topDocs.map((doc, index): Document & { metadata: CitationMeta } => {
+        // Enrich documents with enhanced metadata and send to the client.
+        const enrichedDocs = topDocs.map((doc, index): Document & { metadata: EnhancedCitationMeta } => {
           const metadata = doc.metadata || {};
-          const citationMeta: CitationMeta = {
+          const textContent = doc.content.map(part => ('text' in part ? part.text : '')).join('');
+          
+          // Use the new general 'position' field from metadata to generate highlightCoordinates for the citation.
+          // The original, more precise 'highlightCoordinates' (if any) are still in metadata for other uses.
+          const citationHighlightCoordinates = convertChunkPositionToHighlightCoordinates(
+            metadata.position, // This is the new general chunk bounding box
+            textContent
+          );
+
+          const hasGeneralPositionData = !!metadata.position;
+          
+          // Create citation metadata with enhanced PDF properties
+          const citationBase: CitationMeta = {
             documentId: metadata.documentId || 'unknown-doc-id',
             chunkId: index, // Use the numerical index as the chunkId
             fileName: metadata.originalFileName || 'Unknown Source',
             pageNumber: metadata.pageNumber,
+            textToHighlight: textContent, // Default to full chunk text for highlighting if using general position
           };
-          const textContent = doc.content.map(part => ('text' in part ? part.text : '')).join('');
+          
+          // Add enhanced PDF properties
+          const enhancedCitationMeta = {
+            ...citationBase,
+            hasCoordinateData: hasGeneralPositionData, // Based on the general position data
+            textExtractionMethod: metadata.textExtractionMethod || 'none',
+            totalPages: metadata.totalPages,
+            highlightCoordinates: citationHighlightCoordinates, // Use coordinates derived from general position
+            processingStats: metadata.processingStats
+          } as EnhancedCitationMeta;
+          
           // Re-create the document to ensure it's a clean instance with the new metadata.
-          const newDoc = Document.fromText(textContent, citationMeta);
-          return newDoc as Document & { metadata: CitationMeta };
+          const newDoc = Document.fromText(textContent, enhancedCitationMeta);
+          return newDoc as Document & { metadata: EnhancedCitationMeta };
         });
 
         sendChunk({ type: 'sources', sources: enrichedDocs });
       }
 
-      // Create a version of the documents for the prompt, with citation markers.
+      // Create a version of the documents for the prompt, with enhanced citation markers.
       const docsForPrompt = topDocs.map((doc, index) => {
         const metadata = doc.metadata || {};
         const fileName = metadata.originalFileName || 'Unknown Source';
         const chunkId = index; // Use the numerical index
-        const citationMarker = `[Source: ${fileName}, Chunk: ${chunkId}]`;
+        const pageNumber = metadata.pageNumber || 'unknown';
+        // For the prompt, indicate if general position data is available.
+        const hasGeneralPositionData = !!metadata.position;
+        
+        // Enhanced citation marker includes page number and coordinate availability
+        const citationMarker = `[Source: ${fileName}, Chunk: ${chunkId}, Page: ${pageNumber}${hasGeneralPositionData ? ', Has Coordinates: yes' : ''}]`;
+        
         const textContent = doc.content.map(part => ('text' in part ? part.text : '')).join('');
+        
+        // Log citation details for debugging
+        if (hasGeneralPositionData) {
+          logger.debug(`Enhanced citation for prompt (chunk ${chunkId}): ${fileName} (page ${pageNumber}) with general position data.`);
+        }
+        
         return Document.fromText(
           `${citationMarker}\n${textContent}`,
           metadata
@@ -311,8 +408,34 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       const modelToUseKey = createModelKey(modelId);
       
       // Use centralised history trimming util for consistency
-      const rawHistory: MessageData[] = incomingHistory || [{ role: 'user', content: [{ text: query }] }];
-      const history = trimHistoryServer(rawHistory, modelId);
+      // Ensure the history is properly typed before passing to trimHistoryServer
+      let historyToUse: MessageData[];
+      
+      if (incomingHistory && incomingHistory.length > 0) {
+        // Map the incoming history to ensure it matches the MessageData structure
+        historyToUse = incomingHistory.map((msg): MessageData => {
+          // msg is of type: { role: "user" | "model"; content: { text: string; }[] }
+          return {
+            role: msg.role, // msg.role is guaranteed to be 'user' or 'model'
+            content: msg.content.map(c => { // c is of type: { text: string }
+              return {
+                text: c.text
+                // 'custom' is optional in Part, and not present in source 'c', so omit.
+              };
+            }),
+            metadata: {} // 'metadata' is optional in MessageData, provide default.
+          };
+        });
+      } else {
+        // Default history if none provided
+        historyToUse = [{
+          role: 'user' as const,
+          content: [{ text: query }],
+          metadata: {}
+        }];
+      }
+      
+      const history = trimHistoryServer(historyToUse, modelId);
 
       // Render the prompt to MessageData[] with defensive checks
       let currentPromptMessages: MessageData[];
@@ -412,11 +535,25 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           const ragAssistantPromptObjectFallback = await aiInstance.prompt('rag_assistant');
           if (typeof ragAssistantPromptObjectFallback === 'function') {
               // Ensure docs have proper structure before passing to prompt
-              const safeDocs = topDocs.map(doc => ({
-                ...doc,
-                content: doc.content || [{ text: 'No content available' }],
-                metadata: doc.metadata || {}
-              }));
+              // and preserve any enhanced metadata for coordinate highlighting
+              const safeDocs = topDocs.map(doc => {
+                const metadata = doc.metadata || {};
+                // Make sure all enhanced metadata fields are preserved
+                const enhancedMetadata = {
+                  ...metadata,
+                  hasCoordinateData: metadata.hasCoordinateData || false,
+                  textExtractionMethod: metadata.textExtractionMethod || 'none',
+                  totalPages: metadata.totalPages,
+                  highlightCoordinates: metadata.highlightCoordinates,
+                  processingStats: metadata.processingStats
+                };
+                
+                return {
+                  ...doc,
+                  content: doc.content || [{ text: 'No content available' }],
+                  metadata: enhancedMetadata
+                };
+              });
               
               const result = await ragAssistantPromptObjectFallback(
                 { query, documents: safeDocs },

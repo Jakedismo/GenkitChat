@@ -42,12 +42,25 @@ export interface DocumentData {
 
 export type CitationMeta = {
   documentId: string;
-  chunkId: number;
+  chunkId: number; // Can be string (from RAG flow) or number (from UI)
   fileName: string;
-  originalFileName?: string; // Added for fallback
+  originalFileName?: string;
   pageNumber?: number;
-  content?: string;
-  textToHighlight?: string;
+  content?: string; // The raw chunk content
+  textToHighlight?: string; // Specific text snippet to highlight or search for
+
+  // Fields from EnhancedCitationMeta (backend)
+  hasCoordinateData?: boolean;
+  textExtractionMethod?: 'ocr' | 'native' | 'server' | 'client' | 'none';
+  totalPages?: number;
+  highlightCoordinates?: HighlightCoordinates[]; // Array of precise coordinates
+  processingStats?: {
+    textExtractionTime?: number;
+    coordinateComputationTime?: number;
+    chunkingTime?: number;
+  };
+  // Add any other fields from EnhancedDocumentMetadata that might be useful on the frontend
+  // e.g., confidence scores, alternative text versions, etc.
 };
 
 // Represents a tool invocation within a chat message
@@ -66,6 +79,55 @@ export interface ChatMessage {
   sources?: CitationMeta[]; // For RAG: stores the source documents used for this bot message
 }
 
+/**
+ * Represents a rectangular coordinate region within a PDF page
+ * Used for precise positioning of highlights and annotations
+ */
+export interface PdfRect {
+  /** X coordinate (left edge) in PDF coordinate system */
+  x: number;
+  /** Y coordinate (bottom edge) in PDF coordinate system */
+  y: number;
+  /** Width of the rectangle */
+  width: number;
+  /** Height of the rectangle */
+  height: number;
+}
+
+/**
+ * Enhanced coordinate system for PDF highlighting
+ * Provides precise positioning and confidence scoring for text matching
+ */
+export interface HighlightCoordinates {
+  /** Page number (1-based) where the highlight appears */
+  pageNumber: number;
+  /** Array of rectangular regions that make up the highlight */
+  rects: PdfRect[];
+  /** The actual text content being highlighted */
+  textContent: string;
+  /** Confidence score for text matching accuracy (0-1 scale) */
+  confidence: number;
+  /** Optional style ID for color customization */
+  styleId?: string;
+}
+
+/**
+ * Configuration options for the highlighting system
+ * Allows customization of highlight appearance and behavior
+ */
+export interface HighlightingConfig {
+  /** Default highlight color (hex, rgb, or named color) */
+  defaultColor: string;
+  /** Default highlight opacity (0-1 scale) */
+  defaultOpacity: number;
+  /** Minimum confidence threshold for displaying highlights */
+  confidenceThreshold: number;
+  /** Whether to enable fuzzy text matching */
+  enableFuzzyMatching: boolean;
+  /** Maximum number of highlights per page */
+  maxHighlightsPerPage: number;
+}
+
 // Represents the data needed for the citation preview sidebar
 export interface CitationPreviewData {
   fileName: string; // Original filename
@@ -75,6 +137,14 @@ export interface CitationPreviewData {
   textToHighlight: string; // Specific text to highlight on the page
   documentId: string; // Original document ID
   chunkId: number;    // Specific chunk ID
+  
+  // Enhanced highlighting features - optional for backward compatibility
+  /** Precise coordinate-based highlighting information */
+  highlightCoordinates?: HighlightCoordinates[];
+  /** Custom highlight color override */
+  highlightColor?: string;
+  /** Custom highlight opacity override (0-1 scale) */
+  highlightOpacity?: number;
 }
 
 // --- Types for processing raw SSE data payloads ---

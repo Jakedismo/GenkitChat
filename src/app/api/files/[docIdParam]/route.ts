@@ -1,3 +1,4 @@
+import { EnhancedPdfResponse, serverPdfProcessor } from '@/utils/serverPdfProcessor';
 import fs, { stat } from 'fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
@@ -11,6 +12,31 @@ export async function GET(
   console.log('🚀 Request URL:', request.url);
   console.log('🚀 Request method:', request.method);
   console.log('🚀 Request headers:', Object.fromEntries(request.headers.entries()));
+  
+  // Extract query parameters for enhanced PDF processing
+  const searchParams = request.nextUrl.searchParams;
+  const includeCoordinates = searchParams.get('includeCoordinates') === 'true';
+  const includeTextContent = searchParams.get('includeTextContent') === 'true';
+  const textToHighlight = searchParams.get('textToHighlight') || undefined;
+  const pageNumberParam = searchParams.get('pageNumber');
+  
+  // Parse page number if provided
+  let pageNumber: number | undefined = undefined;
+  if (pageNumberParam) {
+    const parsedPageNumber = parseInt(pageNumberParam, 10);
+    if (!isNaN(parsedPageNumber) && parsedPageNumber > 0) {
+      pageNumber = parsedPageNumber;
+    } else {
+      console.warn('⚠️ Invalid pageNumber parameter:', pageNumberParam);
+    }
+  }
+  
+  console.log('📋 Enhanced PDF options:', {
+    includeCoordinates,
+    includeTextContent,
+    pageNumber,
+    textToHighlight: textToHighlight ? `${textToHighlight.substring(0, 50)}${textToHighlight.length > 50 ? '...' : ''}` : undefined
+  });
   
   const params = await context.params;
   const encodedDocIdParam = params.docIdParam;
@@ -123,9 +149,61 @@ export async function GET(
       modified: fileStats.mtime.toISOString()
     });
 
-    console.log('📖 Reading file...');
-    const fileBuffer = await fs.readFile(filePath);
-    console.log('✅ File read successfully');
+    // Determine if we need enhanced processing
+    const needsEnhancedProcessing = includeCoordinates || includeTextContent || textToHighlight;
+    
+    let response: EnhancedPdfResponse | null = null;
+    
+    if (needsEnhancedProcessing) {
+      console.log('🧠 Enhanced PDF processing requested...');
+      try {
+        // Process the PDF with the enhanced options
+        const startTime = performance.now();
+        
+        response = await serverPdfProcessor.processPdf(filePath, {
+          includeTextContent,
+          includeCoordinates,
+          textToHighlight,
+          pageNumber
+        });
+        
+        const processingTime = performance.now() - startTime;
+        
+        console.log('✅ Enhanced PDF processing completed successfully');
+        console.log('📊 Processing metadata:', {
+          ...response.metadata.processing,
+          totalTime: `${processingTime.toFixed(2)}ms`,
+          cacheHit: response.metadata.processing.cacheHit ? '✓' : '✗',
+          pageFiltered: pageNumber ? '✓' : '✗'
+        });
+        
+        // Add detailed stats about highlights if available
+        if (response.highlightCoordinates) {
+          console.log('📊 Highlight stats:', {
+            count: response.highlightCoordinates.length,
+            byPage: response.highlightCoordinates.reduce((acc, h) => {
+              acc[h.pageNumber] = (acc[h.pageNumber] || 0) + 1;
+              return acc;
+            }, {} as Record<number, number>),
+            byConfidence: response.highlightCoordinates.reduce((acc, h) => {
+              const level = h.confidence > 0.9 ? 'high' :
+                            h.confidence > 0.7 ? 'medium' :
+                            h.confidence > 0.5 ? 'low' : 'very-low';
+              acc[level] = (acc[level] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>)
+          });
+        }
+      } catch (error) {
+        console.error('❌ Error during enhanced PDF processing:', error);
+        // Fall back to basic PDF serving if enhanced processing fails
+        console.log('⚠️ Falling back to basic PDF serving');
+      }
+    }
+    
+    // If enhanced processing succeeded, use that response, otherwise read the file directly
+    const fileBuffer = response?.pdfBuffer || await fs.readFile(filePath);
+    console.log('✅ File buffer acquired successfully');
     console.log('📊 File buffer size:', fileBuffer.length);
 
     // Set appropriate headers for PDF files
@@ -135,11 +213,43 @@ export async function GET(
     headers.set('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
     headers.set('Content-Length', fileBuffer.length.toString());
     
-    console.log('📤 Response headers:', Object.fromEntries(headers.entries()));
-    console.log('🎉 Sending successful PDF response');
-    console.log('🚀 ===== PDF FILE REQUEST END =====');
-
-    return new NextResponse(fileBuffer, { status: 200, headers });
+    // If enhanced response is available and we need to return more than just the PDF
+    if (response && needsEnhancedProcessing) {
+      console.log('🔍 Returning enhanced PDF response with additional data');
+      
+      // Create JSON response with PDF data as base64
+      const enhancedResponse = {
+        pdf: Buffer.from(fileBuffer).toString('base64'),
+        textContent: response.textContent,
+        highlightCoordinates: response.highlightCoordinates,
+        metadata: response.metadata
+      };
+      
+      console.log('📤 Response metadata:', {
+        textContentProvided: !!enhancedResponse.textContent,
+        textContentSize: enhancedResponse.textContent ?
+          `${JSON.stringify(enhancedResponse.textContent).length / 1024} KB` : 'N/A',
+        highlightsProvided: !!enhancedResponse.highlightCoordinates,
+        highlightCount: enhancedResponse.highlightCoordinates?.length || 0,
+        processing: {
+          textExtracted: response.metadata.processing.textExtracted,
+          coordinatesPrecomputed: response.metadata.processing.coordinatesPrecomputed,
+          cacheHit: response.metadata.processing.cacheHit,
+          time: response.metadata.processing.processingTime ?
+            `${response.metadata.processing.processingTime.toFixed(2)}ms` : 'N/A'
+        }
+      });
+      console.log('🚀 ===== PDF FILE REQUEST END =====');
+      
+      return NextResponse.json(enhancedResponse, { status: 200 });
+    } else {
+      // Return the PDF file directly (original behavior)
+      console.log('📤 Response headers:', Object.fromEntries(headers.entries()));
+      console.log('🎉 Sending basic PDF response');
+      console.log('🚀 ===== PDF FILE REQUEST END =====');
+      
+      return new NextResponse(fileBuffer, { status: 200, headers });
+    }
 
   } catch (error: unknown) {
     console.error('💥 ===== PDF FILE REQUEST ERROR =====');

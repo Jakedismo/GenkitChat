@@ -6,7 +6,7 @@ import ChatMessageContent from "@/components/chat/ChatMessageContent";
 import FileUploadManager from "@/components/chat/FileUploadManager";
 import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
 import MermaidDiagram from "@/components/markdown/MermaidDiagram";
-import PdfWorkerSetup from "@/components/PdfWorkerSetup";
+// PdfWorkerSetup will be dynamically imported
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,6 +35,7 @@ const CitationPreviewSidebar = dynamic(
   () => import("@/components/CitationPreviewSidebar"),
   { ssr: false },
 );
+const PdfWorkerSetup = dynamic(() => import('@/components/PdfWorkerSetup'), { ssr: false });
 
 const GenkitChat: React.FC = () => {
   // Use the custom hook for chat settings state
@@ -274,6 +275,7 @@ const GenkitChat: React.FC = () => {
           textToHighlight: sourceChunk.textToHighlight!,
           documentId: sourceChunk.documentId!,
           chunkId: sourceChunk.chunkId,
+          highlightCoordinates: sourceChunk.highlightCoordinates, // Pass highlightCoordinates
         });
         setIsCitationSidebarOpen(true);
         console.log('Citation preview opened successfully with full data');
@@ -293,6 +295,7 @@ const GenkitChat: React.FC = () => {
             sourceChunk.textToHighlight || sourceChunk.content || "",
           documentId: sourceChunk.documentId || "unknown",
           chunkId: sourceChunk.chunkId || 0,
+          highlightCoordinates: sourceChunk.highlightCoordinates, // Pass highlightCoordinates in fallback too
         };
         
         setCitationPreview(fallbackData);
