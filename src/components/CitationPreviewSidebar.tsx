@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useCallback } from "react";
 import { Document, Page } from "react-pdf"; // Added pdfjs
 // Use the specific pdfjs-dist version that react-pdf depends on
 // Import the main library entry; worker set separately in PdfWorkerSetup.tsx
@@ -34,7 +34,22 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   previewData,
 }) => {
   // PDF worker setup is handled globally by PdfWorkerSetup.tsx
-  useState<number | null>(null);
+
+  const customTextRenderer = useCallback(
+    (textItem: { str: string; itemIndex: number }) => {
+      const { str } = textItem;
+      if (!previewData?.textToHighlight || !str) {
+        return str;
+      }
+
+      const { textToHighlight } = previewData;
+      const escapedHighlightText = textToHighlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedHighlightText})`, 'gi');
+
+      return str.replace(regex, (match) => `<mark>${match}</mark>`);
+    },
+    [previewData]
+  );
 
   // 📄 ENHANCED PDF COMPONENT DEBUG LOGGING
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
@@ -76,22 +91,6 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   console.log('📄 - pdfUrl type:', typeof pdfUrl);
   console.log('📄 - pdfUrl length:', pdfUrl?.length || 0);
   console.log('📄 ===== PDF COMPONENT RENDER END =====');
-
-  const customTextRenderer = useCallback(
-    (textItem: { str: string; itemIndex: number }) => {
-      const { str } = textItem;
-      if (!previewData?.textToHighlight || !str) {
-        return str;
-      }
-
-      const { textToHighlight } = previewData;
-      const escapedHighlightText = textToHighlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`(${escapedHighlightText})`, 'gi');
-
-      return str.replace(regex, (match) => `<mark>${match}</mark>`);
-    },
-    [previewData]
-  );
 
   return (
     <Sheet
