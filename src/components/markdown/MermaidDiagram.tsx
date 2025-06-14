@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { getCleanedMermaidChart } from '@/utils/mermaidUtils'; // Added import
 import { Copy, Download, ZoomIn, ZoomOut } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,33 +32,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
 
   // Clean and validate chart content
   const cleanChart = useMemo(() => {
-    if (!chart) return '';
-    
-    // Unescape backslashes that LLMs sometimes add, then trim
-    let processedChart = chart.replace(/\\(.)/g, "$1").trim().replace(/\n$/, '');
-
-    // Handle cases where the LLM incorrectly includes "mermaid" as a prefix
-    // e.g., "mermaid graph TD", "mermaidgraph TD", etc.
-    if (processedChart.toLowerCase().startsWith('mermaid')) {
-        processedChart = processedChart.substring('mermaid'.length).trim();
-    }
-
-    // Remove "Legend:-" sections and other trailing text that are not part of mermaid syntax
-    // This is a common failure mode for LLM-generated diagrams
-    const legendIndex = processedChart.search(/Legend:-/i);
-    if (legendIndex !== -1) {
-        // Check if "Legend" is inside a node definition (e.g., A["Legend"])
-        const preText = processedChart.substring(0, legendIndex);
-        const openBrackets = (preText.match(/\[/g) || []).length;
-        const closeBrackets = (preText.match(/\]/g) || []).length;
-
-        // If not inside a node, strip it out
-        if (openBrackets <= closeBrackets) {
-            processedChart = preText.trim();
-        }
-    }
-    
-    return processedChart;
+    return getCleanedMermaidChart(chart);
   }, [chart]);
 
   // Validate if chart appears to be complete Mermaid syntax
@@ -545,6 +520,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
       >
         <div 
           ref={elementRef} 
+          data-testid="mermaid-diagram-container" // Added data-testid
           className="mermaid-container"
           style={{ 
             minHeight: rendered ? 'auto' : '200px',
