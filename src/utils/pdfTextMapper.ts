@@ -124,38 +124,62 @@ export class PdfTextMapper {
         }
       }
       
-      // If no results found with exact match, try a fallback strategy with just the first few words
-      // This is particularly helpful for test case "Hello world extra text that does not exist"
-      if (results.length === 0 && searchText.includes(' ')) {
-        const words = searchText.split(/\s+/);
-        if (words.length >= 2) {
-          const firstTwoWords = words.slice(0, 2).join(' ');
-          if (firstTwoWords.length >= 5) { // Only try if we have enough text
-            const fallbackResults: TextSearchResult[] = [];
-            
+      // If no results found with the primary strategies, attempt a fallback:
+      // Try to find the longest possible contiguous sub-segment of the searchText.
+      if (results.length === 0 && searchText.length > 0) {
+        const words = searchText.split(/\s+/).filter(w => w.length > 0);
+        let bestFallbackResults: TextSearchResult[] = [];
+
+        // Iterate from the longest possible sub-segment down to a single word (if sensible)
+        for (let len = words.length; len >= 1; len--) {
+          for (let i = 0; i <= words.length - len; i++) {
+            const subSegment = words.slice(i, i + len).join(' ');
+            // Avoid searching for very short sub-segments if the original text is long
+            if (searchText.length > 10 && subSegment.length < 5 && len < 2) continue;
+            if (subSegment.length === 0) continue;
+
+            const currentFallbackResults: TextSearchResult[] = [];
             if (pageNumber) {
-              const pageResults = await this.searchInSinglePage(pdfDocument, pageNumber, firstTwoWords, metric);
-              fallbackResults.push(...pageResults);
+              // Pass "fallback_longest_segment" to identify the matching path
+              const pageResults = await this.searchInSinglePage(pdfDocument, pageNumber, subSegment, metric, "fallback_longest_segment");
+              currentFallbackResults.push(...pageResults);
             } else {
               const numPages = pdfDocument.numPages;
-              for (let i = 1; i <= numPages; i++) {
-                const pageResults = await this.searchInSinglePage(pdfDocument, i, firstTwoWords, metric);
-                fallbackResults.push(...pageResults);
-                
-                if (fallbackResults.length >= this.config.maxResultsPerPage) {
+              for (let k = 1; k <= numPages; k++) {
+                // Pass "fallback_longest_segment" to identify the matching path
+                const pageResults = await this.searchInSinglePage(pdfDocument, k, subSegment, metric, "fallback_longest_segment");
+                currentFallbackResults.push(...pageResults);
+                if (currentFallbackResults.length >= this.config.maxResultsPerPage) {
                   break;
                 }
               }
             }
-            
-            // Adjust confidence for fallback results
-            fallbackResults.forEach(result => {
-              result.confidence = Math.min(0.9, result.confidence * (firstTwoWords.length / searchText.length));
-            });
-            
-            results.push(...fallbackResults);
+
+            if (currentFallbackResults.length > 0) {
+              // Adjust confidence based on the proportion of the original searchText matched
+              const proportionMatched = subSegment.length / searchText.length;
+              currentFallbackResults.forEach(result => {
+                // Base confidence on match quality, then scale by proportion.
+                // Make it more conservative than primary matches.
+                result.confidence = result.confidence * proportionMatched * 0.7;
+                result.matchedText = subSegment; // Ensure matchedText reflects the sub-segment
+              });
+
+              // If this sub-segment yields results, we prefer it over shorter ones
+              // And also ensure we are picking the one with highest confidence if multiple segments of same length match
+              if (bestFallbackResults.length === 0 ||
+                  (currentFallbackResults.length > 0 && currentFallbackResults[0].confidence > (bestFallbackResults[0]?.confidence ?? 0) )) {
+                bestFallbackResults = [...currentFallbackResults];
+              }
+            }
+          }
+          // If we found good results with a longer sub-segment, no need to try shorter ones,
+          // unless the current best result has very low confidence.
+          if (bestFallbackResults.length > 0 && bestFallbackResults[0].confidence > 0.5) {
+            break;
           }
         }
+        results.push(...bestFallbackResults);
       }
 
       // Filter results by confidence threshold
@@ -202,7 +226,8 @@ export class PdfTextMapper {
     pdfDocument: PDFDocumentProxy,
     pageNumber: number,
     searchText: string,
-    metric: PerformanceMetric
+    metric: PerformanceMetric,
+    matchTypeForLogging: string = "unknown" // Added for logging
   ): Promise<TextSearchResult[]> {
     try {
       // Get the PDF page
@@ -223,28 +248,62 @@ export class PdfTextMapper {
         ? this.normalizeText(searchText) 
         : searchText;
 
-      // First try exact matching
-      const exactMatches = this.findExactMatches(textContent.items, normalizedSearchText, pageNumber);
-      results.push(...exactMatches);
+      let foundMatches: TextSearchResult[] = [];
+      // Keep track of the original search text for logging, if normalization is applied.
+      const originalSearchTextForLog = this.config.normalizeText && normalizedSearchText !== searchText ? searchText : normalizedSearchText;
 
-      // If no exact matches, try partial matching
-      if (results.length === 0) {
-        const partialMatches = this.findPartialMatches(textContent.items, normalizedSearchText, pageNumber);
-        results.push(...partialMatches);
-        
-        // If still no results, try using the original searchText for partial matching
-        // This helps with cases where normalization might affect matching
-        if (results.length === 0 && this.config.normalizeText && normalizedSearchText !== searchText) {
-          const originalTextMatches = this.findPartialMatches(textContent.items, searchText, pageNumber);
-          results.push(...originalTextMatches);
+      // If this call is part of a fallback strategy, we might only want exact matches for the sub-segment.
+      if (matchTypeForLogging === "fallback_longest_segment") {
+        foundMatches = this.findExactMatches(textContent.items, normalizedSearchText, pageNumber);
+        if (foundMatches.length > 0) {
+           console.log(`[PdfTextMapper] Matched via fallback_longest_segment: '${normalizedSearchText}' (original: '${originalSearchTextForLog}') on page ${pageNumber} with confidence ${foundMatches[0].confidence}`);
+        }
+      } else {
+        // Standard search strategy
+        let currentMatchType = "unknown";
+        foundMatches = this.findExactMatches(textContent.items, normalizedSearchText, pageNumber);
+        if (foundMatches.length > 0) {
+          currentMatchType = "exact";
+          console.log(`[PdfTextMapper] Matched via ${currentMatchType}: '${normalizedSearchText}' (original: '${originalSearchTextForLog}') on page ${pageNumber} with confidence ${foundMatches[0].confidence}`);
+        }
+
+        // If no exact matches, try partial matching
+        if (foundMatches.length === 0) {
+          const partialMatches = this.findPartialMatches(textContent.items, normalizedSearchText, pageNumber);
+          if (partialMatches.length > 0) {
+            foundMatches.push(...partialMatches);
+            currentMatchType = "partial";
+            console.log(`[PdfTextMapper] Matched via ${currentMatchType}: '${normalizedSearchText}' (original: '${originalSearchTextForLog}', matched: '${partialMatches[0].matchedText}') on page ${pageNumber} with confidence ${partialMatches[0].confidence}`);
+          }
+
+          // If still no results, try using the original searchText for partial matching
+          // This helps with cases where normalization might affect matching
+          if (foundMatches.length === 0 && this.config.normalizeText && normalizedSearchText !== searchText) {
+            const originalTextMatches = this.findPartialMatches(textContent.items, searchText, pageNumber);
+            if (originalTextMatches.length > 0) {
+              foundMatches.push(...originalTextMatches);
+              currentMatchType = "partial_original_text";
+              console.log(`[PdfTextMapper] Matched via ${currentMatchType}: '${searchText}' (matched: '${originalTextMatches[0].matchedText}') on page ${pageNumber} with confidence ${originalTextMatches[0].confidence}`);
+            }
+          }
+        }
+
+        // If still no matches, try finding the best word sequence match as a last resort
+        if (foundMatches.length === 0) {
+          const sequenceMatches = this.findBestWordSequenceMatch(textContent.items, normalizedSearchText, pageNumber);
+          if (sequenceMatches.length > 0) {
+            foundMatches.push(...sequenceMatches);
+            currentMatchType = "best_word_sequence";
+            console.log(`[PdfTextMapper] Matched via ${currentMatchType}: '${normalizedSearchText}' (original: '${originalSearchTextForLog}', matched: '${sequenceMatches[0].matchedText}') on page ${pageNumber} with confidence ${sequenceMatches[0].confidence}`);
+          }
+        }
+        // Update the matchTypeForLogging if a match was found by primary strategies
+        if (foundMatches.length > 0) {
+            matchTypeForLogging = currentMatchType;
         }
       }
 
-      // If still no matches, try fuzzy matching as a last resort
-      if (results.length === 0) {
-        const fuzzyMatches = this.findFuzzyMatches(textContent.items, normalizedSearchText, pageNumber);
-        results.push(...fuzzyMatches);
-      }
+      results.push(...foundMatches);
 
       // Update matching time metric
       metric.textMatchingTime += performance.now() - matchingStart;
@@ -269,81 +328,6 @@ export class PdfTextMapper {
     pageNumber: number
   ): TextSearchResult[] {
     const results: TextSearchResult[] = [];
-    
-    // For exact text matches in tests or special handling for test case that fails
-    if (searchText === "hello world extra text that does not exist" ||
-        searchText.includes("hello world extra text that does not exist")) {
-      // For the partial matching test case
-      const helloWorldItem = textItems.find(item =>
-        item.str && this.normalizeText(item.str).includes("hello world")
-      );
-      
-      if (helloWorldItem) {
-        return [{
-          pageNumber,
-          coordinates: [{
-            x: helloWorldItem.transform[4],
-            y: helloWorldItem.transform[5],
-            width: helloWorldItem.width,
-            height: helloWorldItem.height
-          }],
-          confidence: 0.8, // Lower confidence for partial match
-          matchedText: "Hello world"
-        }];
-      }
-    }
-    
-    // For normalized text (uppercase/lowercase, whitespace) tests
-    if (searchText === "hello world" && (
-        textItems.some(item => item.str && item.str.toLowerCase() === "hello world test document")
-    )) {
-      const exactItem = textItems.find(item =>
-        item.str && item.str.toLowerCase().includes("hello world")
-      );
-      
-      if (exactItem) {
-        // For exact matches in the test
-        return [{
-          pageNumber,
-          coordinates: [{
-            x: exactItem.transform[4],
-            y: exactItem.transform[5],
-            width: exactItem.width,
-            height: exactItem.height
-          }],
-          confidence: 1.0, // Exact match should have 100% confidence
-          matchedText: "Hello world"
-        }];
-      }
-    }
-    
-    // General case: Look for partial matches that might appear in text items
-    // This helps in scenarios where exact matching fails but parts of the search text exist
-    if (searchText.length > 10) {  // Only try this optimization for longer search texts
-      const searchWords = searchText.split(/\s+/);
-      if (searchWords.length >= 2) {
-        const firstTwoWords = searchWords.slice(0, 2).join(' ');
-        
-        // Look for first few words of the search text
-        const partialItem = textItems.find(item =>
-          item.str && this.normalizeText(item.str).includes(firstTwoWords)
-        );
-        
-        if (partialItem) {
-          return [{
-            pageNumber,
-            coordinates: [{
-              x: partialItem.transform[4],
-              y: partialItem.transform[5],
-              width: partialItem.width,
-              height: partialItem.height
-            }],
-            confidence: 0.85, // Reasonable confidence for partial match
-            matchedText: partialItem.str
-          }];
-        }
-      }
-    }
     
     // Regular processing for other cases
     // Combine all text items into a single string with position mapping
@@ -403,51 +387,52 @@ export class PdfTextMapper {
     pageNumber: number
   ): TextSearchResult[] {
     const results: TextSearchResult[] = [];
-    
-    
-    // Try to find the longest partial match
+
+    // Try to find the longest partial match initially, but collect all potential matches.
     const words = searchText.split(/\s+/).filter(word => word.length > 0);
-    if (words.length <= 1) return results;
-    
-    // First try word pairs and longer phrases
-    // Try with decreasing word counts
-    for (let wordCount = words.length - 1; wordCount > 0; wordCount--) {
+    if (words.length <= 1 && searchText.length < 3) return results; // Avoid very short single "word" searches if original is also short
+
+    const potentialMatches: TextSearchResult[] = [];
+
+    // Iterate through all possible sub-phrase lengths, from longest down to 1 word.
+    // Consider phrases of at least 2 words, or 1 word if it's reasonably long.
+    for (let wordCount = words.length; wordCount >= 1; wordCount--) {
+      if (wordCount === 1 && words[0].length < 3 && words.length > 1) continue; // Skip very short single words if there were multiple words
+
       // Generate all possible contiguous sub-phrases with 'wordCount' words
       for (let i = 0; i <= words.length - wordCount; i++) {
         const partialPhrase = words.slice(i, i + wordCount).join(' ');
-        if (partialPhrase.length < 3) continue; // Skip very short phrases
         
-        const partialMatches = this.findExactMatches(textItems, partialPhrase, pageNumber);
+        // Skip very short phrases, unless it's the entire search text (e.g. "to be")
+        if (partialPhrase.length < 3 && partialPhrase.length < searchText.length) continue;
+        if (partialPhrase === searchText) continue; // Already handled by exact match
+
+        const foundExactSubMatches = this.findExactMatches(textItems, partialPhrase, pageNumber);
         
-        if (partialMatches.length > 0) {
-          // Calculate confidence based on how much of the original text was matched
-          const confidence = Math.min(0.9, partialPhrase.length / searchText.length);
+        if (foundExactSubMatches.length > 0) {
+          // Calculate confidence: proportion of text matched, scaled down for being partial.
+          // Max confidence for a partial match should be less than an exact match.
+          const proportion = partialPhrase.length / searchText.length;
+          const baseConfidence = 0.85; // Max base confidence for a good partial match
+          const confidence = baseConfidence * proportion;
           
-          // Add partial matches with adjusted confidence
-          partialMatches.forEach(match => {
-            results.push({
-              ...match,
-              confidence: confidence * 0.95, // Slightly reduce confidence for partial matches
-              matchedText: match.matchedText || partialPhrase
-            });
+          foundExactSubMatches.forEach(match => {
+            // Ensure this partial match's confidence is reasonable and doesn't exceed exact match confidence
+            if (confidence > this.config.minConfidenceThreshold * 0.7) { // Ensure it's a meaningful partial match
+              potentialMatches.push({
+                ...match,
+                confidence: Math.min(confidence, 0.89), // Cap confidence to be below exact matches
+                matchedText: match.matchedText || partialPhrase
+              });
+            }
           });
-          
-          // Keep matching other phrases to find potentially better matches
-          // but don't continue to shorter phrases if we already have matches
-          if (wordCount < words.length - 1) {
-            break;
-          }
         }
-      }
-      
-      // If we found matches at this word count, don't try smaller phrases
-      if (results.length > 0) {
-        break;
       }
     }
     
-    // If no multi-word phrases matched, try individual important words
-    if (results.length === 0 && words.length > 1) {
+    // If no multi-word phrases matched from the loop above, try individual important words (if not already covered)
+    // This part is more of a fallback if the sub-phrase logic doesn't yield good results.
+    if (potentialMatches.length === 0 && words.length > 1) {
       // Find the longest words (more likely to be significant)
       const significantWords = words
         .filter(word => word.length > 3)
@@ -470,11 +455,27 @@ export class PdfTextMapper {
           });
           
           // Just take the first significant word that matches
+          // This logic might be redundant if the main loop handles single words appropriately.
+          // However, it targets "significant" words, which might be a useful heuristic.
           break;
         }
       }
     }
+
+    if (potentialMatches.length > 0) {
+      // Sort all found partial matches by confidence (descending), then by length (descending)
+      potentialMatches.sort((a, b) => {
+        if (b.confidence !== a.confidence) {
+          return b.confidence - a.confidence;
+        }
+        return (b.matchedText?.length || 0) - (a.matchedText?.length || 0);
+      });
+      // Return the best partial match (or top N if maxResultsPerPage was applied here)
+      return [potentialMatches[0]];
+    }
     
+    // If, after all that, results (from significant single words) were populated, return those.
+    // This path is less likely if potentialMatches were found and returned.
     return results;
   }
 
@@ -485,46 +486,57 @@ export class PdfTextMapper {
    * @param pageNumber Page number (1-based)
    * @returns Array of search results
    */
-  private findFuzzyMatches(
+  private findBestWordSequenceMatch(
     textItems: any[],
     searchText: string,
     pageNumber: number
   ): TextSearchResult[] {
     const results: TextSearchResult[] = [];
     
-    // Combine all text items into a single string with position mapping
-    const { text, positions } = this.combineTextItems(textItems);
-    
-    // Normalize the text if configured
-    const normalizedText = this.config.normalizeText ? this.normalizeText(text) : text;
-    
     // Look for text items that contain parts of the search text
-    const searchWords = searchText.split(/\s+/).filter(word => word.length >= 3);
+    const searchWords = searchText.split(/\s+/).filter(word => word.length >= 3); // Consider words with 3+ chars
     
     if (searchWords.length === 0) {
       return results;
     }
     
-    // Find matches for individual words
+    // Find matches for individual significant words
     for (const word of searchWords) {
       const wordMatches = this.findExactMatches(textItems, word, pageNumber);
       
       if (wordMatches.length > 0) {
-        // Calculate a fuzzy confidence score
-        const confidence = Math.min(0.8, word.length / searchText.length);
+        // Calculate a confidence score based on word length relative to search text length.
+        // This is a basic heuristic. A more advanced scoring would consider word significance (e.g., TF-IDF).
+        const confidence = (word.length / searchText.length) * 0.5; // Scaled down significantly as it's a weak match
         
         wordMatches.forEach(match => {
-          if (confidence >= this.config.fuzzyThreshold) {
+          // Only add if the confidence is above a minimal threshold,
+          // and less than the main fuzzyThreshold to avoid conflict with stronger partial matches.
+          if (confidence > (this.config.minConfidenceThreshold * 0.4) && confidence < this.config.fuzzyThreshold) {
             results.push({
               ...match,
-              confidence
+              confidence,
+              matchedText: word // Ensure matchedText is the word itself for clarity
             });
           }
         });
       }
     }
     
-    return results;
+    // Sort by confidence to prioritize better word matches
+    results.sort((a, b) => b.confidence - a.confidence);
+
+    // TODO: Implement a more sophisticated word sequence matching logic.
+    // Current implementation just finds individual words.
+    // Future improvements could involve:
+    // 1. Finding the longest common subsequence of words from searchText in the page.
+    // 2. Using dynamic programming to find an optimal alignment of searchText words on the page,
+    //    allowing for some gaps or out-of-order words, and scoring based on contiguity and coverage.
+    // 3. Combining coordinates of matched words if they form a coherent sequence.
+
+    // For now, return only the best single word match found, if any.
+    // This is a simplification; ideally, we'd return a sequence.
+    return results.length > 0 ? [results[0]] : [];
   }
 
   /**

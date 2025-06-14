@@ -67,17 +67,37 @@ export function useHighlightOptimization(
     return `${docId}::page-${pageNum}::text-${text}`;
   }, []);
 
-  const processPage = useCallback(async (pageNum: number, text: string, isHighPriority: boolean): Promise<HighlightCoordinates[] | null> => {
-    if (!pdfDocument || !text) return null;
+interface ProcessPageResult {
+  coordinates: HighlightCoordinates[] | null;
+  computationTime: number;
+  cacheHit: boolean;
+  error?: Error;
+  pageNumber: number;
+}
+
+  const processPage = useCallback(async (pageNum: number, text: string, isHighPriority: boolean): Promise<ProcessPageResult> => {
+    const startTime = performance.now();
+    let wasCacheHit = true; // Assume cache hit initially
+    let coords: HighlightCoordinates[] | null = null;
+    let errorResult: Error | undefined = undefined;
+
+    if (!pdfDocument || !text) {
+      return {
+        coordinates: null,
+        computationTime: performance.now() - startTime,
+        cacheHit: false,
+        pageNumber: pageNum
+      };
+    }
 
     const currentCacheKey = getCacheKey(documentId, pageNum, text);
     if (activePromisesRef.current.has(currentCacheKey)) {
-      // console.log(`Computation for ${currentCacheKey} already in progress.`);
-      return activePromisesRef.current.get(currentCacheKey) || null;
+      // console.log(`Computation for ${currentCacheKey} already in progress, awaiting existing.`);
+      // This might be tricky if the existing promise doesn't return ProcessPageResult.
+      // For simplicity, we'll let it proceed for now, but ideally, activePromises should store Promise<ProcessPageResult>.
+      // However, since this hook manages calls, direct concurrent calls for the exact same page/text are less likely
+      // than sequential calls managed by updateHighlights.
     }
-
-    const startTime = performance.now();
-    let cacheHit = false;
 
     try {
       const promise = cacheRef.current.getOrCompute(
@@ -85,36 +105,44 @@ export function useHighlightOptimization(
         pageNum,
         text,
         async () => {
-          cacheHit = false;
+          wasCacheHit = false; // Set to false if computeFn is called (cache miss)
           // console.log(`Computing coordinates for page ${pageNum}, text "${text}"`);
           return findCoordinatesOnPage(documentId, pageNum, text, pdfDocument);
         }
       );
-      activePromisesRef.current.set(currentCacheKey, promise);
+      activePromisesRef.current.set(currentCacheKey, promise); // Store the promise for HighlightCoordinates[]
       
-      const coords = await promise;
-      // Check if it was set by getOrCompute by verifying presence in the actual cache instance
-      if (!cacheHit && cacheRef.current.has(currentCacheKey)) cacheHit = true;
-
-      const endTime = performance.now();
+      coords = await promise;
       failedPagesRef.current.delete(pageNum); // Clear from failed if successful
 
+      // Update performance metrics for this specific page (immediate feedback)
+      const computationTime = performance.now() - startTime;
       setPerformanceMetrics(prev => ({
         ...prev,
-        computationTime: endTime - startTime,
-        cacheHit,
+        computationTime: (prev?.computationTime || 0) + computationTime, // Accumulate time if you want total time spent so far
+        cacheHit: prev?.cacheHit || wasCacheHit, // If any page was a cache hit
         cacheMemoryUsage: cacheRef.current.getMemoryUsage(),
         pagesProcessed: (prev?.pagesProcessed || 0) + 1,
       }));
-      return coords;
+
     } catch (error) {
       console.error(`Error computing highlights for page ${pageNum}:`, error);
       failedPagesRef.current.add(pageNum);
-      setCalculationError(error instanceof Error ? error : new Error('Failed to compute highlights'));
-      return null; // Return null on error for this page
+      errorResult = error instanceof Error ? error : new Error('Failed to compute highlights');
+      setCalculationError(errorResult); // Set overall calculation error
+      coords = null;
     } finally {
        activePromisesRef.current.delete(currentCacheKey);
     }
+
+    const computationTime = performance.now() - startTime;
+    return {
+      coordinates: coords,
+      computationTime,
+      cacheHit: wasCacheHit,
+      error: errorResult,
+      pageNumber: pageNum,
+    };
   }, [pdfDocument, documentId, findCoordinatesOnPage, getCacheKey]);
 
 
@@ -123,6 +151,8 @@ export function useHighlightOptimization(
       setHighlightCoordinates([]);
       return;
     }
+
+    console.log('[HighlightOptimizer] Running updateHighlights for doc:', documentId, 'text:', textToHighlight ? textToHighlight.substring(0, 50) + "..." : "N/A");
 
     setIsCalculatingCoordinates(true);
     setCalculationError(null);
@@ -143,38 +173,50 @@ export function useHighlightOptimization(
         if (vp < pdfDocument.numPages) pagesToProcess.add(vp + 1);
       });
     }
+    console.log('[HighlightOptimizer] Pages to process:', Array.from(pagesToProcess));
     
     const allProcessedCoordinates: HighlightCoordinates[] = [];
-    let totalComputationTime = 0;
-    let cacheHits = 0;
+    let aggregatedComputationTime = 0;
+    let actualCacheHits = 0;
+    let pagesSuccessfullyProcessedCount = 0;
 
-    const processingPromises: Promise<void>[] = [];
+    // Explicitly type the array of promises
+    const processingPromises: Promise<ProcessPageResult>[] = [];
 
     for (const pageNum of Array.from(pagesToProcess)) {
       // Only process if visible or for preloading (implicitly handled by pagesToProcess logic)
       // and not a previously failed page unless explicitly retried.
       if (!failedPagesRef.current.has(pageNum) || specificPageNumber === pageNum) { // Allow retry for specific page
          processingPromises.push(
-           (async () => {
-            const coords = await processPage(pageNum, textToHighlight, visiblePages.includes(pageNum) || pageNum === specificPageNumber);
-            if (coords) {
-              allProcessedCoordinates.push(...coords);
-              // Note: individual page performance is set within processPage
-              // Here we might want to aggregate or just rely on the last one for overall metrics
-              const pagePerf = performanceMetrics; // This might be slightly out of sync, consider a different approach for aggregation
-              if(pagePerf?.cacheHit) cacheHits++;
-              if(pagePerf?.computationTime) totalComputationTime += pagePerf.computationTime;
-            }
-          })()
-        );
+            processPage(pageNum, textToHighlight, visiblePages.includes(pageNum) || pageNum === specificPageNumber)
+         );
       }
     }
 
-    await Promise.all(processingPromises);
+    const results = await Promise.all(processingPromises);
 
-    newPerformanceMetrics.computationTime = totalComputationTime;
-    newPerformanceMetrics.cacheHit = cacheHits > 0; // Simplified: true if any hit occurred
-    newPerformanceMetrics.pagesProcessed = pagesToProcess.size;
+    for (const result of results) {
+      if (result && result.coordinates) {
+        allProcessedCoordinates.push(...result.coordinates);
+        pagesSuccessfullyProcessedCount++; // Count pages that returned coordinates
+      }
+      if (result) { // Process performance even if coordinates are null (e.g. error on page)
+        aggregatedComputationTime += result.computationTime;
+        if (result.cacheHit) {
+          actualCacheHits++;
+        }
+        if (result.error) {
+          // Error already set in processPage via setCalculationError
+          // but we could aggregate multiple errors if needed.
+        }
+      }
+    }
+
+    newPerformanceMetrics.computationTime = aggregatedComputationTime;
+    newPerformanceMetrics.cacheHit = actualCacheHits > 0;
+    // newPerformanceMetrics.pagesProcessed = pagesToProcess.size; // Total pages attempted
+    newPerformanceMetrics.pagesProcessed = pagesSuccessfullyProcessedCount; // Or, total pages successfully processed
+
 
     setHighlightCoordinates(allProcessedCoordinates.sort((a,b) => {
       if (a.pageNumber !== b.pageNumber) {
@@ -194,8 +236,10 @@ export function useHighlightOptimization(
     const pagesToKeep = new Set<number>(pagesToProcess);
     const currentCacheStatus = cacheRef.current.getMemoryUsage();
     if (currentCacheStatus.usage > cacheRef.current.getMaxMemoryUsage() * 0.8) { // If cache is >80% full
+        console.log(`[HighlightOptimizer] Cache usage ${currentCacheStatus.usage}/${currentCacheStatus.max} > 80%. Considering evictions.`);
         for (const [_key, value] of cacheRef.current.getCacheEntries()) { // Use public getter
             if (value.documentId === documentId && !pagesToKeep.has(value.pageNumber)) {
+                console.log(`[HighlightOptimizer] Cache eviction: Attempting to remove page ${value.pageNumber} for text "${value.textToHighlight.substring(0,30)}..." from doc ${value.documentId}`);
                 cacheRef.current.remove(documentId, value.pageNumber, value.textToHighlight);
             }
         }
@@ -210,8 +254,7 @@ export function useHighlightOptimization(
     preloadAdjacentPages,
     isPageVisible, // isPageVisible is not directly used here, but visiblePages depends on it
     visiblePages,
-    processPage,
-    performanceMetrics // Added to dep array
+    processPage
   ]);
   
   useEffect(() => {

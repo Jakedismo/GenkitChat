@@ -251,6 +251,7 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
     calculationError,
     performanceMetrics,
     resetCacheForDocument,
+    retryFailedPage, // Added retryFailedPage
   } = useHighlightOptimization(
     pdfDocProxy,
     {
@@ -267,8 +268,7 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
     if (previewData?.pdfUrl) {
       resetCacheForDocument();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewData?.pdfUrl]);
+  }, [previewData?.pdfUrl, resetCacheForDocument]);
 
   const highlights = useMemo(() => {
     if (!optimizedCoordinates || optimizedCoordinates.length === 0) return [];
@@ -376,7 +376,7 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
         pageNumber: coord.pageNumber,
         rects: convertedRects,
         text: coord.textContent,
-        metadata: { confidence: coord.confidence },
+        metadata: { confidence: coord.confidence, styleId: coord.styleId },
       });
     });
     if (manager.highlights.length > 0 && !manager.activeHighlightId) {
@@ -416,18 +416,26 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
                   enableAreaSelection={(event) => false}
                   highlights={[]}
                   onScrollChange={() => {}}
-                  highlightTransform={(highlight, index, setTip, hideTip, viewportToScaled, screenshot, isScrolledTo) => {
-                    return <></>
-                  }}
+                  highlightTransform={() => <></>} // No highlights to transform
                   scrollRef={(scrollTo) => {
-                    try {
-                      // Just focus on showing the right page, no complex scrolling logic
-                      console.log(`Simple view showing page ${pageNumber}`);
-                    } catch (err) {
-                      console.error("Error scrolling in page-only view:", err);
+                    // Attempt to scroll to the specified page number when the component mounts/updates
+                    if (pageNumber) {
+                      // Create a dummy highlight-like object targeting the page
+                      const fakeHighlightForPageScroll = {
+                        position: { pageNumber: pageNumber, boundingRect: { x1:0,y1:0,x2:0,y2:0,width:0,height:0 } }
+                      } as unknown as IHighlight; // Cast to IHighlight to satisfy scrollTo
+                      try {
+                        // Use a timeout to ensure the PDF viewer has rendered the page structure
+                        setTimeout(() => {
+                          console.log(`[PageOnlyPdfViewerComponent] Attempting to scroll to page ${pageNumber}`);
+                          scrollTo(fakeHighlightForPageScroll);
+                        }, 100); // Adjust timeout if needed
+                      } catch (err) {
+                        console.error(`[PageOnlyPdfViewerComponent] Error scrolling to page ${pageNumber}:`, err);
+                      }
                     }
                   }}
-                  onSelectionFinished={() => <></>}
+                  onSelectionFinished={() => <></>} // No selection in this mode
                 />
               )}
             </PdfLoader>
@@ -510,16 +518,15 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
                         className="ml-2 h-5 text-xs"
                         onClick={() => {
                           if (textMappingState.lastAttemptedPage) {
-                            setTextMappingState(prev => ({ ...prev, error: null }));
-                            if (pdfDocProxy && textToHighlight) {
-                              // Retry with just the first 50 chars as a fallback
-                              findCoordinatesOnPageCallback(
-                                previewData?.documentId || "unknown",
-                                textMappingState.lastAttemptedPage,
-                                textToHighlight.substring(0, 50),
-                                pdfDocProxy
-                              );
-                            }
+                            // Clear local error state
+                            setTextMappingState(prev => ({
+                              ...prev,
+                              error: null,
+                              isLoading: true, // Set local loading state immediately
+                              // lastAttemptedPage remains the same
+                            }));
+                            // Call the hook's retry function
+                            retryFailedPage(textMappingState.lastAttemptedPage);
                           }
                         }}
                       >
@@ -627,31 +634,9 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
 
                               let actualComponent;
                               if (isTextHighlight) {
-                                // Get the highlight style from the manager
-                                const orig = (highlight as any).originalCoord as HighlightCoordinates | undefined;
-                                const manager = highlightManagerRef.current;
-                                let styleId = 'default'; // Default style
-                                
-                                if (orig && manager) {
-                                  const targetRects = orig.rects.map(pdfRectToBoundingBox);
-                                  const matched = manager.highlights.find(h =>
-                                    h.pageNumber === orig.pageNumber &&
-                                    h.rects.length === targetRects.length &&
-                                    h.rects.every((r, idx) =>
-                                      r.x1 === targetRects[idx].x1 &&
-                                      r.y1 === targetRects[idx].y1 &&
-                                      r.x2 === targetRects[idx].x2 &&
-                                      r.y2 === targetRects[idx].y2
-                                    )
-                                  );
-                                  
-                                  if (matched && matched.styleId) {
-                                    styleId = matched.styleId;
-                                  }
-                                }
-                                
-                                const highlightClass = `highlight-style-${styleId}`;
-                                
+                                // The styleId from originalCoord is used for the wrapper div className.
+                                // The Highlight component itself doesn't directly take a className for its internal spans.
+                                // The complex lookup for styleId from the manager has been removed for simplification.
                                 actualComponent = (
                                   <Highlight
                                     isScrolledTo={isScrolledTo}

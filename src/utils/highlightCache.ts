@@ -57,7 +57,7 @@ export class HighlightCache {
         if (cachedItem) {
           this.memoryUsage -= cachedItem.size;
           this.cache.delete(lruKey);
-          // console.log(`Cache pruned: Removed ${lruKey}, freed ${cachedItem.size} bytes. Current usage: ${this.memoryUsage}`);
+          console.log(`Cache pruned: Removed ${lruKey}, freed ${cachedItem.size} bytes. Current usage: ${this.memoryUsage}`);
         }
       }
     }
@@ -78,16 +78,16 @@ export class HighlightCache {
     if (cachedItem) {
       cachedItem.lastAccessed = Date.now();
       this.updateLru(key);
-      // console.log(`Cache hit for key: ${key}`);
+      console.log(`Cache hit for key: ${key}`);
       return cachedItem.data;
     }
 
-    // console.log(`Cache miss for key: ${key}. Computing...`);
+    console.log(`Cache miss for key: ${key}. Computing...`);
     const computedData = await computeFn();
     const dataSize = this.estimateSize(computedData);
 
     if (dataSize > this.maxMemoryUsage) {
-      // console.warn(`Computed data for ${key} (${dataSize} bytes) exceeds max cache size (${this.maxMemoryUsage} bytes). Not caching.`);
+      console.warn(`Computed data for ${key} (${dataSize} bytes) exceeds max cache size (${this.maxMemoryUsage} bytes). Not caching.`);
       return computedData; // Don't cache if a single item is too large
     }
 
@@ -105,9 +105,9 @@ export class HighlightCache {
       this.cache.set(key, newItem);
       this.memoryUsage += dataSize;
       this.updateLru(key);
-      // console.log(`Cached new item: ${key}, size: ${dataSize}. Current usage: ${this.memoryUsage}`);
+      console.log(`Cached new item: ${key}, size: ${dataSize}. Current usage: ${this.memoryUsage}`);
     } else {
-      // console.warn(`Not enough space to cache ${key} even after pruning. Current usage: ${this.memoryUsage}, item size: ${dataSize}`);
+      console.warn(`Not enough space to cache ${key} even after pruning. Current usage: ${this.memoryUsage}, item size: ${dataSize}`);
     }
     return computedData;
   }
@@ -116,7 +116,7 @@ export class HighlightCache {
     this.cache.clear();
     this.lruOrder = [];
     this.memoryUsage = 0;
-    // console.log('Cache cleared.');
+    console.log('Cache cleared.');
   }
 
   public getMemoryUsage(): { usage: number; max: number; count: number } {
@@ -149,7 +149,7 @@ export class HighlightCache {
       if (lruIndex > -1) {
         this.lruOrder.splice(lruIndex, 1);
       }
-      // console.log(`Cache item removed: ${key}`);
+      console.log(`Cache item removed: ${key}`);
       return true;
     }
     return false;
@@ -176,7 +176,7 @@ export class HighlightCache {
         itemsRemoved++;
       }
     }
-    // if (itemsRemoved > 0) console.log(`Removed ${itemsRemoved} cache items for document: ${documentId}`);
+    if (itemsRemoved > 0) console.log(`Removed ${itemsRemoved} cache items for document: ${documentId}`);
     return itemsRemoved;
   }
 }
