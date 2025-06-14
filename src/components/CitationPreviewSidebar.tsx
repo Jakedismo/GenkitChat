@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { Document, Page } from "react-pdf"; // Added pdfjs
 // Use the specific pdfjs-dist version that react-pdf depends on
 // Import the main library entry; worker set separately in PdfWorkerSetup.tsx
@@ -77,6 +77,22 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
   console.log('📄 - pdfUrl length:', pdfUrl?.length || 0);
   console.log('📄 ===== PDF COMPONENT RENDER END =====');
 
+  const customTextRenderer = useCallback(
+    (textItem: { str: string; itemIndex: number }) => {
+      const { str } = textItem;
+      if (!previewData?.textToHighlight || !str) {
+        return str;
+      }
+
+      const { textToHighlight } = previewData;
+      const escapedHighlightText = textToHighlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedHighlightText})`, 'gi');
+
+      return str.replace(regex, (match) => `<mark>${match}</mark>`);
+    },
+    [previewData]
+  );
+
   return (
     <Sheet
       open={isOpen}
@@ -133,6 +149,7 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
                   scale={1.0} // Adjust scale as needed, could be dynamic
                   renderAnnotationLayer={true}
                   renderTextLayer={true} // Important for text selection/highlighting
+                  customTextRenderer={customTextRenderer} // Add this prop
                   onRenderAnnotationLayerSuccess={() => console.log('📄 Annotation layer rendered successfully for page', pageNumber)}
                   onRenderAnnotationLayerError={(error: unknown) => {
                     const message = error instanceof Error ? error.message : String(error);
