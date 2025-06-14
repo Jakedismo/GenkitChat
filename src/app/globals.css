@@ -182,10 +182,10 @@ body {
   }
 
   /* For dark mode, ensure contrast if primary/secondary change significantly */
-  .dark .prose.dark:prose-invert .bg-secondary pre, .dark .prose.dark:prose-invert .bg-primary pre {
+  .dark .prose.dark.prose-invert .bg-secondary pre, .dark .prose.dark.prose-invert .bg-primary pre {
       background-color: #1e1e1e; /* A slightly different dark background for code in dark mode */
   }
-  .dark .prose.dark:prose-invert .bg-secondary pre code, .dark .prose.dark:prose-invert .bg-primary pre code {
+  .dark .prose.dark.prose-invert .bg-secondary pre code, .dark .prose.dark.prose-invert .bg-primary pre code {
       background-color: transparent;
   }
 

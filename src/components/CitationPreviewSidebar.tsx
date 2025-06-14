@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Document, Page } from "react-pdf";
+import { Document, Page } from "react-pdf"; // Added pdfjs
 // Use the specific pdfjs-dist version that react-pdf depends on
 // Import the main library entry; worker set separately in PdfWorkerSetup.tsx
 
@@ -134,8 +134,13 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
                   scale={1.0} // Adjust scale as needed, could be dynamic
                   renderAnnotationLayer={true}
                   renderTextLayer={true} // Important for text selection/highlighting
+                  onRenderAnnotationLayerSuccess={() => console.log('📄 Annotation layer rendered successfully for page', pageNumber)}
+                  onRenderAnnotationLayerError={(error: unknown) => {
+                    const message = error instanceof Error ? error.message : String(error);
+                    console.error('💥 Error rendering annotation layer for page', pageNumber, ':', message);
+                  }}
                   onRenderError={(error) =>
-                    console.error("Error rendering PDF page:", error.message)
+                    console.error("💥 Error rendering PDF page:", pageNumber, ':', error.message)
                   }
                   loading={
                     <div className="flex justify-center items-center p-4">

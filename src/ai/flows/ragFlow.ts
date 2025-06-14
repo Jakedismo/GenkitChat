@@ -87,7 +87,7 @@ const POSSIBLE_RERANKER_IDS = [
   'vertexai/text-bison-32k',
   'semantic-ranker-512'
 ];
-const RERANKER_ID = POSSIBLE_RERANKER_IDS[0]; // Start with the first one
+// const RERANKER_ID = POSSIBLE_RERANKER_IDS[0]; // Start with the first one - Unused
 
 // Helper function to create a model key string
 export const createModelKey = (
@@ -131,8 +131,8 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     sideChannel: (chunk: RagStreamEvent) => void
   ) => {
 
-    let filteredDocs: Document[] = [];
-    let topDocs: DocumentData[] = []; 
+    // let filteredDocs: Document[] = []; // This was shadowed and its initial value unused
+    let topDocs: DocumentData[] = [];
     const pendingToolRequests = new Map<string, ToolRequestPart>();
     const toolResponseBuffer = new Map<string, ToolResponsePart>();
     let accumulatedLlmText = '';
@@ -207,10 +207,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       logger.info(`RAG query: \"${query}\" for session: ${sessionId}`);
       const queryDocumentForRetrieval = Document.fromText(query || '');
       
-      const retrieveOptions: any = {
+      const retrieveOptions: Record<string, unknown> = {
         k: INITIAL_RETRIEVAL_COUNT,
       };
-
+ 
       if (sessionId) {
         retrieveOptions.where = { sessionId };
         logger.info(`Retriever configured with where clause for sessionId: ${sessionId}`);
@@ -255,9 +255,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
               );
               rerankerSuccess = true;
               break; // Exit the loop on success
-            } catch (rerankerError: any) {
-              logger.warn(`Reranker ${rerankerId} failed: ${rerankerError.message || String(rerankerError)}`);
-              if (rerankerError.stack) {
+            } catch (rerankerError: unknown) {
+              const message = rerankerError instanceof Error ? rerankerError.message : String(rerankerError);
+              logger.warn(`Reranker ${rerankerId} failed: ${message}`);
+              if (rerankerError instanceof Error && rerankerError.stack) {
                 logger.debug(`Reranker error stack: ${rerankerError.stack}`);
               }
               // Continue to try the next reranker ID
@@ -339,11 +340,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       }
 
       const markdownSystemMsg: MessageData = {
-        // @ts-ignore Genkit types may not include 'system'
         role: 'system',
         content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
-      } as any;
-
+      } as unknown as MessageData;
+ 
       const messagesForLlm = constructFinalLlmMessages(history, currentPromptMessages, markdownSystemMsg);
 
       const caps = getCapabilities(modelId);
@@ -367,15 +367,16 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       };
 
       if (toolNamesToUse && toolNamesToUse.length > 0) {
-        (generateOptions as any).tools = toolNamesToUse;
+        (generateOptions as Record<string, unknown>).tools = toolNamesToUse;
       }
-
-      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${(generateOptions as any).tools?.join(', ') || 'none'}`);
-
+ 
+      const toolsForLogging = (generateOptions as Record<string, unknown>).tools;
+      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${Array.isArray(toolsForLogging) ? toolsForLogging.join(', ') : 'none'}`);
+ 
       const llmStream = aiInstance.generateStream(generateOptions);
-
+ 
       // Consume the stream to trigger the callbacks.
-      for await (const chunk of llmStream.stream) {
+      for await (const _chunk of llmStream.stream) {
         // The streamingCallback handles text chunks.
         // This loop drives the stream and allows for future in-loop processing if needed.
       }
@@ -385,6 +386,7 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       // After the stream is fully processed, get the final response.
       const finalResponse = await llmStream.response;
       const responseText = finalResponse.text;
+      logger.info(`[RAG_FLOW_DEBUG] Final LLM Response Text: ${responseText}`); // DEBUG LOG
 
       // If no text was streamed but the final response has text, send it now.
       if (accumulatedLlmText === '' && responseText) {
@@ -394,9 +396,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
 
       return accumulatedLlmText;
 
-    } catch (error: any) {
-      logger.error(`Error in RAG flow: ${error.message || String(error)}. Falling back.`);
-      sendChunk({ type: 'error', error: `Service error: ${error.message || 'Unknown error during RAG flow'}` });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Error in RAG flow: ${message}. Falling back.`);
+      sendChunk({ type: 'error', error: `Service error: ${message || 'Unknown error during RAG flow'}` });
       
       let fallbackAccumulatedText = '';
       try {
@@ -427,20 +430,20 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           } else {
               logger.error('Fallback RAG assistant prompt object is not a function. Using query as prompt.');
               fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
+            }
+          } catch (fallbackPromptError: unknown) {
+            const message = fallbackPromptError instanceof Error ? fallbackPromptError.message : String(fallbackPromptError);
+            logger.error(`Error in fallback prompt function: ${message}. Using simple prompt.`);
+            fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
           }
-        } catch (fallbackPromptError: any) {
-          logger.error(`Error in fallback prompt function: ${fallbackPromptError.message || String(fallbackPromptError)}. Using simple prompt.`);
-          fallbackPromptMessages = [{role: 'user', content: [{text: `Query: ${query}\nDocuments: ${topDocs.map(d => d.content?.[0]?.text || 'No content available').join('\n')}`}]}];
-        }
-        const historyForFallback: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
-        const markdownSystemMsgFallback: MessageData = {
-          // @ts-ignore Genkit types may not include 'system'
-          role: 'system',
-          content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
-        } as any;
-        const messagesForLlmFallback = constructFinalLlmMessages(historyForFallback, fallbackPromptMessages, markdownSystemMsgFallback);
-
-        const capsFallback = getCapabilities(modelId);
+          const historyForFallback: MessageData[] = [{ role: 'user', content: [{ text: query }] }];
+          const markdownSystemMsgFallback: MessageData = {
+            role: 'system',
+            content: [{ text: 'When you return your final answer, format it in GitHub-flavoured **Markdown**. Use headings, lists, tables and fenced code blocks.' }],
+          } as unknown as MessageData;
+          const messagesForLlmFallback = constructFinalLlmMessages(historyForFallback, fallbackPromptMessages, markdownSystemMsgFallback);
+   
+          const capsFallback = getCapabilities(modelId);
         const fallbackConfig: Record<string, unknown> = {};
         if (capsFallback.supportsTemperature) {
           fallbackConfig.temperature = mapTemp(temperaturePreset);
@@ -452,8 +455,8 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           messages: messagesForLlmFallback,
           context: topDocs,
           config: fallbackConfig,
-          streamingCallback: (chunk: any) => { // Using any for chunk type temporarily
-            if (chunk?.text) {
+          streamingCallback: (chunk: unknown) => {
+            if (typeof chunk === 'object' && chunk !== null && 'text' in chunk && typeof chunk.text === 'string') {
               sendChunk({ type: 'text', text: chunk.text });
               fallbackAccumulatedText += chunk.text;
             }
@@ -464,16 +467,18 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         const finalFallbackResponse = await llmStreamResultFallback.response;
         
         const fallbackResponseText = finalFallbackResponse.text;
+        logger.info(`[RAG_FLOW_DEBUG] Final LLM Fallback Response Text: ${fallbackResponseText}`); // DEBUG LOG
         if (fallbackAccumulatedText === '' && fallbackResponseText) {
            sendChunk({ type: 'text', text: fallbackResponseText });
            fallbackAccumulatedText = fallbackResponseText;
         }
         return fallbackAccumulatedText;
-
-      } catch (fallbackError: any) {
-        logger.error(`Error in RAG fallback: ${fallbackError.message || String(fallbackError)}`);
-        sendChunk({ type: 'error', error: `Service fallback error: ${fallbackError.message || 'Unknown error during fallback'}` });
-        return `Error: RAG service encountered an issue. ${fallbackError.message || ''}`.trim();
+ 
+      } catch (fallbackError: unknown) {
+        const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        logger.error(`Error in RAG fallback: ${message}`);
+        sendChunk({ type: 'error', error: `Service fallback error: ${message || 'Unknown error during fallback'}` });
+        return `Error: RAG service encountered an issue. ${message || ''}`.trim();
       }
     }
   }

@@ -3,15 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 9002",
+    "dev": "next dev --turbo -p 9002",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
-    "build": "NODE_NO_WARNINGS=1 next build",
+    "build": "NODE_NO_WARNINGS=1 next build --turbo",
+    "build:webpack": "NODE_NO_WARNINGS=1 next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "jest --passWithNoTests",
-    "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs 2>/dev/null || echo 'Warning: PDF worker file not found, PDF functionality may be impacted'"
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@genkit-ai/core": "^1.12.0",
@@ -87,11 +87,15 @@
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^5.16.0",
     "@testing-library/react": "^14.0.0",
+    "@types/estree": "^1.0.8",
     "@types/jest": "^29.0.0",
+    "@types/json-schema": "^7.0.15",
     "@types/node": "^20",
     "@types/pdfjs-dist": "^2.10.377",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/send": "^0.17.5",
+    "@types/shimmer": "^1.2.0",
     "eslint": "9.26.0",
     "eslint-config-next": "15.3.2",
     "genkit-cli": "^1.12.0",
@@ -103,5 +107,8 @@
     "ts-jest": "^29.0.0",
     "tsx": "^4.19.4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "pdfjs-dist": "5.3.31"
   }
 }

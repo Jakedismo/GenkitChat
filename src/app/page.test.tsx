@@ -1,10 +1,9 @@
-import React from 'react';
-import { render, screen, act } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import GenkitChat from './page'; // Assuming GenkitChat is the default export from page.tsx
 import { useChatManager } from '@/hooks/useChatManager'; // Mock this hook
 import { useChatSettings } from '@/hooks/useChatSettings'; // Mock this hook
 import { useFileUploads } from '@/hooks/useFileUploads'; // Mock this hook
+import '@testing-library/jest-dom';
+import { act, render, screen } from '@testing-library/react';
+import GenkitChat from './page'; // Assuming GenkitChat is the default export from page.tsx
 
 // Mock child components that are not directly relevant to these tests or might cause issues
 jest.mock('@/components/chat/ChatConfigSidebar', () => () => <div data-testid="mock-chat-config-sidebar"></div>);
@@ -34,7 +33,7 @@ jest.mock('lucide-react', () => ({
   Code: () => <div data-testid="mock-lucide-code-icon"></div>,
 }));
 
-jest.mock('react-markdown', () => (props) => <div data-testid="mock-react-markdown">{props.children}</div>);
+jest.mock('react-markdown', () => (props: any) => <div data-testid="mock-react-markdown">{props.children}</div>);
 jest.mock('remark-gfm', () => jest.fn());
 jest.mock('rehype-highlight', () => jest.fn());
 
@@ -148,7 +147,7 @@ describe('GenkitChat Page', () => {
   });
 
   test('newly added user message has animation class', async () => { // Ensure test function is async
-     const initialMessages = [];
+     const initialMessages: any[] = [];
      const newMessages = [
          { id: '1', text: 'Hello', sender: 'user', timestamp: new Date() },
      ];
@@ -180,7 +179,7 @@ describe('GenkitChat Page', () => {
   });
 
   test('newly added bot message has animation class', async () => { // Ensure test function is async
-     const initialMessages = [];
+     const initialMessages: any[] = [];
      const newMessages = [
          { id: '1', text: 'Hi there', sender: 'bot', timestamp: new Date() },
      ];

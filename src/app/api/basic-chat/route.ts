@@ -1,22 +1,22 @@
 import {
+  ChatInput,
   initiateChatStream,
   ToolInvocation,
-  ChatInput,
 } from "@/lib/chat-utils"; // Use streaming version, import types
 import { withGenkitServer } from "@/lib/server"; // Import server initialization wrapper
 import { NextResponse } from "next/server";
 import { z } from "zod";
 // Import necessary types from @genkit-ai/ai
 import {
+  analyzeResponse,
+  repairTruncatedResponse,
+} from "@/utils/responseDebug";
+import {
   GenerateResponse, // Add GenerateResponse
   Part,
   ToolRequestPart,
   ToolResponsePart,
 } from "@genkit-ai/ai";
-import {
-  analyzeResponse,
-  repairTruncatedResponse,
-} from "@/utils/responseDebug";
 
 const InputSchema = z.object({
   userMessage: z.string(),
@@ -71,7 +71,7 @@ function formatSSE(event: string, data: string): string {
           // 2. Try to parse the sanitized data
           const parsedData = JSON.parse(sanitizedData);
           return `event: ${event}\ndata: ${JSON.stringify(parsedData)}\n\n`;
-        } catch (sanitizeError: unknown) {
+        } catch (_sanitizeError: unknown) {
 
           // 3. Try extracting just the response field with regex if it exists
           const responseMatch = sanitizedData.match(
@@ -218,17 +218,20 @@ export async function POST(request: Request) {
               }
 
               // Process candidates array if available to ensure we get all content
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
               if ((finalResponse as any)?.custom?.candidates?.length > 0) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const candidate = (finalResponse as any).custom.candidates[0];
                 if (candidate.content?.parts) {
                   // For structured content with parts, preserve the structure
                   finalResponseData.structuredResponse = candidate.content;
-
+ 
                   // If we have Parts array with text, join them for the response
                   const textParts = candidate.content.parts
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     .map((part: any) => part.text || "")
                     .filter(Boolean);
-
+ 
                   finalResponseData.response = textParts.join("");
 
                   // Check if candidate parts might indicate truncation

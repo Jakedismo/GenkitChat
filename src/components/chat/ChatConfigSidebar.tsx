@@ -1,11 +1,11 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -61,7 +61,6 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
               value={chatMode}
               onValueChange={(value) => onChatModeChange(value as ChatMode)}
               name="chatMode" // Added name for Label htmlFor
-              id="chatMode"
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select Chat Mode" />
@@ -91,7 +90,6 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
               onValueChange={onSelectedGeminiModelIdChange}
               disabled={chatMode !== ChatMode.DIRECT_GEMINI}
               name="geminiModel" // Added name for Label htmlFor
-              id="geminiModel"
             >
               <SelectTrigger disabled={chatMode !== ChatMode.DIRECT_GEMINI}>
                 <SelectValue placeholder="Select Gemini Model" />
@@ -120,7 +118,6 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
               onValueChange={onSelectedOpenAIModelIdChange}
               disabled={chatMode !== ChatMode.DIRECT_OPENAI}
               name="openaiModel" // Added name for Label htmlFor
-              id="openaiModel"
             >
               <SelectTrigger disabled={chatMode !== ChatMode.DIRECT_OPENAI}>
                 <SelectValue placeholder="Select OpenAI Model" />
@@ -147,7 +144,6 @@ const ChatConfigSidebar: React.FC<ChatConfigSidebarProps> = ({
                 onTemperaturePresetChange(value as TemperaturePreset)
               }
               name="temperature-preset"
-              id="temperature-preset" // Ensure ID matches htmlFor
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select Creativity" />

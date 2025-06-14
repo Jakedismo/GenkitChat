@@ -238,58 +238,51 @@ const GenkitChat: React.FC = () => {
 
       // Try to construct PDF URL if we have the necessary data
       let pdfUrl = "";
-      if (docId && docFileName) {
-        const rawIdentifier = docId + '::' + docFileName;
-        console.log('🔧 Raw identifier before encoding:', rawIdentifier);
-        console.log('🔧 Raw identifier length:', rawIdentifier.length);
+      // THE FIX: Use sourceChunk.documentId directly as it should be sessionId::fileName
+      if (sourceChunk.documentId) {
+        const rawIdentifier = sourceChunk.documentId; // This is already sessionId::fileName
+        console.log('🔧 Raw identifier (should be sessionId::fileName):', rawIdentifier);
         
         const encodedIdentifier = encodeURIComponent(rawIdentifier);
         console.log('🔒 Encoded identifier:', encodedIdentifier);
-        console.log('🔒 Encoded identifier length:', encodedIdentifier.length);
         
         pdfUrl = `/api/files/${encodedIdentifier}`;
         console.log('🌐 Final PDF URL:', pdfUrl);
-        console.log('🌐 PDF URL length:', pdfUrl.length);
       } else {
-        console.error('❌ Cannot construct PDF URL - missing documentId or fileName', {
-            missingDocumentId: !docId,
-            missingFileName: !docFileName, // Use the derived fileName for this check
-            availableOriginalFileName: !!sourceChunk.originalFileName,
-            availableFileName: !!sourceChunk.fileName
-        });
-        console.log('❌ Missing fields:', {
-          missingDocumentId: !docId,
-          missingFileName: !docFileName // Use the derived fileName for this check
+        console.error('❌ Cannot construct PDF URL - missing sourceChunk.documentId', {
+            missingDocumentId: !sourceChunk.documentId,
+            fileNameFromSource: sourceChunk.fileName,
+            originalFileNameFromSource: sourceChunk.originalFileName,
         });
       }
       console.log('🔗 ===== CITATION CLICK DEBUG END =====');
 
       // Enhanced validation with detailed error messages
       const missingFields = [];
-      if (!docFileName) missingFields.push("fileName"); // Use docFileName for validation
-      if (!docId) missingFields.push("documentId"); // Use docId for validation
+      if (!docFileName) missingFields.push("fileName");
+      if (!sourceChunk.documentId) missingFields.push("documentId (from sourceChunk)");
       if (typeof sourceChunk.pageNumber !== "number") missingFields.push("pageNumber");
       if (!sourceChunk.textToHighlight) missingFields.push("textToHighlight");
 
-      if (missingFields.length === 0) {
+      if (missingFields.length === 0 && pdfUrl) { // Also check if pdfUrl was successfully constructed
         // All required fields present
-        console.log('[handleCitationClick] Attempting to setCitationPreview with (SUCCESS PATH):', { docId, docFileName, pdfUrl, pageNumber: sourceChunk.pageNumber });
+        console.log('[handleCitationClick] Attempting to setCitationPreview with (SUCCESS PATH):', { documentId: sourceChunk.documentId, docFileName, pdfUrl, pageNumber: sourceChunk.pageNumber });
         setCitationPreview({
-          fileName: docFileName!, // Use docFileName
+          fileName: docFileName!,
           pdfUrl: pdfUrl,
           pageNumber: sourceChunk.pageNumber!,
           textToHighlight: sourceChunk.textToHighlight!,
-          documentId: docId!, // Use docId
+          documentId: sourceChunk.documentId!,
           chunkId: sourceChunk.chunkId,
         });
         setIsCitationSidebarOpen(true);
         console.log('Citation preview opened successfully with full data');
       } else {
         // Fallback handling with detailed logging
-        console.warn('Citation data missing fields:', missingFields);
-        console.log('[handleCitationClick] Attempting to setCitationPreview with (FALLBACK PATH):', { docId, docFileName, pdfUrl, pageNumber: sourceChunk.pageNumber });
+        console.warn('Citation data missing fields or pdfUrl construction failed:', missingFields, { pdfUrlAvailable: !!pdfUrl });
+        console.log('[handleCitationClick] Attempting to setCitationPreview with (FALLBACK PATH):', { documentId: sourceChunk.documentId, docFileName, pdfUrl, pageNumber: sourceChunk.pageNumber });
         const fallbackData = {
-          fileName: docFileName || "Unknown File", // Use docFileName
+          fileName: docFileName || "Unknown File",
           content:
             sourceChunk.content ||
             sourceChunk.textToHighlight ||
@@ -298,7 +291,7 @@ const GenkitChat: React.FC = () => {
           pageNumber: sourceChunk.pageNumber || 1, // Default to page 1 instead of 0
           textToHighlight:
             sourceChunk.textToHighlight || sourceChunk.content || "",
-          documentId: docId || "unknown", // Use docId
+          documentId: sourceChunk.documentId || "unknown",
           chunkId: sourceChunk.chunkId || 0,
         };
         
@@ -679,9 +672,7 @@ const GenkitChat: React.FC = () => {
                               <ChatMessageContent
                                 text={message.text}
                                 onCitationClick={
-                                  message.sources && 
-                                  message.sources.length > 0 && 
-                                  (typeof message.text === "string" && message.text.includes("[Source:"))
+                                  message.sources && message.sources.length > 0
                                     ? (chunkIndex) => handleCitationClick(message.id, chunkIndex)
                                     : () => {} // Empty handler for non-citation text
                                 }

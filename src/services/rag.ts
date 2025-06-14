@@ -1,9 +1,13 @@
-import { ragIndexerRef, ragRetrieverRef, aiInstance } from "@/genkit-server";
-import { chunk } from "llm-chunk";
+import { aiInstance, ragIndexerRef } from "@/genkit-server";
 import { extractText } from "@papra/lecture"; // Import @papra/lecture
 import { Document } from "genkit/retriever";
+import { chunk } from "llm-chunk";
 // import { Context as FlowContext } from "@genkit-ai/flow"; // REMOVED: This was causing issues
+import fs from "fs/promises"; // Add fs/promises
+import path from "path"; // Add path
 import { v4 as uuidv4 } from "uuid";
+
+const UPLOADS_DIR = path.join(process.cwd(), "uploads"); // Define base uploads dir
 
 // Max file size for uploads in bytes (e.g., 10MB)
 // Note: INITIAL_RETRIEVAL_COUNT, FINAL_DOCUMENT_COUNT, CHUNKING_CONFIG, etc. are used by the flow logic below.
@@ -180,6 +184,20 @@ export async function processFileWithOfficeParser(
     const fileName = file.name;
     const arrayBuffer = await file.arrayBuffer();
     const fileBuffer = Buffer.from(arrayBuffer);
+
+    // Ensure the session-specific directory exists and save the file
+    try {
+      const sessionDir = path.join(UPLOADS_DIR, sessionId);
+      await fs.mkdir(sessionDir, { recursive: true });
+      const filePath = path.join(sessionDir, fileName);
+      await fs.writeFile(filePath, fileBuffer);
+      console.log(`File ${fileName} saved to ${filePath} for session ${sessionId}`);
+    } catch (saveError: any) {
+      console.error(`Error saving file ${fileName} for session ${sessionId}:`, saveError);
+      // Decide if this error should prevent indexing or be logged and ignored
+      // For now, we'll let indexing proceed but log the error.
+      // return { success: false, error: `Failed to save file before indexing: ${saveError.message}` };
+    }
 
     const indexingSuccess = await indexFileDocument(fileBuffer, fileName, sessionId);
 

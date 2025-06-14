@@ -1,6 +1,6 @@
 "use client";
 
-import { ChatMessage, DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
+import { ChatMessage, CitationMeta, DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
 import { useCallback, useState } from "react";
 
 export interface UseChatMessagesReturn {
@@ -79,10 +79,10 @@ export function useChatMessages(): UseChatMessagesReturn {
 
 
             // Otherwise append the text (default behavior) - IMMUTABLE
-            let finalTextToAppend: any;
-
+            let finalTextToAppend: string | Record<string, unknown> | unknown[] = '';
+ 
             if (Array.isArray(msg.text)) {
-              const originalArray = msg.text as any[];
+              const originalArray = msg.text as unknown[];
               if (originalArray.length > 0 && typeof originalArray[originalArray.length - 1] === 'string') {
                 finalTextToAppend = [
                   ...originalArray.slice(0, -1),
@@ -92,9 +92,9 @@ export function useChatMessages(): UseChatMessagesReturn {
                 finalTextToAppend = [...originalArray, processedChunk];
               }
             } else if (msg.text && typeof msg.text === 'object') {
-              const originalObject = msg.text as { text?: string; content?: string; parts?: any[]; [key: string]: any };
+              const originalObject = msg.text as { text?: string; content?: string; parts?: unknown[]; [key: string]: unknown };
               let handled = false;
-
+ 
               if (typeof originalObject.text === 'string') {
                 finalTextToAppend = { ...originalObject, text: originalObject.text + processedChunk };
                 handled = true;
@@ -143,9 +143,13 @@ export function useChatMessages(): UseChatMessagesReturn {
 
   const updateBotMessageSources = useCallback(
     (botMessageId: string, sources: DocumentData[]) => {
+      const citationSources: CitationMeta[] = sources.map((doc) => ({
+        ...doc,
+        fileName: doc.originalFileName,
+      }));
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
-          msg.id === botMessageId ? { ...msg, sources } : msg,
+          msg.id === botMessageId ? { ...msg, sources: citationSources } : msg,
         ),
       );
     },
@@ -199,30 +203,30 @@ export function useChatMessages(): UseChatMessagesReturn {
             let foundContent = false;
             
             // Helper function to extract text from any part object
-            const extractTextFromPart = (part: any): string => {
+            const extractTextFromPart = (part: unknown): string => {
               if (typeof part === 'string') return part;
               if (part === null || part === undefined) return '';
               if (part && typeof part === 'object') {
                 // Check common text fields
-                if (typeof part.text === 'string') return part.text;
-                if (typeof part.content === 'string') return part.content;
-                if (typeof part.value === 'string') return part.value;
+                if ('text' in part && typeof (part as { text?: unknown }).text === 'string') return (part as { text: string }).text;
+                if ('content' in part && typeof (part as { content?: unknown }).content === 'string') return (part as { content: string }).content;
+                if ('value' in part && typeof (part as { value?: unknown }).value === 'string') return (part as { value: string }).value;
                 
                 // Handle nested arrays
-                if (Array.isArray(part.text)) {
-                  return part.text.map(extractTextFromPart).join('');
+                if ('text' in part && Array.isArray((part as { text?: unknown[] }).text)) {
+                  return ((part as { text: unknown[] }).text).map(extractTextFromPart).join('');
                 }
-                if (Array.isArray(part.content)) {
-                  return part.content.map(extractTextFromPart).join('');
+                if ('content' in part && Array.isArray((part as { content?: unknown[] }).content)) {
+                  return ((part as { content: unknown[] }).content).map(extractTextFromPart).join('');
                 }
-                if (Array.isArray(part.parts)) {
-                  return part.parts.map(extractTextFromPart).join('');
+                if ('parts' in part && Array.isArray((part as { parts?: unknown[] }).parts)) {
+                  return ((part as { parts: unknown[] }).parts).map(extractTextFromPart).join('');
                 }
               }
               // Last resort: try to stringify (but handle circular references)
               try {
                 return JSON.stringify(part);
-              } catch (e) {
+              } catch {
                 return `[Complex Object]`;
               }
             };

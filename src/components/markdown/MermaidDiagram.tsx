@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Copy, Download, ZoomIn, ZoomOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Copy, Download, ZoomIn, ZoomOut } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface MermaidDiagramProps {
   chart: string;
@@ -16,7 +16,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [mermaidInstance, setMermaidInstance] = useState<any>(null);
+  const [, setMermaidInstance] = useState<unknown | null>(null);
   const [rendered, setRendered] = useState(false);
   const [mounted, setMounted] = useState(false);
   const renderTimeoutRef = useRef<NodeJS.Timeout>();
@@ -144,53 +144,6 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
         fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
         fontSize: 14,
         logLevel: 'error', // Reduce console noise
-        flowchart: {
-          useMaxWidth: true,
-          htmlLabels: true,
-          curve: 'basis',
-          padding: 10,
-        },
-        sequence: {
-          useMaxWidth: true,
-          wrap: true,
-          diagramMarginX: 50,
-          diagramMarginY: 10,
-          boxTextMargin: 5,
-          noteMargin: 10,
-          messageMargin: 35,
-        },
-        gantt: {
-          useMaxWidth: true,
-          leftPadding: 75,
-          gridLineStartPadding: 35,
-        },
-        journey: {
-          useMaxWidth: true,
-          diagramMarginX: 50,
-          diagramMarginY: 10,
-        },
-        gitgraph: {
-          useMaxWidth: true,
-          mainBranchName: 'main',
-        },
-        pie: {
-          useMaxWidth: true,
-        },
-        timeline: {
-          useMaxWidth: true,
-        },
-        mindmap: {
-          useMaxWidth: true,
-        },
-        classDiagram: {
-          useMaxWidth: true,
-        },
-        stateDiagram: {
-          useMaxWidth: true,
-        },
-        erDiagram: {
-          useMaxWidth: true,
-        }
       });
 
       setMermaidInstance(mermaid);
@@ -271,8 +224,8 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [cleanChart, diagramId, zoom, resolvedTheme, chart, validateChartCompleteness]);
-
+  }, [cleanChart, diagramId, zoom, resolvedTheme, validateChartCompleteness, theme]);
+ 
   // Hydration safety - only render on client
   useEffect(() => {
     setMounted(true);
