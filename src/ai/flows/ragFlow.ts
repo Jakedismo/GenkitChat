@@ -9,7 +9,6 @@ import {
   ToolRequestPart,
   ToolResponsePart,
 } from '@genkit-ai/ai';
-import { storeContext } from '@upstash/context7-mcp';
 import { logger } from 'genkit/logging';
 import { Document } from 'genkit/retriever';
 import { z } from 'zod';
@@ -121,8 +120,6 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
     inputSchema: RagFlowInputSchema,
     outputSchema: z.string(),
     streamSchema: RagStreamEventSchemaZod,
-    stateSchema: RagFlowState,
-    streamStateSchema: RagFlowStreamState,
   },
   async (
     {
@@ -301,7 +298,6 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         sendChunk({ type: 'sources', sources: enrichedDocs });
       }
 
-      aiInstance.saveFlowState(sessionId, { messages: [] });
 
       // Create a version of the documents for the prompt, with citation markers.
       const docsForPrompt = topDocs.map((doc, index) => {
@@ -362,23 +358,10 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
       }
       config[caps.maxTokensParam] = maxTokens;
 
-      const contextRef = await storeInContext7(topDocs);
-
-
-      if (toolNamesToUse && toolNamesToUse.length > 0) {
-        (generateOptions as Record<string, unknown>).tools = toolNamesToUse;
-      }
- 
-      const toolsForLogging = (generateOptions as Record<string, unknown>).tools;
-      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${Array.isArray(toolsForLogging) ? toolsForLogging.join(', ') : 'none'}`);
- 
-      const contextRef = await storeContext({ context: topDocs });
-      await exec.saveState({ step: 'docs-stored', docsRetrieved: topDocs.length });
-
       const generateOptions: Parameters<typeof aiInstance.generateStream>[0] = {
         model: modelToUseKey,
         messages: messagesForLlm,
-        context: [contextRef],
+        context: topDocs,
         config,
         streamingCallback: (chunk) => {
           if (chunk?.text) {
@@ -392,8 +375,6 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
         (generateOptions as Record<string, unknown>).tools = toolNamesToUse;
       }
  
-      const toolsForLogging = (generateOptions as Record<string, unknown>).tools;
-      logger.info(`Using model for RAG: ${modelToUseKey} with tools: ${Array.isArray(toolsForLogging) ? toolsForLogging.join(', ') : 'none'}`);
  
       const llmStream = aiInstance.generateStream(generateOptions);
  

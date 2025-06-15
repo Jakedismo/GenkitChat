@@ -6,7 +6,7 @@ import MermaidDiagram from "./MermaidDiagram";
 export const baseMarkdownComponents = {
   table: ({ children, ...props }: React.PropsWithChildren<React.TableHTMLAttributes<HTMLTableElement>>) => (
     <div className="overflow-x-auto">
-      <table className="my-4 w-full border-collapse border border-border text-sm" {...props}>{children}</table>
+      <table className="my-4 w-full border-collapse border border text-sm" {...props}>{children}</table>
     </div>
   ),
   thead: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableSectionElement>>) => (
@@ -16,13 +16,13 @@ export const baseMarkdownComponents = {
     <tbody {...props}>{children}</tbody>
   ),
   tr: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLTableRowElement>>) => (
-    <tr className="border-b border-border" {...props}>{children}</tr>
+    <tr className="border-b border" {...props}>{children}</tr>
   ),
   th: ({ children, ...props }: React.PropsWithChildren<React.ThHTMLAttributes<HTMLTableCellElement>>) => (
-    <th className="border-r border-border px-4 py-2 text-left font-medium text-muted-foreground last:border-r-0" {...props}>{children}</th>
+    <th className="border-r border px-4 py-2 text-left font-medium text-muted-foreground last:border-r-0" {...props}>{children}</th>
   ),
   td: ({ children, ...props }: React.PropsWithChildren<React.TdHTMLAttributes<HTMLTableCellElement>>) => (
-    <td className="border-r border-border px-4 py-2 last:border-r-0" {...props}>{children}</td>
+    <td className="border-r border px-4 py-2 last:border-r-0" {...props}>{children}</td>
   ),
   h1: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHeadingElement>>) => (
     <h1 className="text-2xl font-bold mt-6 mb-4" {...props}>{children}</h1>
@@ -58,7 +58,7 @@ export const baseMarkdownComponents = {
     <blockquote className="border-l-4 border-muted-foreground pl-4 py-1 my-3 italic" {...props}>{children}</blockquote>
   ),
   hr: ({ ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLHRElement>>) => (
-    <hr className="my-6 border-border" {...props} />
+    <hr className="my-6 border" {...props} />
   ),
   em: ({ children, ...props }: React.PropsWithChildren<React.HTMLAttributes<HTMLElement>>) => (
     <em {...props}>{children}</em>

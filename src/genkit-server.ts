@@ -10,7 +10,6 @@ import { startFlowServer } from "@genkit-ai/express"; // For serving flows
 import { googleAI } from "@genkit-ai/googleai";
 import { vertexAI } from "@genkit-ai/vertexai"; // Import Vertex AI for reranking
 import { vertexAIRerankers } from "@genkit-ai/vertexai/rerankers"; // Added for Vertex AI Reranker
-import { context7McpClient } from '@upstash/context7-mcp';
 import fs from 'fs'; // Add fs import for file system operations
 import { Flow, genkit } from "genkit"; // Use stable import for genkit
 import { logger } from "genkit/logging"; // Added for log level
@@ -83,12 +82,12 @@ function getPlugins() {
   } catch (e) {
     console.warn("Failed to initialize Vertex AI plugin:", e);
   }
-
-  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    plugins.push(context7McpClient());
-  }
-
-  // Only run vector store in a non-production environment to avoid build errors
+ 
+   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+     plugins.push(context7Client());
+   }
+ 
+   // Only run vector store in a non-production environment to avoid build errors
   if (process.env.NODE_ENV !== "production") {
     try {
       plugins.push(

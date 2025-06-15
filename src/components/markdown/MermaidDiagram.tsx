@@ -42,7 +42,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
 
   if (!mounted) {
     return (
-      <div className="not-prose my-4 flex items-center justify-center p-8 border border-border rounded-lg bg-card">
+      <div className="not-prose my-4 flex items-center justify-center p-8 border border rounded-lg bg-card">
         <div className="flex flex-col items-center space-y-2">
           <span className="text-sm text-muted-foreground">
             Loading diagram...
@@ -54,7 +54,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
 
   if (isLoading) {
     return (
-      <div className="not-prose my-4 flex items-center justify-center p-8 border border-border rounded-lg bg-card">
+      <div className="not-prose my-4 flex items-center justify-center p-8 border border rounded-lg bg-card">
         <div className="flex flex-col items-center space-y-2">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           <span className="text-sm text-muted-foreground">
@@ -122,7 +122,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
   }
 
   return (
-    <div className="not-prose my-4 relative group border border-border rounded-lg overflow-hidden bg-card">
+    <div className="not-prose my-4 relative group border border rounded-lg overflow-hidden bg-card">
       <MermaidToolbar
         zoom={zoom}
         onZoomIn={() => setZoom((prev) => Math.min(prev + 0.2, 3))}
@@ -155,7 +155,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, id }) => {
           )}
         </div>
       </div>
-      <div className="border-t border-border">
+      <div className="border-t border">
         <details>
           <summary className="cursor-pointer px-4 py-2 text-xs text-muted-foreground hover:bg-muted transition-colors">
             View source code
