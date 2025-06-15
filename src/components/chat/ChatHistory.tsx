@@ -44,9 +44,12 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
 
   const handleCitationClick = (
     messageId: string,
-    chunkIndexInSources: number,
+    chunkIndexesInSources: number[],
   ) => {
     const message = messages.find((m) => m.id === messageId);
+    // For now, we'll use the first chunk index for the preview.
+    // The UI can be updated later to handle multiple chunks.
+    const chunkIndexInSources = chunkIndexesInSources[0];
     if (message && message.sources && message.sources[chunkIndexInSources]) {
       const sourceChunk = message.sources[chunkIndexInSources];
       let docId = sourceChunk.documentId;
@@ -183,8 +186,8 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
                       text={message.text}
                       onCitationClick={
                         message.sources && message.sources.length > 0
-                          ? (chunkIndex) =>
-                              handleCitationClick(message.id, chunkIndex)
+                          ? (chunkIndexes) =>
+                              handleCitationClick(message.id, chunkIndexes)
                           : () => {}
                       }
                       components={botMarkdownComponents}

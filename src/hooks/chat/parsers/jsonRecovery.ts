@@ -90,12 +90,15 @@ export function recoverJson(payload: string): string {
 
   let lastResult = payload;
   for (const strategy of strategies) {
+    let result;
     try {
-      const result = strategy(lastResult);
+      result = strategy(lastResult);
       JSON.parse(result);
       return result;
     } catch (e) {
-      lastResult = strategy(lastResult);
+      if (result !== undefined) {
+        lastResult = result;
+      }
     }
   }
 

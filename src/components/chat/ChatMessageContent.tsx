@@ -6,13 +6,13 @@ import remarkGfm from "remark-gfm";
 
 interface ChatMessageContentProps {
   text: string | string[] | { text?: string; [key: string]: unknown } | unknown; // Support various text formats
-  onCitationClick: (chunkIndexInSources: number) => void;
+  onCitationClick: (chunkIndexesInSources: number[]) => void;
   // Add components prop to accept renderers from parent
   components?: ReactMarkdownOptions["components"];
 }
 
 // Regex to find citations like [Source: annual_report.pdf, Chunk: 0] or [Source: ..., Chunks: 0-4]
-const citationRegex = /\[Source: (.*?), (?:Chunk|Chunks): (\d+)(?:-\d+)?]/g;
+const citationRegex = /\[Source: (.*?), (?:Chunk|Chunks): (\d+)(?:-(\d+))?]/g;
 
 // custom code renderer to neutralise ```mermaid fences
 const CodeBlock: React.FC<ComponentProps<'code'>> = ({ className = '', children, ...props }) => {
@@ -145,8 +145,14 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
       citationRegex.lastIndex = 0; // Reset regex state
 
       while ((match = citationRegex.exec(processedText)) !== null) {
-        const [fullMatch, fileName, chunkIndexStr] = match;
-        const chunkIndex = parseInt(chunkIndexStr, 10);
+        const [fullMatch, fileName, startChunkStr, endChunkStr] = match;
+        const startChunk = parseInt(startChunkStr, 10);
+        const endChunk = endChunkStr ? parseInt(endChunkStr, 10) : startChunk;
+
+        const chunkIndexes = Array.from(
+          { length: endChunk - startChunk + 1 },
+          (_, i) => startChunk + i
+        );
 
         // Add text segment before the current citation match, rendered with ReactMarkdown
         if (match.index > lastIndex) {
@@ -166,10 +172,10 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         // Add the clickable citation element
         parts.push(
           <button
-            key={`citation-${partKey++}-${fileName}-${chunkIndex}`}
-            onClick={() => onCitationClick(chunkIndex)}
+            key={`citation-${partKey++}-${fileName}-${startChunk}-${endChunk}`}
+            onClick={() => onCitationClick(chunkIndexes)}
             className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-sm mx-1" // Added margin for spacing
-            title={`View source: ${fileName}, referenced content segment ${chunkIndex + 1}`}
+            title={`View source: ${fileName}, referenced content segments ${startChunk + 1}${endChunk !== startChunk ? ` to ${endChunk + 1}` : ''}`}
           >
             {fullMatch}
           </button>,
