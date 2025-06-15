@@ -44,113 +44,91 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
 
   const handleCitationClick = (
     messageId: string,
-    chunkIndexesInSources: number[],
+    chunkIndexInSources: number,
   ) => {
-    if (!chunkIndexesInSources || chunkIndexesInSources.length === 0) {
-      toast({
-        title: "Citation Error",
-        description: "No valid citation source found for this reference.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const message = messages.find((m) => m.id === messageId);
-    if (!message || !message.sources) {
-      toast({
-        title: "Citation Error",
-        description: "Could not find the message or its sources.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const allReferencedChunks = chunkIndexesInSources
-      .map((index) => message.sources![index])
-      .filter(Boolean);
-
-    if (allReferencedChunks.length === 0) {
-      toast({
-        title: "Citation Error",
-        description: "Could not load any valid citation sources.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // For now, we'll use the first valid chunk for the preview.
-    // The UI can be updated later to handle multiple chunks.
-    const primaryChunk = allReferencedChunks[0];
-    
-    let docId = primaryChunk.documentId;
-    if (docId && docId.includes("::")) {
-      const originalProblematicDocId = docId;
-      const idParts = docId.split("::");
-      docId = idParts[0];
-      console.warn(
-        `[handleCitationClick] Cleaned docId from "${originalProblematicDocId}" to "${docId}"`,
-      );
-    }
-
-    let rawDocFileName = primaryChunk.fileName || primaryChunk.originalFileName;
-    if (rawDocFileName && rawDocFileName.includes("::")) {
-      rawDocFileName = rawDocFileName.split("::").pop() || rawDocFileName;
-    }
-    const docFileName = rawDocFileName;
-
-    let pdfUrl = "";
-    if (primaryChunk.documentId) {
-      const rawIdentifier = primaryChunk.documentId;
-      const encodedIdentifier = encodeURIComponent(rawIdentifier);
-      pdfUrl = `/api/files/${encodedIdentifier}`;
-    }
-
-    const combinedTextToHighlight = allReferencedChunks
-      .map((chunk) => chunk.textToHighlight || chunk.content)
-      .filter(Boolean)
-      .join("\n\n...\n\n");
-
-    const missingFields = [];
-    if (!docFileName) missingFields.push("fileName");
-    if (!primaryChunk.documentId) missingFields.push("documentId");
-    if (typeof primaryChunk.pageNumber !== "number") missingFields.push("pageNumber");
-    if (!combinedTextToHighlight) missingFields.push("textToHighlight");
-
-    if (missingFields.length === 0 && pdfUrl) {
-      setCitationPreview({
-        fileName: docFileName!,
-        pdfUrl: pdfUrl,
-        pageNumber: primaryChunk.pageNumber!,
-        textToHighlight: combinedTextToHighlight,
-        documentId: primaryChunk.documentId!,
-        chunkId: primaryChunk.chunkId,
-      });
-      setIsCitationSidebarOpen(true);
-    } else {
-      const fallbackData = {
-        fileName: docFileName || "Unknown File",
-        content: combinedTextToHighlight || "No content available for preview.",
-        pdfUrl: pdfUrl,
-        pageNumber: primaryChunk.pageNumber || 1,
-        textToHighlight: combinedTextToHighlight,
-        documentId: primaryChunk.documentId || "unknown",
-        chunkId: primaryChunk.chunkId || 0,
-      };
-      setCitationPreview(fallbackData);
-      setIsCitationSidebarOpen(true);
-      if (!pdfUrl) {
-        toast({
-          title: "PDF URL Missing",
-          description: `Missing fields: ${missingFields.join(", ")}. Cannot construct PDF URL.`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Citation Data Incomplete",
-          description: `Missing: ${missingFields.join(", ")}. PDF preview may work but some features unavailable.`,
-          variant: "default",
-        });
+    if (message && message.sources && message.sources[chunkIndexInSources]) {
+      const sourceChunk = message.sources[chunkIndexInSources];
+      let docId = sourceChunk.documentId;
+      if (docId && docId.includes("::")) {
+        const originalProblematicDocId = docId;
+        const idParts = docId.split("::");
+        docId = idParts[0];
+        console.warn(
+          `[handleCitationClick] Cleaned docId from "${originalProblematicDocId}" to "${docId}"`,
+        );
       }
+      let rawDocFileName =
+        sourceChunk.fileName || sourceChunk.originalFileName;
+      if (rawDocFileName && rawDocFileName.includes("::")) {
+        rawDocFileName = rawDocFileName.split("::").pop() || rawDocFileName;
+      }
+      const docFileName = rawDocFileName;
+      let pdfUrl = "";
+      if (sourceChunk.documentId) {
+        const rawIdentifier = sourceChunk.documentId;
+        const encodedIdentifier = encodeURIComponent(rawIdentifier);
+        pdfUrl = `/api/files/${encodedIdentifier}`;
+      }
+      const missingFields = [];
+      if (!docFileName) missingFields.push("fileName");
+      if (!sourceChunk.documentId)
+        missingFields.push("documentId (from sourceChunk)");
+      if (typeof sourceChunk.pageNumber !== "number")
+        missingFields.push("pageNumber");
+      if (!sourceChunk.textToHighlight)
+        missingFields.push("textToHighlight");
+
+      if (missingFields.length === 0 && pdfUrl) {
+        setCitationPreview({
+          fileName: docFileName!,
+          pdfUrl: pdfUrl,
+          pageNumber: sourceChunk.pageNumber!,
+          textToHighlight: sourceChunk.textToHighlight!,
+          documentId: sourceChunk.documentId!,
+          chunkId: sourceChunk.chunkId,
+        });
+        setIsCitationSidebarOpen(true);
+      } else {
+        const fallbackData = {
+          fileName: docFileName || "Unknown File",
+          content:
+            sourceChunk.content ||
+            sourceChunk.textToHighlight ||
+            "No content available for preview.",
+          pdfUrl: pdfUrl,
+          pageNumber: sourceChunk.pageNumber || 1,
+          textToHighlight:
+            sourceChunk.textToHighlight || sourceChunk.content || "",
+          documentId: sourceChunk.documentId || "unknown",
+          chunkId: sourceChunk.chunkId || 0,
+        };
+        setCitationPreview(fallbackData);
+        setIsCitationSidebarOpen(true);
+        if (!pdfUrl) {
+          toast({
+            title: "PDF URL Missing",
+            description: `Missing fields: ${missingFields.join(
+              ", ",
+            )}. Cannot construct PDF URL.`,
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Citation Data Incomplete",
+            description: `Missing: ${missingFields.join(
+              ", ",
+            )}. PDF preview may work but some features unavailable.`,
+            variant: "default",
+          });
+        }
+      }
+    } else {
+      toast({
+        title: "Citation Error",
+        description: "Could not load citation source.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -205,8 +183,8 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
                       text={message.text}
                       onCitationClick={
                         message.sources && message.sources.length > 0
-                          ? (chunkIndexes) =>
-                              handleCitationClick(message.id, chunkIndexes)
+                          ? (chunkIndex) =>
+                              handleCitationClick(message.id, chunkIndex)
                           : () => {}
                       }
                       components={botMarkdownComponents}

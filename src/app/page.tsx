@@ -4,13 +4,14 @@ import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
 import ChatHistory from "@/components/chat/ChatHistory";
 import ChatInputContainer from "@/components/chat/ChatInputContainer";
 import ServerStatusDisplay from "@/components/chat/ServerStatusDisplay";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useChatManager } from "@/hooks/useChatManager";
 import { useChatSettings } from "@/hooks/useChatSettings";
 import { useCitationPreview } from "@/hooks/useCitationPreview";
 import { useFileUploads } from "@/hooks/useFileUploads";
 import { useServerStatus } from "@/hooks/useServerStatus";
+import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import React, { useEffect, useState } from "react";
 
@@ -147,21 +148,19 @@ const GenkitChat: React.FC = () => {
 
             <div className="p-2 mt-auto">
               <div className="flex space-x-2 w-full">
-                <Button
-                  variant="outline"
-                  className="flex-1"
+                <button
+                  className={cn(buttonVariants({ variant: "outline" }), "flex-1")}
                   onClick={clearChat}
                 >
                   Clear Chat
-                </Button>
-                <Button
-                  variant="outline"
-                  className="flex-none"
+                </button>
+                <button
+                  className={cn(buttonVariants({ variant: "outline" }), "flex-none")}
                   onClick={() => setRenderKey(Date.now())}
                   title="Refresh UI"
                 >
                   Refresh
-                </Button>
+                </button>
               </div>
             </div>
             <div className="mt-4 pt-2 border-t">

@@ -9,7 +9,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 // react-pdf-highlighter might be added later if needed for text highlighting functionality
 // import "react-pdf-highlighter/dist/style.css";
 
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -110,10 +110,10 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
               Source: {fileName}
             </SheetTitle>
             <SheetClose asChild>
-              <Button variant="ghost" size="icon" className="rounded-full">
+              <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-full")}>
                 <X className="h-5 w-5" />
                 <span className="sr-only">Close</span>
-              </Button>
+              </button>
             </SheetClose>
           </div>
           <SheetDescription>

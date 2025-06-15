@@ -7,7 +7,7 @@ import {
   ParsedJsonData,
   ToolInvocation,
 } from "@/types/chat";
-import { normalizeText } from "@/utils/message-normalization";
+import { normalizeMessageContent } from "@/utils/message-normalization";
 import { useCallback, useState } from "react";
 
 export interface UseChatMessagesReturn {
@@ -67,8 +67,6 @@ export function useChatMessages(): UseChatMessagesReturn {
           if (msg.id === botMessageId) {
             // Process the text chunk to handle any escaped characters
             const processedChunk = textChunk
-              // Strip terminal formatting characters for bold/underline
-              .replace(/\x08/g, "")
               .replace(/\\"/g, '"')
               .replace(/\\n/g, '\n')
               .replace(/\\r/g, '\r')
@@ -223,9 +221,9 @@ export function useChatMessages(): UseChatMessagesReturn {
             for (const extractor of extractors) {
               const content = extractor(finalResponse);
               if (content) {
-                const fullText = normalizeText(content);
+                const fullText = normalizeMessageContent(content);
                 if (fullText.trim()) {
-                  const existingText = normalizeText(msg.text);
+                  const existingText = normalizeMessageContent(msg.text);
                   if (
                     !existingText ||
                     existingText.length < 100 ||

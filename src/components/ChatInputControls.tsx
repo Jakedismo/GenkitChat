@@ -1,20 +1,19 @@
-import React from "react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import {
-  Search,
-  ExternalLink,
-  Sparkles,
   BrainCircuit,
+  ExternalLink,
   Paperclip,
+  Search,
+  Sparkles,
 } from "lucide-react";
+import React from "react";
 
 interface ChatInputControlsProps {
   userInput: string;
@@ -67,12 +66,10 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
           {/* Tavily Search Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
+              <button
                 onClick={onTavilySearchToggle}
-                className="h-7 w-7"
                 disabled={isLoading || isUploading}
+                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7")}
               >
                 <Search
                   className={cn(
@@ -82,7 +79,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                       : "text-muted-foreground",
                   )}
                 />
-              </Button>
+              </button>
             </TooltipTrigger>
             <TooltipContent>
               <p>
@@ -93,12 +90,10 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
           {/* Tavily Extract Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
+              <button
                 onClick={onTavilyExtractToggle}
-                className="h-7 w-7"
                 disabled={isLoading || isUploading}
+                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7")}
               >
                 <ExternalLink
                   className={cn(
@@ -108,7 +103,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                       : "text-muted-foreground",
                   )}
                 />
-              </Button>
+              </button>
             </TooltipTrigger>
             <TooltipContent>
               <p>
@@ -120,12 +115,10 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
           {/* Perplexity Search Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
+              <button
                 onClick={onPerplexitySearchToggle}
-                className="h-7 w-7"
                 disabled={isLoading || isUploading}
+                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7")}
               >
                 <Sparkles
                   className={cn(
@@ -135,7 +128,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                       : "text-muted-foreground",
                   )}
                 />
-              </Button>
+              </button>
             </TooltipTrigger>
             <TooltipContent>
               <p>
@@ -147,12 +140,10 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
           {/* Perplexity Deep Research Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
+              <button
                 onClick={onPerplexityDeepResearchToggle}
-                className="h-7 w-7"
                 disabled={isLoading || isUploading}
+                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7")}
               >
                 <BrainCircuit
                   className={cn(
@@ -162,7 +153,7 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
                       : "text-muted-foreground",
                   )}
                 />
-              </Button>
+              </button>
             </TooltipTrigger>
             <TooltipContent>
               <p>
@@ -177,36 +168,35 @@ const ChatInputControls: React.FC<ChatInputControlsProps> = ({
       <div className="flex w-full items-start space-x-2 pt-2">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
+            <button
               onClick={onFileUploadTrigger}
-              className="h-10 w-10 p-2" // Ensure consistent height with input
               disabled={isLoading || isUploading}
+              className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-10 w-10 p-2")}
             >
               <Paperclip size={20} /> {/* Slightly larger icon */}
-            </Button>
+            </button>
           </TooltipTrigger>
           <TooltipContent>
             <p>Upload file(s)</p>
           </TooltipContent>
         </Tooltip>
-        <Input
+        <input
           type="text"
           placeholder="Enter your message..."
           value={userInput}
           onChange={(e) => onUserInputChanges(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isLoading || isUploading}
-          className="flex-1"
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm flex-1"
           spellCheck={false}
         />
-        <Button
+        <button
           onClick={onSendMessage}
           disabled={isLoading || isUploading || !userInput.trim()}
+          className={cn(buttonVariants({ variant: "default", size: "default" }))}
         >
           {isLoading ? "Sending..." : "Send"}
-        </Button>
+        </button>
       </div>
     </div>
   );
