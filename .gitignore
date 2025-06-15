@@ -60,3 +60,9 @@ __db_documentRagStore.json
 .windsurf/
 .windsurf/rules/
 .roomodes/
+
+# Log files
+stdout.log
+genkit_stdout.log
+stderr.log
+genkit_stderr.log
