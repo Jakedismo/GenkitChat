@@ -18,8 +18,8 @@ export async function ensureGenkitInitialized(): Promise<void> {
     // Log the error, but don't throw, to allow API routes to handle it gracefully if needed.
     // startGenkitServer itself should be logging detailed errors.
     console.error('Failed to ensure Genkit server initialization for API routes:', error instanceof Error ? error.message : String(error));
-    // Optionally, re-throw if specific error handling is needed upstream,
-    // but for now, let's assume startGenkitServer handles critical failures by throwing.
+    // Re-throw the error to ensure initialization failures are not masked
+    throw error;
   }
 }
 
