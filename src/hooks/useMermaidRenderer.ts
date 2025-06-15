@@ -1,6 +1,9 @@
 "use client";
 
-import { getCleanedMermaidChart } from "@/utils/mermaidUtils";
+import {
+  getCleanedMermaidChart,
+  validateChartCompleteness,
+} from "@/utils/mermaidUtils";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -23,78 +26,6 @@ export function useMermaidRenderer(chart: string, id?: string) {
   const cleanChart = useMemo(() => {
     return getCleanedMermaidChart(chart);
   }, [chart]);
-
-  const validateChartCompleteness = useCallback(
-    (chart: string): { isValid: boolean; error?: string } => {
-      if (!chart || chart.trim().length === 0) {
-        return { isValid: false, error: "Empty chart content" };
-      }
-
-      const trimmed = chart.trim();
-      const mermaidKeywords = [
-        "flowchart",
-        "graph",
-        "sequenceDiagram",
-        "classDiagram",
-        "stateDiagram",
-        "journey",
-        "gantt",
-        "pie",
-        "gitgraph",
-        "erDiagram",
-        "timeline",
-        "mindmap",
-        "sankey",
-        "quadrantChart",
-        "requirementDiagram",
-        "c4context",
-        "block-beta",
-      ];
-
-      const hasValidStart = mermaidKeywords.some((keyword) =>
-        trimmed.toLowerCase().startsWith(keyword.toLowerCase()),
-      );
-
-      if (!hasValidStart) {
-        return {
-          isValid: false,
-          error: `Chart must start with a valid Mermaid diagram type. Found: "${trimmed
-            .split("\n")[0]
-            .substring(0, 50)}..."`,
-        };
-      }
-
-      const suspiciousEndings = [
-        /--$/,
-        /\|\s*$/,
-        /\(\s*$/,
-        /\[\s*$/,
-        /\{\s*$/,
-        /->\s*$/,
-        /:\s*$/,
-      ];
-
-      const endsIncomplete = suspiciousEndings.some((pattern) =>
-        pattern.test(trimmed),
-      );
-      if (endsIncomplete) {
-        return {
-          isValid: false,
-          error: "Chart appears incomplete (streaming in progress)",
-        };
-      }
-
-      if (trimmed.length < 20) {
-        return {
-          isValid: false,
-          error: "Chart content too short to be a valid diagram",
-        };
-      }
-
-      return { isValid: true };
-    },
-    [],
-  );
 
   const debouncedRender = useCallback(async () => {
     if (!cleanChart || cleanChart.length === 0) {
@@ -232,7 +163,7 @@ export function useMermaidRenderer(chart: string, id?: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [cleanChart, diagramId, zoom, resolvedTheme, validateChartCompleteness, theme]);
+  }, [cleanChart, diagramId, zoom, resolvedTheme, theme]);
 
   useEffect(() => {
     setMounted(true);

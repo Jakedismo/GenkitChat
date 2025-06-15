@@ -1,3 +1,33 @@
+export const MERMAID_KEYWORDS = ["mermaid", "mermaidgraph"];
+export const MERMAID_CHART_TYPES = [
+  "flowchart",
+  "graph",
+  "sequenceDiagram",
+  "classDiagram",
+  "stateDiagram",
+  "journey",
+  "gantt",
+  "pie",
+  "gitgraph",
+  "erDiagram",
+  "timeline",
+  "mindmap",
+  "sankey",
+  "quadrantChart",
+  "requirementDiagram",
+  "c4context",
+  "block-beta",
+];
+
+export function isMermaidChart(chart: string): boolean {
+  if (!chart) return false;
+  const trimmed = chart.trim().toLowerCase();
+  const firstWord = trimmed.split(/\s+/)[0];
+  return [...MERMAID_KEYWORDS, ...MERMAID_CHART_TYPES].some((keyword) =>
+    firstWord === keyword.toLowerCase(),
+  );
+}
+
 export function getCleanedMermaidChart(chart: string): string {
   if (!chart) return "";
 
@@ -7,8 +37,28 @@ export function getCleanedMermaidChart(chart: string): string {
     .trim()
     .replace(/\n$/, "");
 
-  if (processedChart.toLowerCase().startsWith("mermaid")) {
-    processedChart = processedChart.substring("mermaid".length).trim();
+  const lowercasedChart = processedChart.toLowerCase();
+  let stripped = false;
+
+  // Use reversed keywords to match "mermaidgraph" before "mermaid"
+  const reversedKeywords = [...MERMAID_KEYWORDS].reverse();
+
+  for (const keyword of reversedKeywords) {
+    if (lowercasedChart.startsWith(keyword)) {
+      processedChart = processedChart.substring(keyword.length).trim();
+      stripped = true;
+      break;
+    }
+  }
+
+  if (stripped) {
+    const remainingLower = processedChart.toLowerCase();
+    const hasChartType = MERMAID_CHART_TYPES.some((ct) =>
+      remainingLower.startsWith(ct),
+    );
+    if (!hasChartType) {
+      processedChart = "graph " + processedChart;
+    }
   }
 
   const legendIndex = processedChart.search(/Legend:-/i);
@@ -33,27 +83,7 @@ export function validateChartCompleteness(
   }
 
   const trimmed = chart.trim();
-  const mermaidKeywords = [
-    "flowchart",
-    "graph",
-    "sequenceDiagram",
-    "classDiagram",
-    "stateDiagram",
-    "journey",
-    "gantt",
-    "pie",
-    "gitgraph",
-    "erDiagram",
-    "timeline",
-    "mindmap",
-    "sankey",
-    "quadrantChart",
-    "requirementDiagram",
-    "c4context",
-    "block-beta",
-  ];
-
-  const hasValidStart = mermaidKeywords.some((keyword) =>
+  const hasValidStart = MERMAID_CHART_TYPES.some((keyword) =>
     trimmed.toLowerCase().startsWith(keyword.toLowerCase()),
   );
 
@@ -86,7 +116,7 @@ export function validateChartCompleteness(
     };
   }
 
-  if (trimmed.length < 20) {
+  if (trimmed.length < 10) {
     return {
       isValid: false,
       error: "Chart content too short to be a valid diagram",
