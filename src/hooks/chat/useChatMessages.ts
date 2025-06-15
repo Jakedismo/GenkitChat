@@ -7,7 +7,7 @@ import {
   ParsedJsonData,
   ToolInvocation,
 } from "@/types/chat";
-import { normalizeMessageContent } from "@/utils/message-normalization";
+import { normalizeText } from "@/utils/message-normalization";
 import { useCallback, useState } from "react";
 
 export interface UseChatMessagesReturn {
@@ -221,9 +221,9 @@ export function useChatMessages(): UseChatMessagesReturn {
             for (const extractor of extractors) {
               const content = extractor(finalResponse);
               if (content) {
-                const fullText = normalizeMessageContent(content);
+                const fullText = normalizeText(content);
                 if (fullText.trim()) {
-                  const existingText = normalizeMessageContent(msg.text);
+                  const existingText = normalizeText(msg.text);
                   if (
                     !existingText ||
                     existingText.length < 100 ||

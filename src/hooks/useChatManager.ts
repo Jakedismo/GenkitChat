@@ -1,4 +1,3 @@
-import { normalizeText } from "@/components/ChatMessageContent";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChatMessage,
@@ -9,6 +8,7 @@ import {
   ToolInvocation,
   UploadedFile,
 } from "@/types/chat";
+import { normalizeText } from "@/utils/message-normalization";
 import { convertChatMessagesToHistory } from "@/utils/messageHistory";
 import { useCallback, useEffect, useRef, useState } from "react";
 // Corrected imports for custom hooks
