@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import MermaidDiagram from './MermaidDiagram';
 
@@ -42,7 +41,7 @@ describe('MermaidDiagram Component Tests', () => {
   });
 
   it('should call initialize with the correct theme settings when a chart is provided', async () => {
-    render(<MermaidDiagram chart="graph TD C[User Service] --> D(Database)" theme="dark" />);
+    render(<MermaidDiagram chart="graph TD C[User Service] --> D(Database)" />);
 
     await act(async () => {
       jest.advanceTimersByTime(500);

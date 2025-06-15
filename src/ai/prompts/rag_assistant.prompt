@@ -1,5 +1,7 @@
 ---
-name: rag_assistant
+input:
+  schema:
+    userMessage: string
 ---
 
 {{role "system"}}

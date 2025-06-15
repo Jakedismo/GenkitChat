@@ -87,17 +87,20 @@ function getPlugins() {
   const context7 = getContext7Client();
   if (context7) plugins.push(context7);
 
-  try {
-    plugins.push(
-      devLocalVectorstore([
-        {
-          indexName: "documentRagStore",
-          embedder: vertexAI.embedder('text-embedding-005'),
-        },
-      ])
-    );
-  } catch (e) {
-    console.warn("Failed to initialize vectorstore plugin:", e);
+  // Only run vector store in a non-production environment to avoid build errors
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      plugins.push(
+        devLocalVectorstore([
+          {
+            indexName: "documentRagStore",
+            embedder: vertexAI.embedder("text-embedding-005"),
+          },
+        ])
+      );
+    } catch (e) {
+      console.warn("Failed to initialize vectorstore plugin:", e);
+    }
   }
 
   try {
@@ -295,8 +298,12 @@ async function initializeServer(): Promise<void> {
 
     // Log flow availability
     console.log(
-      "documentQaStreamFlow loaded dynamically from ragFlow.ts:",
-      !!documentQaStreamFlow
+      "[Genkit Server] Checking imported flow:",
+      {
+        isDocumentQaStreamFlowDefined: !!documentQaStreamFlow,
+        typeOfFlow: typeof documentQaStreamFlow,
+        flowKeys: typeof documentQaStreamFlow === 'object' && documentQaStreamFlow !== null ? Object.keys(documentQaStreamFlow) : 'N/A'
+      }
     );
 
     // Define the flows to register with the server
@@ -305,14 +312,25 @@ async function initializeServer(): Promise<void> {
       // Add other imported flows here as needed
     ].filter(Boolean) as (Flow<any, any, any>)[];
 
+    console.log(`[Genkit Server] Found ${flowsToRegister.length} valid flows to register.`);
+    flowsToRegister.forEach((flow, index) => {
+      console.log(`[Genkit Server] Flow ${index + 1}: ${flow.name}`);
+    });
+
     // Start a single flow server instance with all registered flows
     const SERVER_PORT = 3400; // Define port as a constant
 
-    startFlowServer({
-      flows: flowsToRegister,
-      port: SERVER_PORT,
-      cors: { origin: "*" },
-    });
+    if (flowsToRegister.length > 0) {
+      startFlowServer({
+        flows: flowsToRegister,
+        port: SERVER_PORT,
+        cors: { origin: "*" },
+      });
+    } else {
+      console.error("[Genkit Server] FATAL: No valid flows were found to register. Server will not start.");
+      // We might want to throw an error here to halt execution if no flows are a critical issue
+      throw new Error("No valid flows found to register with the Genkit server.");
+    }
 
     // Mark initialization as complete
     isServerInitialized = true;

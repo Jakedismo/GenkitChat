@@ -79,14 +79,14 @@ export function useChatMessages(): UseChatMessagesReturn {
 
 
             // Otherwise append the text (default behavior) - IMMUTABLE
-            let finalTextToAppend: string | Record<string, unknown> | unknown[] = '';
+            let finalTextToAppend: string | string[] | { text?: string; [key: string]: unknown } = '';
  
             if (Array.isArray(msg.text)) {
-              const originalArray = msg.text as unknown[];
+              const originalArray = msg.text as string[];
               if (originalArray.length > 0 && typeof originalArray[originalArray.length - 1] === 'string') {
                 finalTextToAppend = [
                   ...originalArray.slice(0, -1),
-                  originalArray[originalArray.length - 1] + processedChunk,
+                  (originalArray[originalArray.length - 1] as string) + processedChunk,
                 ];
               } else {
                 finalTextToAppend = [...originalArray, processedChunk];
@@ -276,8 +276,8 @@ export function useChatMessages(): UseChatMessagesReturn {
                     }
                     foundContent = true;
                   }
-                } else if (typeof candidate.content?.text === 'string') {
-                  const fullText = candidate.content.text;
+                } else if (candidate.content && 'text' in candidate.content && typeof (candidate.content as any).text === 'string') {
+                  const fullText = (candidate.content as any).text;
                   // Always replace with the final response if it's longer or if existing text is very short
                   if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
                     console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with candidate text (${fullText.length} chars)`);
@@ -422,9 +422,9 @@ export function useChatMessages(): UseChatMessagesReturn {
           textToFix = msg.text;
         } else if (Array.isArray(msg.text)) {
           // Join array items
-          textToFix = msg.text.map(item => 
-            typeof item === 'string' ? item : 
-            (item && typeof item === 'object' && item.text) ? item.text : 
+          textToFix = msg.text.map(item =>
+            typeof item === 'string' ? item :
+            (item && typeof item === 'object' && 'text' in item && typeof (item as any).text === 'string') ? (item as any).text :
             JSON.stringify(item)
           ).join('');
           wasFixed = true;

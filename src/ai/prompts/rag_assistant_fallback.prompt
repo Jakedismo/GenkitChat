@@ -1,4 +1,7 @@
 ---
+input:
+  schema:
+    userMessage: string
 ---
 
 {{role "system"}}

@@ -1,16 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { JsonSessionStore } from '@/lib/json-session-store';
 import { withGenkitServer } from '@/lib/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 
 const sessionStore = new JsonSessionStore();
 
-// Session metadata interface
+// Session metadata interface - Adding index signature for Genkit compatibility
 interface SessionMetadata {
   sessionId: string;
   created: string;
   lastActivity: string;
   documentCount?: number;
+  [key: string]: unknown; // Allow additional properties for Record<string, unknown> compatibility
 }
 
 export async function GET(req: NextRequest) {
