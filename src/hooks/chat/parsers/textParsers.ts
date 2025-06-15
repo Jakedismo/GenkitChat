@@ -200,12 +200,10 @@ export function extractTextLastResort(payload: string): string | null {
  * Final text cleanup to unescape sequences
  */
 export function finalizeTextContent(textContent: string): string {
-  return textContent
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, '\\');
+  // Use the helper to unescape standard sequences and markdown.
+  // The `unescapeMarkdown` function handles most JSON escapes (like \n, \\)
+  // and also markdown-specific ones (like \[).
+  return unescapeMarkdown(textContent);
 }
 
 /**
@@ -230,6 +228,7 @@ export function unescapeMarkdown(str: string): string {
     .replace(/\\>/g, '>')     // blockquote
     .replace(/\\#/g, '#')     // headings
     .replace(/\\!/g, '!')
+    .replace(/\\"/g, '"') // quotes
     .replace(/\\\\/g, '\\'); // backslash (must be last)
 }
 
