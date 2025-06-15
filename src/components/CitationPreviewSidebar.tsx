@@ -19,6 +19,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import { CitationPreviewData } from "@/types/chat";
 import { X } from "lucide-react";
 
@@ -110,7 +111,7 @@ const CitationPreviewSidebar: React.FC<CitationPreviewSidebarProps> = ({
               Source: {fileName}
             </SheetTitle>
             <SheetClose asChild>
-              <button className={(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-full")}>
+              <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-full")}>
                 <X className="h-5 w-5" />
                 <span className="sr-only">Close</span>
               </button>
