@@ -15,10 +15,11 @@ export async function ensureGenkitInitialized(): Promise<void> {
     await startGenkitServer();
     console.log('Genkit initialization complete for API routes');
   } catch (error) {
-    // Log the error, but don't throw, to allow API routes to handle it gracefully if needed.
-    // startGenkitServer itself should be logging detailed errors.
+    // Log the error.
     console.error('Failed to ensure Genkit server initialization for API routes:', error instanceof Error ? error.message : String(error));
-    // Re-throw the error to ensure initialization failures are not masked
+    // Re-throw the error to ensure initialization failures are propagated to the caller
+    // and are not masked. This allows upstream code (e.g., API routes) to be aware
+    // of critical Genkit initialization failures.
     throw error;
   }
 }
