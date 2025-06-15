@@ -1,3 +1,4 @@
+import { MERMAID_CHART_TYPES, MERMAID_KEYWORDS } from "@/utils/mermaidUtils";
 import React from "react";
 import MermaidDiagram from "./MermaidDiagram";
 
@@ -92,10 +93,16 @@ export const botMarkdownComponents = {
     if (childrenArray.length === 1 && React.isValidElement(childrenArray[0]) && (childrenArray[0].type === 'pre' || (childrenArray[0].type as any).name === 'MermaidDiagram')) {
       return <>{childrenArray[0]}</>;
     }
-    if (childrenArray.length === 1 && typeof childrenArray[0] === 'string') {
+    if (childrenArray.length === 1 && typeof childrenArray[0] === "string") {
       const text = childrenArray[0];
-      const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'journey', 'gantt', 'pie', 'gitgraph', 'erDiagram', 'timeline', 'mindmap'];
-      const mermaidRegex = new RegExp(`(^|\\s)(${mermaidKeywords.join('|')})\\s+[\\s\\S]+`);
+      const allMermaidKeywords = [
+        ...MERMAID_KEYWORDS,
+        ...MERMAID_CHART_TYPES,
+      ];
+      const mermaidRegex = new RegExp(
+        `(^|\\s)(${allMermaidKeywords.join("|")})\\s+[\\s\\S]+`,
+        "i",
+      );
       if (mermaidRegex.test(text)) {
         return <MermaidDiagram chart={text} />;
       }
@@ -108,9 +115,16 @@ export const botMarkdownComponents = {
     if (inline) {
       return <code className={`${className || ''} bg-muted px-1.5 py-0.5 rounded text-sm font-mono`}>{children}</code>;
     }
-    if (language.startsWith("mermaid")) {
+    if (MERMAID_KEYWORDS.some((keyword) => language.startsWith(keyword))) {
       const chartContent = String(children).replace(/\n$/, "");
-      return <MermaidDiagram chart={chartContent} id={`mermaid-${btoa(chartContent).replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}`} />;
+      return (
+        <MermaidDiagram
+          chart={chartContent}
+          id={`mermaid-${btoa(chartContent)
+            .replace(/[^a-zA-Z0-9]/g, "")
+            .substring(0, 10)}`}
+        />
+      );
     }
     return (
       <pre className={`${className || ""} bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto`} style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}>

@@ -145,7 +145,6 @@ The application will start, initialize Genkit, load plugins (including starting 
 
 ## Notes & Future Work
 
-* **RAG Enhancement:** The current RAG implementation uses a simple keyword-based similarity score for reranking. This could be improved by integrating a more sophisticated reranker model (e.g., from Vertex AI or Cohere).
 * **Tool Listing:** The `/api/tools` endpoint currently returns a hardcoded list for Context7 because dynamically listing tools registered via MCP client plugins proved difficult without relying on the `genkit start` Reflection API.
 * **Session Storage:** Conversation history currently uses Genkit's default in-memory store. For production or multi-user scenarios, a persistent store (like Firestore via `@genkit-ai/firebase`) should be configured.
 * **Error Handling:** Error handling in API routes and frontend fetch calls is basic and could be enhanced.

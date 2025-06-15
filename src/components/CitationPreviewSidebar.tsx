@@ -19,6 +19,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import { CitationPreviewData } from "@/types/chat";
 import { X } from "lucide-react";
 
