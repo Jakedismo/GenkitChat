@@ -68,7 +68,6 @@ export function useChatMessages(): UseChatMessagesReturn {
             // Process the text chunk to handle any escaped characters
             const processedChunk = textChunk
               // Strip terminal formatting characters for bold/underline
-              .replace(/.\x08/g, "")
               .replace(/\x08/g, "")
               .replace(/\\"/g, '"')
               .replace(/\\n/g, '\n')
