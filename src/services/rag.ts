@@ -1,5 +1,5 @@
 import { aiInstance, ragIndexerRef } from "@/genkit-server";
-import { extractText } from "@papra/lecture"; // Import @papra/lecture
+// import { extractText } from "@papra/lecture"; // Import @papra/lecture - Will be dynamically imported
 import { Document } from "genkit/retriever";
 import { chunk } from "llm-chunk";
 // import { Context as FlowContext } from "@genkit-ai/flow"; // REMOVED: This was causing issues
@@ -7,7 +7,32 @@ import fs from "fs/promises"; // Add fs/promises
 import path from "path"; // Add path
 import { v4 as uuidv4 } from "uuid";
 
-const UPLOADS_DIR = path.join(process.cwd(), "uploads"); // Define base uploads dir
+// Build-time detection to prevent file system operations during Next.js build analysis
+const isBuildTime = process.env.NEXT_BUILD === "true" ||
+                   process.env.NODE_ENV === "production" && process.env.NEXT_PHASE === "phase-production-build" ||
+                   typeof process.cwd !== 'function' ||
+                   process.env.TURBOPACK === "1";
+
+const isServerRuntime = typeof window === "undefined" &&
+                       typeof process !== "undefined" &&
+                       process.env.NODE_ENV !== undefined &&
+                       !isBuildTime &&
+                       typeof require !== "undefined";
+
+// Only perform file system operations in true server runtime
+let UPLOADS_DIR = "./uploads"; // Default relative path for build analysis
+
+if (isServerRuntime && typeof process.cwd === 'function') {
+  try {
+    UPLOADS_DIR = path.join(process.cwd(), "uploads");
+    console.log(`[RAG Service] Uploads directory resolved to: ${UPLOADS_DIR}`);
+  } catch (error) {
+    console.warn(`[RAG Service] Failed to resolve uploads directory, using relative path:`, error);
+    UPLOADS_DIR = "./uploads"; // Fallback to relative path
+  }
+} else {
+  console.log(`[RAG Service] Skipping file system operations during build analysis - using relative path`);
+}
 
 // Max file size for uploads in bytes (e.g., 10MB)
 // Note: INITIAL_RETRIEVAL_COUNT, FINAL_DOCUMENT_COUNT, CHUNKING_CONFIG, etc. are used by the flow logic below.
@@ -17,19 +42,6 @@ const UPLOADS_DIR = path.join(process.cwd(), "uploads"); // Define base uploads 
  */
 export const MAX_UPLOAD_SIZE = 100 * 1024 * 1024;
 
-/**
- * Represents a RAG endpoint.
- */
-export interface RagEndpoint {
-  /**
-   * The ID of the endpoint.
-   */
-  endpointId: string;
-  /**
-   * The name of the endpoint.
-   */
-  endpointName: string;
-}
 
 /**
  * Configuration for chunking text documents
@@ -41,20 +53,6 @@ export const CHUNKING_CONFIG = {
   overlap: 200,
 } as const; // Use as const
 
-/**
- * Asynchronously retrieves a list of RAG endpoints.
- *
- * @returns A promise that resolves to an array of RagEndpoint objects.
- */
-export async function getRagEndpoints(): Promise<RagEndpoint[]> {
-  // We can enhance this with more endpoints later
-  return [
-    {
-      endpointId: "pdf-rag",
-      endpointName: "PDF Document RAG with Two-Stage Retrieval",
-    },
-  ];
-} // Add missing closing brace for getRagEndpoints
 
 // Removed extractTextFromPdf function
 
@@ -76,6 +74,9 @@ export async function indexFileDocument( // Renamed back (or to generic)
   let overallChunkIndex = 0;
 
   try {
+    // Dynamically import @papra/lecture only when needed
+    const { extractText } = await import("@papra/lecture");
+
     // Determine MIME type (basic implementation based on extension)
     // A more robust solution might use a library like 'mime-types' or pass from client
     let mimeType = "application/octet-stream"; // Default

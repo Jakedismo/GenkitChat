@@ -2,10 +2,34 @@ import { SessionData, SessionStore } from 'genkit/beta'; // Or 'genkit/flow' if 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 
+// Build-time detection to prevent file system operations during Next.js build analysis
+const isBuildTime = process.env.NEXT_BUILD === "true" ||
+                   process.env.NODE_ENV === "production" && process.env.NEXT_PHASE === "phase-production-build" ||
+                   typeof process.cwd !== 'function' ||
+                   process.env.TURBOPACK === "1";
+
+const isServerRuntime = typeof window === "undefined" &&
+                       typeof process !== "undefined" &&
+                       process.env.NODE_ENV !== undefined &&
+                       !isBuildTime &&
+                       typeof require !== "undefined";
+
 // Define a directory to store session files.
 // IMPORTANT: Ensure this directory is writable by your application
 // and ideally outside your source control if sessions are temporary/dev-only.
-const SESSIONS_DIR = path.resolve(process.cwd(), '.genkit_sessions');
+let SESSIONS_DIR = "./.genkit_sessions"; // Default relative path for build analysis
+
+if (isServerRuntime && typeof process.cwd === 'function') {
+  try {
+    SESSIONS_DIR = path.resolve(process.cwd(), '.genkit_sessions');
+    console.log(`[JSON Session Store] Sessions directory resolved to: ${SESSIONS_DIR}`);
+  } catch (error) {
+    console.warn(`[JSON Session Store] Failed to resolve sessions directory, using relative path:`, error);
+    SESSIONS_DIR = "./.genkit_sessions"; // Fallback to relative path
+  }
+} else {
+  console.log(`[JSON Session Store] Skipping file system operations during build analysis - using relative path`);
+}
 
 export class JsonSessionStore<S = Record<string, unknown>> implements SessionStore<S> {
   private sessionsDir: string;

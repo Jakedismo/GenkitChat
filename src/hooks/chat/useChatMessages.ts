@@ -1,6 +1,13 @@
 "use client";
 
-import { ChatMessage, CitationMeta, DocumentData, ParsedJsonData, ToolInvocation } from "@/types/chat";
+import {
+  ChatMessage,
+  CitationMeta,
+  DocumentData,
+  ParsedJsonData,
+  ToolInvocation,
+} from "@/types/chat";
+import { normalizeText } from "@/utils/message-normalization";
 import { useCallback, useState } from "react";
 
 export interface UseChatMessagesReturn {
@@ -60,6 +67,9 @@ export function useChatMessages(): UseChatMessagesReturn {
           if (msg.id === botMessageId) {
             // Process the text chunk to handle any escaped characters
             const processedChunk = textChunk
+              // Strip terminal formatting characters for bold/underline
+              .replace(/.\x08/g, "")
+              .replace(/\x08/g, "")
               .replace(/\\"/g, '"')
               .replace(/\\n/g, '\n')
               .replace(/\\r/g, '\r')
@@ -196,173 +206,51 @@ export function useChatMessages(): UseChatMessagesReturn {
   
   const updateBotMessageFromFinalResponse = useCallback(
     (botMessageId: string, finalResponse: ParsedJsonData) => {
+      const extractors = [
+        (response: ParsedJsonData) =>
+          response.message?.content,
+        (response: ParsedJsonData) =>
+          response.custom?.candidates?.[0]?.content?.parts,
+        (response: ParsedJsonData) =>
+          response.response,
+      ];
+
       setMessages((prevMessages) =>
         prevMessages.map((msg) => {
           if (msg.id === botMessageId) {
             const updatedMsg = { ...msg };
             let foundContent = false;
-            
-            // Helper function to extract text from any part object
-            const extractTextFromPart = (part: unknown): string => {
-              if (typeof part === 'string') return part;
-              if (part === null || part === undefined) return '';
-              if (part && typeof part === 'object') {
-                // Check common text fields
-                if ('text' in part && typeof (part as { text?: unknown }).text === 'string') return (part as { text: string }).text;
-                if ('content' in part && typeof (part as { content?: unknown }).content === 'string') return (part as { content: string }).content;
-                if ('value' in part && typeof (part as { value?: unknown }).value === 'string') return (part as { value: string }).value;
-                
-                // Handle nested arrays
-                if ('text' in part && Array.isArray((part as { text?: unknown[] }).text)) {
-                  return ((part as { text: unknown[] }).text).map(extractTextFromPart).join('');
-                }
-                if ('content' in part && Array.isArray((part as { content?: unknown[] }).content)) {
-                  return ((part as { content: unknown[] }).content).map(extractTextFromPart).join('');
-                }
-                if ('parts' in part && Array.isArray((part as { parts?: unknown[] }).parts)) {
-                  return ((part as { parts: unknown[] }).parts).map(extractTextFromPart).join('');
-                }
-              }
-              // Last resort: try to stringify (but handle circular references)
-              try {
-                return JSON.stringify(part);
-              } catch {
-                return `[Complex Object]`;
-              }
-            };
-            
-            // Get the existing message text to compare with the final response
-            const existingText = typeof msg.text === 'string' ? msg.text : '';
-            
-            try {
-              // First priority: Check for Google/Gemini message.content array
-              if (finalResponse.message?.content && Array.isArray(finalResponse.message.content)) {
 
-                
-                const contentParts = finalResponse.message.content.map(extractTextFromPart);
-                const fullText = contentParts.join('');
-
-                
+            for (const extractor of extractors) {
+              const content = extractor(finalResponse);
+              if (content) {
+                const fullText = normalizeText(content);
                 if (fullText.trim()) {
-                  // Always replace with the final response if it's longer or if existing text is very short
-                  if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-
+                  const existingText = normalizeText(msg.text);
+                  if (
+                    !existingText ||
+                    existingText.length < 100 ||
+                    fullText.length > existingText.length
+                  ) {
                     updatedMsg.text = fullText;
-                  } else {
-                    console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
                   }
                   foundContent = true;
+                  break;
                 }
               }
-              
-              // Second priority: Check for custom.candidates structure
-              if (!foundContent && finalResponse.custom?.candidates && finalResponse.custom.candidates.length > 0) {
-                const candidate = finalResponse.custom.candidates[0];
-                
-                if (candidate.content?.parts && Array.isArray(candidate.content.parts)) {
-                  console.log(`[useChatMessages] Processing candidate.content.parts with ${candidate.content.parts.length} items`);
-                  
-                  const contentParts = candidate.content.parts.map(extractTextFromPart);
-                  const fullText = contentParts.join('');
-                  console.log(`[useChatMessages] Joined candidate.content.parts into text (${fullText.length} chars)`);
-                  
-                  if (fullText.trim()) {
-                    // Always replace with the final response if it's longer or if existing text is very short
-                    if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-
-                      updatedMsg.text = fullText;
-                    } else {
-                      console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
-                    }
-                    foundContent = true;
-                  }
-                } else if (candidate.content && 'text' in candidate.content && typeof (candidate.content as any).text === 'string') {
-                  const fullText = (candidate.content as any).text;
-                  // Always replace with the final response if it's longer or if existing text is very short
-                  if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                    console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with candidate text (${fullText.length} chars)`);
-                    updatedMsg.text = fullText;
-                  } else {
-                    console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
-                  }
-                  foundContent = true;
-                }
-              }
-              
-              // Third priority: Use response property
-              if (!foundContent && finalResponse.response) {
-                if (Array.isArray(finalResponse.response)) {
-                  // Array response
-                  const fullText = finalResponse.response.map(extractTextFromPart).join('');
-                  
-                  if (fullText.trim()) {
-                    // Always replace with the final response if it's longer or if existing text is very short
-                    if (!existingText || existingText.length < 100 || fullText.length > existingText.length) {
-                      console.log(`[useChatMessages] Replacing streamed text (${existingText.length} chars) with array response (${fullText.length} chars)`);
-                      updatedMsg.text = fullText;
-                    } else {
-                      console.log(`[useChatMessages] Keeping existing text as it appears complete (${existingText.length} chars vs ${fullText.length} chars)`);
-                    }
-                    foundContent = true;
-                  }
-                } else if (typeof finalResponse.response === 'string') {
-                  // String response
-                  const fullText = finalResponse.response;
-                  if (fullText.trim()) {
-                    // PRIORITIZE STREAMING: Only use final response if streaming failed completely
-                    if (!existingText || existingText.length === 0) {
-
-                      updatedMsg.text = fullText;
-                      foundContent = true;
-                    } else if (existingText.length < fullText.length * 0.8) {
-                      // Only replace if streamed text is significantly shorter (less than 80% of final)
-
-                      updatedMsg.text = fullText;
-                      foundContent = true;
-                    } else {
-
-                      foundContent = true; // Keep existing streamed content
-                    }
-                  }
-                } else if (finalResponse.response && typeof finalResponse.response === 'object') {
-                  // Object response, might contain nested content
-                  if (finalResponse.response.content && Array.isArray(finalResponse.response.content)) {
-                    const fullText = finalResponse.response.content.map(extractTextFromPart).join('');
-                    
-                    if (fullText.trim()) {
-                      // PRIORITIZE STREAMING: Only use final response if streaming failed completely
-                      if (!existingText || existingText.length === 0) {
-
-                        updatedMsg.text = fullText;
-                        foundContent = true;
-                      } else if (existingText.length < fullText.length * 0.8) {
-                        // Only replace if streamed text is significantly shorter (less than 80% of final)
-
-                        updatedMsg.text = fullText;
-                        foundContent = true;
-                      } else {
-
-                        foundContent = true; // Keep existing streamed content
-                      }
-                    }
-                  }
-                }
-              }
-              
-              if (!foundContent) {
-                console.warn(`[useChatMessages] Could not extract valid content from finalResponse for message ${msg.id}`);
-              } else {
-
-              }
-            } catch (error) {
-              console.error(`[useChatMessages] Error processing finalResponse:`, error);
             }
-            
-            // Always add tool invocations if present
+
+            if (!foundContent) {
+              console.warn(
+                `[useChatMessages] Could not extract valid content from finalResponse for message ${msg.id}`,
+              );
+            }
+
             if (Array.isArray(finalResponse.toolInvocations)) {
-              updatedMsg.toolInvocations = finalResponse.toolInvocations as ToolInvocation[];
+              updatedMsg.toolInvocations =
+                finalResponse.toolInvocations as ToolInvocation[];
             }
-            
+
             return updatedMsg;
           }
           return msg;
