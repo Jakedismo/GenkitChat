@@ -2,21 +2,8 @@
 // Handles server-side Genkit initialization for API routes
 import { startGenkitServer } from '@/genkit-server';
 
-// Track if initialization has been attempted
-let initialized = false;
-let initializing = false;
-let initError: Error | null = null;
-
 // Ensure Genkit server is initialized only once
 export async function ensureGenkitInitialized(): Promise<void> {
-  // Skip if already initialized or initializing
-  if (initialized || initializing) {
-    if (initError) {
-      console.warn('Previous Genkit initialization failed:', initError);
-    }
-    return;
-  }
-
   // Only run on server
   if (typeof window !== 'undefined') {
     console.warn('Genkit server cannot be initialized in browser context');
@@ -24,20 +11,15 @@ export async function ensureGenkitInitialized(): Promise<void> {
   }
 
   try {
-    initializing = true;
-    console.log('Initializing Genkit server for API routes...');
-    
-    // Start the Genkit server
+    // Start the Genkit server (it handles its own singleton logic)
     await startGenkitServer();
-    
-    initialized = true;
     console.log('Genkit initialization complete for API routes');
   } catch (error) {
-    initError = error instanceof Error ? error : new Error(String(error));
-    console.error('Failed to initialize Genkit server:', initError);
-    // Don't throw, allow API routes to handle the error gracefully
-  } finally {
-    initializing = false;
+    // Log the error, but don't throw, to allow API routes to handle it gracefully if needed.
+    // startGenkitServer itself should be logging detailed errors.
+    console.error('Failed to ensure Genkit server initialization for API routes:', error instanceof Error ? error.message : String(error));
+    // Optionally, re-throw if specific error handling is needed upstream,
+    // but for now, let's assume startGenkitServer handles critical failures by throwing.
   }
 }
 

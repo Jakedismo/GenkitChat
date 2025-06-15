@@ -1,0 +1,9 @@
+
+> nextn@0.1.0 genkit:watch
+> genkit start -- tsx --watch src/ai/dev.ts
+
+[Telemetry Server] initialized local file trace store at root: /app/.genkit/traces
+Telemetry API running on http://localhost:4035
+Project root: /app
+Genkit Developer UI: http://localhost:4002
+Completed running 'src/ai/dev.ts'

@@ -1,0 +1,64 @@
+
+> nextn@0.1.0 dev
+> next dev --turbo -p 9005
+
+   ▲ Next.js 15.3.3 (Turbopack)
+   - Local:        http://localhost:9005
+   - Network:      http://192.168.0.2:9005
+
+ ✓ Starting...
+ ✓ Ready in 2.7s
+ ✓ Compiled /api/test-genkit-init in 188ms
+Initializing Genkit configuration...
+[Genkit Init] Prompt directory resolved to: /app/src/ai/prompts
+[Genkit Init] Current working directory: /app
+[Genkit Init] ✓ Prompt directory exists at: /app/src/ai/prompts
+[Genkit Init] Found 6 files in prompt directory: basic_chat_creative.prompt, basic_chat_normal.prompt, basic_chat_precise.prompt, rag_assistant.prompt, rag_assistant_fallback.prompt
+🔍 Validating prompt directory: /app/src/ai/prompts
+📁 Found 5 prompt files and 0 partials
+Vertex AI rerankers initialized with models: [
+  'vertexai/semantic-ranker-512',
+  'vertexai/reranker',
+  'vertexai/text-bison-32k',
+  'semantic-ranker-512'
+]
+[Genkit Init] ✓ Genkit custom helper 'selectModel' registered via instance.defineHelper().
+[Genkit Init] ✓ Genkit instance configured successfully.
+[TEST_API_ROUTE] API route called. Attempting to ensure Genkit is initialized...
+[GENKIT_SERVER_TS] startGenkitServer() called.
+[GENKIT_SERVER_TS] startGenkitServer: Starting new initialization.
+[GENKIT_SERVER_TS] initializeServer() called.
+[GENKIT_SERVER_TS] initializeServer: Starting Genkit server initialization attempt...
+Genkit instance initialized with plugins.
+registering /flow/documentQaStreamFlow
+[Genkit Server] Checking imported flow: {
+  isDocumentQaStreamFlowDefined: true,
+  typeOfFlow: 'function',
+  flowKeys: 'N/A'
+}
+[Genkit Server] Found 1 valid flows to register.
+[Genkit Server] Flow 1: actionFn
+[SINGLETON CHECK] Attempting to start Flow Server...
+Running flow server with flow paths:
+ - /documentQaStreamFlow
+[SINGLETON CHECK] Flow Server start initiated.
+Genkit flow server started on port 3400
+Genkit server started on port 3400 with 1 flow(s) registered.
+Genkit Developer UI should be available at http://localhost:4000
+Genkit server successfully initialized
+Genkit initialization complete for API routes
+[TEST_API_ROUTE] ensureGenkitInitialized completed.
+Flow server running on http://localhost:3400
+ GET /api/test-genkit-init 200 in 2111ms
+[TEST_API_ROUTE] API route called. Attempting to ensure Genkit is initialized...
+[GENKIT_SERVER_TS] startGenkitServer() called.
+[GENKIT_SERVER_TS] startGenkitServer: Already initialized. Skipping.
+Genkit initialization complete for API routes
+[TEST_API_ROUTE] ensureGenkitInitialized completed.
+ GET /api/test-genkit-init 200 in 18ms
+[TEST_API_ROUTE] API route called. Attempting to ensure Genkit is initialized...
+[GENKIT_SERVER_TS] startGenkitServer() called.
+[GENKIT_SERVER_TS] startGenkitServer: Already initialized. Skipping.
+Genkit initialization complete for API routes
+[TEST_API_ROUTE] ensureGenkitInitialized completed.
+ GET /api/test-genkit-init 200 in 24ms
