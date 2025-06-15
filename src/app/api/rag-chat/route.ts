@@ -1,5 +1,6 @@
 import { documentQaStreamFlow, RagFlowInput } from "@/ai/flows/ragFlow";
 import { ToolInvocation } from "@/lib/chat-utils";
+import { createErrorResponse, createValidationErrorResponse, createFileErrorResponse } from "@/lib/api-error-handler";
 import { withGenkitServer } from "@/lib/server";
 import {
   generateRagSessionId,
@@ -62,6 +63,79 @@ async function ensureUploadsDir() {
   }
 }
 
+// Enhanced file validation
+function validateFile(file: File): { isValid: boolean; error?: string } {
+  // Check file size
+  if (file.size > MAX_UPLOAD_SIZE) {
+    return {
+      isValid: false,
+      error: `File size exceeds the maximum allowed size of ${MAX_UPLOAD_SIZE / (1024 * 1024)}MB`,
+    };
+  }
+
+  // Check if file is empty
+  if (file.size === 0) {
+    return {
+      isValid: false,
+      error: 'File is empty',
+    };
+  }
+
+  // Allowed MIME types for document processing
+  const allowedMimeTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    'application/msword', // .doc
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+    'application/vnd.ms-powerpoint', // .ppt
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel', // .xls
+    'text/plain', // .txt
+    'text/markdown', // .md
+    'text/csv', // .csv
+    'application/rtf', // .rtf
+  ];
+
+  // Check MIME type
+  if (!allowedMimeTypes.includes(file.type)) {
+    return {
+      isValid: false,
+      error: `Unsupported file type: ${file.type}. Allowed types: PDF, Word, PowerPoint, Excel, Text, Markdown, CSV, RTF`,
+    };
+  }
+
+  // Check file extension as additional security
+  const fileName = file.name.toLowerCase();
+  const allowedExtensions = [
+    '.pdf', '.docx', '.doc', '.pptx', '.ppt',
+    '.xlsx', '.xls', '.txt', '.md', '.csv', '.rtf'
+  ];
+
+  const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+  if (!hasValidExtension) {
+    return {
+      isValid: false,
+      error: `Invalid file extension. File name: ${file.name}`,
+    };
+  }
+
+  // Check for suspicious file names
+  const suspiciousPatterns = [
+    /\.\./,  // Path traversal
+    /[<>:"|?*]/,  // Invalid filename characters
+    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i,  // Windows reserved names
+  ];
+
+  if (suspiciousPatterns.some(pattern => pattern.test(fileName))) {
+    return {
+      isValid: false,
+      error: 'File name contains invalid or suspicious characters',
+    };
+  }
+
+  return { isValid: true };
+}
+
 // Handler for processing file uploads and returning session ID
 export async function POST(req: Request) {
   return withGenkitServer(async () => {
@@ -78,24 +152,21 @@ export async function POST(req: Request) {
         const file = formData.get("file") as File;
 
         if (!file) {
-          return new Response(JSON.stringify({ error: "No file provided" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
+          return createFileErrorResponse("No file provided", {
+            path: '/api/rag-chat',
+            method: 'POST',
           });
         }
 
-        if (file.size > MAX_UPLOAD_SIZE) {
-          return new Response(
-            JSON.stringify({
-              error: `File size exceeds the maximum allowed size of ${
-                MAX_UPLOAD_SIZE / (1024 * 1024)
-              }MB`,
-            }),
-            {
-              status: 400,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
+        // Enhanced file validation
+        const validation = validateFile(file);
+        if (!validation.isValid) {
+          return createFileErrorResponse(validation.error!, {
+            path: '/api/rag-chat',
+            method: 'POST',
+            fileName: file.name,
+            fileSize: file.size,
+          });
         }
 
         const sessionId = generateRagSessionId();

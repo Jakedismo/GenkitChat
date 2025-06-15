@@ -323,11 +323,16 @@ async function initializeServer(): Promise<void> {
     console.log("Starting Genkit server initialization...");
 
     // API Key Check
-    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
-      console.error(
-        "FATAL: GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set."
-      );
-      throw new Error("Missing Google AI API Key environment variable.");
+    // Validate environment variables
+    const { validateEnv, validateFeatureDependencies } = await import("./lib/env-validation");
+
+    try {
+      validateEnv();
+      validateFeatureDependencies();
+      console.log("Environment validation passed");
+    } catch (error) {
+      console.error("Environment validation failed:", error instanceof Error ? error.message : error);
+      throw new Error("Environment configuration is invalid");
     }
 
     console.log("Genkit instance initialized with plugins.");
@@ -364,7 +369,11 @@ async function initializeServer(): Promise<void> {
       startFlowServer({
         flows: flowsToRegister,
         port: SERVER_PORT,
-        cors: { origin: "*" },
+        cors: {
+        origin: process.env.NODE_ENV === 'production'
+          ? process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:9002']
+          : "*"
+      },
       });
     } else {
       console.error("[Genkit Server] FATAL: No valid flows were found to register. Server will not start.");

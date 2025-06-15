@@ -177,6 +177,69 @@ export const generateRagSessionId = (): string => {
   return uuidv4();
 };
 
+/**
+ * Process file using the original non-streaming method for smaller files
+ */
+async function processFileNormally(
+  fileBuffer: Buffer,
+  fileName: string,
+  sessionId: string,
+  mimeType: string
+): Promise<Document[]> {
+  const allDocuments: Document[] = [];
+  let overallChunkIndex = 0;
+
+  try {
+    // Dynamic import to avoid loading during build
+    const { extractText } = await import("@papra/lecture");
+
+    console.log(
+      `Processing file: ${fileName} with MIME type: ${mimeType} using @papra/lecture`
+    );
+
+    // Create a new ArrayBuffer by copying the contents of fileBuffer
+    const arrayBufferCopy = new ArrayBuffer(fileBuffer.length);
+    new Uint8Array(arrayBufferCopy).set(new Uint8Array(fileBuffer));
+
+    const extractionResult = await extractText({
+      arrayBuffer: arrayBufferCopy,
+      mimeType,
+    });
+    const extractedText = extractionResult.textContent;
+
+    if (extractedText && extractedText.trim().length > 0) {
+      // Chunk the extracted text
+      const chunks = chunk(extractedText, CHUNKING_CONFIG);
+
+      // Create Document objects
+      chunks.forEach((text) => {
+        const chunkId = uuidv4();
+        allDocuments.push(
+          Document.fromText(text, {
+            documentId: `${sessionId}::${fileName}`,
+            chunkId: chunkId,
+            originalFileName: fileName,
+            pageNumber: 1, // Default to 1 as @papra/lecture doesn't provide page info
+            textToHighlight: text, // Chunk content is the highlight target
+            chunkIndex: overallChunkIndex++,
+            sessionId: sessionId,
+            timestamp: new Date().toISOString(),
+          })
+        );
+      });
+      console.log(`Extracted ${allDocuments.length} chunks from ${fileName}`);
+    }
+  } catch (error) {
+    console.error(
+      `Error processing document ${fileName} with @papra/lecture:`,
+      error
+    );
+    throw error;
+  }
+
+  return allDocuments;
+}
+
 export async function processFileWithOfficeParser(
   file: File,
   sessionId: string
@@ -186,6 +249,34 @@ export async function processFileWithOfficeParser(
     const arrayBuffer = await file.arrayBuffer();
     const fileBuffer = Buffer.from(arrayBuffer);
 
+    // Check if we should use streaming processing for large files
+    const { StreamingFileProcessor } = await import("./streamingFileProcessor");
+    const memoryEstimate = StreamingFileProcessor.estimateMemoryUsage(file.size);
+
+    console.log(`File ${fileName}: Size=${file.size} bytes, Memory estimate=${memoryEstimate.estimated} bytes, Recommendation=${memoryEstimate.recommendation}`);
+
+    let allDocuments: Document[] = [];
+
+    if (memoryEstimate.recommendation === 'stream') {
+      console.log(`Using streaming processor for large file: ${fileName}`);
+
+      const processor = new StreamingFileProcessor({
+        onProgress: (progress) => {
+          console.log(`Processing ${fileName}: ${Math.round((progress.processed / progress.total) * 100)}%`);
+        }
+      });
+
+      allDocuments = await processor.processFileBuffer(
+        fileBuffer,
+        fileName,
+        sessionId,
+        file.type
+      );
+    } else {
+      // Use original processing for smaller files
+      allDocuments = await processFileNormally(fileBuffer, fileName, sessionId, file.type);
+    }
+
     // Ensure the session-specific directory exists and save the file
     try {
       const sessionDir = path.join(UPLOADS_DIR, sessionId);
@@ -194,18 +285,35 @@ export async function processFileWithOfficeParser(
       await fs.writeFile(filePath, fileBuffer);
       console.log(`File ${fileName} saved to ${filePath} for session ${sessionId}`);
     } catch (saveError: unknown) {
+      const errorMessage = saveError instanceof Error ? saveError.message : String(saveError);
       console.error(`Error saving file ${fileName} for session ${sessionId}:`, saveError);
-      // Decide if this error should prevent indexing or be logged and ignored
-      // For now, we'll let indexing proceed but log the error.
-      // return { success: false, error: `Failed to save file before indexing: ${saveError.message}` };
+
+      // File save errors should be treated as critical - return failure
+      return {
+        success: false,
+        error: `Failed to save file before indexing: ${errorMessage}. Please try again.`
+      };
     }
 
-    const indexingSuccess = await indexFileDocument(fileBuffer, fileName, sessionId);
+    // Index the documents if any were created
+    if (allDocuments.length > 0) {
+      // Check if indexer reference is available
+      if (!ragIndexerRef) {
+        console.error("RAG indexer reference is not available");
+        return { success: false, error: "RAG indexer not available" };
+      }
 
-    if (indexingSuccess) {
+      await aiInstance.index({
+        indexer: ragIndexerRef,
+        documents: allDocuments,
+      });
+      console.log(
+        `Indexed ${allDocuments.length} total chunks from ${fileName} for session ${sessionId}`
+      );
       return { success: true };
     } else {
-      return { success: false, error: "Failed to index file document after parsing." };
+      console.log(`No indexable chunks extracted from ${fileName}.`);
+      return { success: false, error: "No content could be extracted from the file" };
     }
   } catch (error: unknown) {
     console.error(

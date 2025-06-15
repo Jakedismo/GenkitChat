@@ -1,4 +1,4 @@
-import { normalizeText } from "@/components/ChatMessageContent";
+import { normalizeText } from "@/utils/message-normalization";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChatMessage,
@@ -10,7 +10,7 @@ import {
   UploadedFile,
 } from "@/types/chat";
 import { convertChatMessagesToHistory } from "@/utils/messageHistory";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 // Corrected imports for custom hooks
 import { useChatInputControls } from "@/hooks/chat/useChatInputControls";
 import { useChatMessages } from "@/hooks/chat/useChatMessages";
@@ -90,6 +90,35 @@ export function useChatManager({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
+  // Memoize stable values to prevent unnecessary re-renders
+  const modelConfig = useMemo(() => ({
+    selectedGeminiModelId,
+    selectedOpenAIModelId,
+    temperaturePreset,
+    maxTokens,
+  }), [selectedGeminiModelId, selectedOpenAIModelId, temperaturePreset, maxTokens]);
+
+  const toolConfig = useMemo(() => ({
+    tavilySearchEnabled,
+    tavilyExtractEnabled,
+    perplexitySearchEnabled,
+    perplexityDeepResearchEnabled,
+    context7ResolveLibraryIdEnabled,
+    context7GetLibraryDocsEnabled,
+  }), [
+    tavilySearchEnabled,
+    tavilyExtractEnabled,
+    perplexitySearchEnabled,
+    perplexityDeepResearchEnabled,
+    context7ResolveLibraryIdEnabled,
+    context7GetLibraryDocsEnabled,
+  ]);
+
+  const uploadedFilesStatus = useMemo(() => ({
+    hasSuccessfulFiles: uploadedFiles.some(f => f.status === "success"),
+    count: uploadedFiles.length,
+  }), [uploadedFiles]);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -134,16 +163,16 @@ export function useChatManager({
     let errorDescription: string | null = null;
 
     if (chatMode === ChatMode.DIRECT_GEMINI) {
-      if (!selectedGeminiModelId) {
+      if (!modelConfig.selectedGeminiModelId) {
         errorDescription = "Please select a Gemini model.";
       } else {
-        modelIdToUse = selectedGeminiModelId;
+        modelIdToUse = modelConfig.selectedGeminiModelId;
       }
     } else if (chatMode === ChatMode.DIRECT_OPENAI) {
-      if (!selectedOpenAIModelId) {
+      if (!modelConfig.selectedOpenAIModelId) {
         errorDescription = "Please select an OpenAI model.";
       } else {
-        modelIdToUse = selectedOpenAIModelId;
+        modelIdToUse = modelConfig.selectedOpenAIModelId;
       }
     }
 
@@ -186,24 +215,22 @@ export function useChatManager({
     setIsLoading(true);
 
     try {
-      const useRag = uploadedFiles.some(
-        (f: UploadedFile) => f.status === "success",
-      );
+      const useRag = uploadedFilesStatus.hasSuccessfulFiles;
       const endpointUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
       const requestBody = {
         query: userMessageText,
         userMessage: userMessageText,
         modelId: modelIdToUse,
-        temperaturePreset: temperaturePreset,
-        maxTokens: maxTokens,
+        temperaturePreset: modelConfig.temperaturePreset,
+        maxTokens: modelConfig.maxTokens,
         sessionId: sessionIdToUse,
         history: conversationHistory,
-        tavilySearchEnabled: tavilySearchEnabled,
-        tavilyExtractEnabled: tavilyExtractEnabled,
-        perplexitySearchEnabled: perplexitySearchEnabled,
-        perplexityDeepResearchEnabled: perplexityDeepResearchEnabled,
-        context7ResolveLibraryIdEnabled: context7ResolveLibraryIdEnabled,
-        context7GetLibraryDocsEnabled: context7GetLibraryDocsEnabled,
+        tavilySearchEnabled: toolConfig.tavilySearchEnabled,
+        tavilyExtractEnabled: toolConfig.tavilyExtractEnabled,
+        perplexitySearchEnabled: toolConfig.perplexitySearchEnabled,
+        perplexityDeepResearchEnabled: toolConfig.perplexityDeepResearchEnabled,
+        context7ResolveLibraryIdEnabled: toolConfig.context7ResolveLibraryIdEnabled,
+        context7GetLibraryDocsEnabled: toolConfig.context7GetLibraryDocsEnabled,
       };
 
       const response = await streamChatResponse(requestBody, endpointUrl);
@@ -570,21 +597,32 @@ export function useChatManager({
       setIsLoading(false);
     }
   }, [
+    // Core state dependencies
     userInput,
     isLoading,
     chatMode,
+    currentSessionId,
+
+    // Model selection (memoized)
     selectedGeminiModelId,
     selectedOpenAIModelId,
     temperaturePreset,
     maxTokens,
-    currentSessionId,
-    startNewSession,
-    setCurrentSessionId,
-    uploadedFiles,
+
+    // Tool settings (memoized)
     tavilySearchEnabled,
     tavilyExtractEnabled,
     perplexitySearchEnabled,
     perplexityDeepResearchEnabled,
+    context7GetLibraryDocsEnabled,
+    context7ResolveLibraryIdEnabled,
+
+    // File state (only length to avoid deep comparison)
+    uploadedFiles.length,
+
+    // Stable function references (these should be memoized in parent)
+    startNewSession,
+    setCurrentSessionId,
     clearUserInput,
     setIsLoading,
     addUserMessage,
@@ -596,9 +634,9 @@ export function useChatManager({
     updateBotMessageFromFinalResponse,
     injectErrorIntoBotMessage,
     toast,
-    messages,
-    context7GetLibraryDocsEnabled,
-    context7ResolveLibraryIdEnabled,
+
+    // Messages length instead of full array
+    messages.length,
   ]);
 
   const clearChat = useCallback(() => {

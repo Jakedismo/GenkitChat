@@ -1,5 +1,5 @@
 export async function streamChatResponse(
-  requestBody: any,
+  requestBody: Record<string, unknown>,
   endpointUrl: string,
 ): Promise<Response> {
   const response = await fetch(endpointUrl, {

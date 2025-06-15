@@ -81,7 +81,7 @@ export function analyzeResponse(response: unknown): ResponseAnalysis {
   // Check if response is an object
   else if (typeof response === 'object') {
     result.structureInfo.isObject = true;
-    const res = response as Record<string, any>;
+    const res = response as Record<string, unknown>;
     
     // Check for nested content structure
     if (res.content && Array.isArray(res.content)) {
