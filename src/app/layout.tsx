@@ -1,9 +1,10 @@
+// TODO (Phase 2): Refactor for React 19. Review root layout for breaking changes, especially with new features like &lt;Compiler&gt; and asset loading.
+import PdfWorkerSetup from "@/components/PdfWorkerSetup"; // Import PdfWorkerSetup
+import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeToggleButton } from "@/components/theme-toggle-button"; // Import the new component
 import type { Metadata } from "next";
 import { Roboto } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
-import { ThemeToggleButton } from "@/components/theme-toggle-button"; // Import the new component
-import PdfWorkerSetup from "@/components/PdfWorkerSetup"; // Import PdfWorkerSetup
 
 const roboto = Roboto({
   weight: ["400", "500", "700"],

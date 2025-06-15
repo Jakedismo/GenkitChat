@@ -1,13 +1,7 @@
 import { useChatMessages } from '@/hooks/chat/useChatMessages';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { ReadableStream } from 'node:stream/web';
-import { TextDecoder, TextEncoder } from 'util';
 import GenkitChat from './page';
-
-global.ReadableStream = ReadableStream as any;
-global.TextEncoder = TextEncoder as any;
-global.TextDecoder = TextDecoder as any;
 
 // Mock scrollIntoView for JSDOM
 window.HTMLElement.prototype.scrollIntoView = jest.fn();

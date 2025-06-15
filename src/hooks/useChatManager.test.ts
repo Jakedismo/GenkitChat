@@ -1,12 +1,6 @@
 import { ChatMode } from '@/types/chat';
 import { act, renderHook } from '@testing-library/react';
-import { ReadableStream } from 'node:stream/web';
-import { TextDecoder, TextEncoder } from 'util';
 import { useChatManager, UseChatManagerProps } from './useChatManager';
-
-global.ReadableStream = ReadableStream as any;
-global.TextEncoder = TextEncoder as any;
-global.TextDecoder = TextDecoder as any;
 
 global.fetch = jest.fn();
 const mockFetch = global.fetch as jest.Mock;

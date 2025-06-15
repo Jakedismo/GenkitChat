@@ -1,10 +1,9 @@
-// jest.config.js
-const nextJest = require('next/jest')
+import nextJest from 'next/jest.js';
 
 const createJestConfig = nextJest({
   // Provide the path to your Next.js app to load next.config.js and .env files in your test environment
   dir: './',
-})
+});
 
 // Add any custom config to be passed to Jest
 /** @type {import('jest').Config} */
@@ -28,11 +27,10 @@ const customJestConfig = {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
   },
   transformIgnorePatterns: [
-    // Attempting a more targeted pattern for lucide-react's ESM path
-    'node_modules/(?!(lucide-react/dist/esm|react-markdown|devlop|estree-util-is-identifier-name|html-url-attributes|lowlight|remark-.+|rehype-.+|unified|unist-.+|bail|ccount|character-entities|comma-separated-tokens|decode-named-character-reference|hast-.+|is-plain-obj|longest-streak|markdown-table|mdast-.+|micromark.*|property-information|space-separated-tokens|trim-lines|trough|vfile.*|web-namespaces|zwitch|escape-string-regexp)/)',
+    'node_modules/(?!(lucide-react|react-markdown|devlop|estree-util-is-identifier-name|html-url-attributes|lowlight|remark-.+|rehype-.+|unified|unist-.+|bail|ccount|character-entities|comma-separated-tokens|decode-named-character-reference|hast-.+|is-plain-obj|longest-streak|markdown-table|mdast-.+|micromark.*|property-information|space-separated-tokens|trim-lines|trough|vfile.*|web-namespaces|zwitch|escape-string-regexp)/)',
     '^.+\\.module\\.(css|sass|scss)$',
   ],
-}
+};
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
-module.exports = createJestConfig(customJestConfig)
+export default createJestConfig(customJestConfig);

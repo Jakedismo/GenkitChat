@@ -1,3 +1,4 @@
+// TODO (Phase 2): Refactor for React 19. This page component and its children may need updates for new hooks, concurrent features, and removal of deprecated APIs.
 "use client";
 
 import ChatConfigSidebar from "@/components/chat/ChatConfigSidebar";
