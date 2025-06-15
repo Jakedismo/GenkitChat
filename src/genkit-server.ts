@@ -28,7 +28,25 @@ const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || "mlops-dev-330107";
 const LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
 
 // Only log in server context to avoid client-side errors
-if (typeof window === "undefined") {
+// Enhanced build-time detection with comprehensive guards
+const isBuildTime = process.env.NEXT_BUILD === "true" ||
+                   process.env.NODE_ENV === "production" && process.env.NEXT_PHASE === "phase-production-build" ||
+                   typeof process.cwd !== 'function' ||
+                   process.env.TURBOPACK === "1";
+
+const isServerRuntime = typeof window === "undefined" &&
+                       typeof process !== "undefined" &&
+                       process.env.NODE_ENV !== undefined &&
+                       !isBuildTime &&
+                       typeof require !== "undefined";
+
+// Add comprehensive logging for debugging build vs runtime context
+if (typeof process !== "undefined") {
+  console.log(`[Genkit Context] Build-time: ${isBuildTime}, Server runtime: ${isServerRuntime}`);
+  console.log(`[Genkit Context] NEXT_BUILD: ${process.env.NEXT_BUILD}, NODE_ENV: ${process.env.NODE_ENV}, TURBOPACK: ${process.env.TURBOPACK}`);
+}
+
+if (isServerRuntime) {
   console.log("Initializing Genkit configuration...");
   
   // API Key Check (ensure GEMINI_API_KEY or GOOGLE_API_KEY is set in the environment)
@@ -132,24 +150,53 @@ function getPlugins() {
 // Initialize Genkit with error handling
 export const aiInstance = (function () {
   try {
-    const promptDirPath = path.join(process.cwd(), "src/ai/prompts");
-    console.log(`[Genkit Init] Prompt directory resolved to: ${promptDirPath}`);
-    console.log(`[Genkit Init] Current working directory: ${process.cwd()}`);
-    
-    if (fs.existsSync(promptDirPath)) {
-      console.log(`[Genkit Init] ✓ Prompt directory exists at: ${promptDirPath}`);
-      const files = fs.readdirSync(promptDirPath);
-      console.log(`[Genkit Init] Found ${files.length} files in prompt directory:`, files.filter(f => f.endsWith('.prompt')).join(', '));
-    } else {
-      console.error(`[Genkit Init] ✗ Prompt directory NOT found at: ${promptDirPath}`);
+    // Guard against build-time execution - only run filesystem operations at runtime
+    if (!isServerRuntime || typeof process.cwd !== 'function') {
+      console.log(`[Genkit Init] Skipping filesystem operations during build analysis`);
+      // Return a minimal configuration for build-time analysis
+      const instance = genkit({
+        promptDir: "./src/ai/prompts", // Use relative path for build analysis
+        plugins: [] // No plugins during build analysis
+      });
+      return instance;
     }
+
+    // Only perform file system operations in true server runtime
+    let promptDirPath = "./src/ai/prompts"; // Default relative path for build analysis
     
-    validatePromptDirectory(promptDirPath);
+    if (isServerRuntime && typeof process.cwd === 'function') {
+      try {
+        promptDirPath = path.join(process.cwd(), "src/ai/prompts");
+        console.log(`[Genkit Init] Prompt directory resolved to: ${promptDirPath}`);
+        console.log(`[Genkit Init] Current working directory: ${process.cwd()}`);
+        
+        if (fs.existsSync(promptDirPath)) {
+          console.log(`[Genkit Init] ✓ Prompt directory exists at: ${promptDirPath}`);
+          const files = fs.readdirSync(promptDirPath);
+          console.log(`[Genkit Init] Found ${files.length} files in prompt directory:`, files.filter(f => f.endsWith('.prompt')).join(', '));
+        } else {
+          console.error(`[Genkit Init] ✗ Prompt directory NOT found at: ${promptDirPath}`);
+        }
+        
+        // Only validate prompts during true runtime, not build time
+        if (!isBuildTime) {
+          validatePromptDirectory(promptDirPath);
+        } else {
+          console.log(`[Genkit Init] Skipping prompt validation during build analysis`);
+        }
+      } catch (error) {
+        console.warn(`[Genkit Init] File system operations failed during initialization:`, error);
+        // Fall back to relative path for build compatibility
+        promptDirPath = "./src/ai/prompts";
+      }
+    } else {
+      console.log(`[Genkit Init] Skipping file system validation - using relative path for build compatibility`);
+    }
     // validateAssistantIntroPartial(promptDirPath); // Partials are no longer used
 
     const instance = genkit({
-      promptDir: promptDirPath, 
-      plugins: getPlugins()
+      promptDir: promptDirPath,
+      plugins: isServerRuntime ? getPlugins() : [] // Only load plugins at runtime
     });
 
     // Register custom helper using the correct syntax

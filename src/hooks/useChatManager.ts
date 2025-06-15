@@ -21,6 +21,7 @@ import {
   processStream,
   StreamEventCallbacks,
 } from "@/hooks/chat/useChatStreaming";
+import { streamChatResponse } from "@/services/chatService";
 
 export interface UseChatManagerProps {
   chatMode: ChatMode;
@@ -111,7 +112,6 @@ export function useChatManager({
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.sender === "bot") {
-
         // Basic message processing for bot responses
         if (typeof lastMessage.text === "string") {
           // Message text is available for processing
@@ -157,7 +157,7 @@ export function useChatManager({
     }
     if (!modelIdToUse) {
       console.error(
-        "Model ID to use is somehow null/undefined despite passing checks."
+        "Model ID to use is somehow null/undefined despite passing checks.",
       );
       toast({
         title: "Error",
@@ -174,7 +174,10 @@ export function useChatManager({
     }
 
     // Capture conversation history before adding the current message
-    const conversationHistory = convertChatMessagesToHistory(messages, modelIdToUse);
+    const conversationHistory = convertChatMessagesToHistory(
+      messages,
+      modelIdToUse,
+    );
 
     addUserMessage(userMessageText);
     const botMessagePlaceholderId = addBotPlaceholder();
@@ -183,12 +186,10 @@ export function useChatManager({
     setIsLoading(true);
 
     try {
-      const useRag = uploadedFiles.some((f) => f.status === "success");
-      const apiUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
-      // Check if the user message specifically asks to use context7
-      // The user message is already passed to the backend, where tool decisions are made.
-      // This client-side check is redundant.
-
+      const useRag = uploadedFiles.some(
+        (f: UploadedFile) => f.status === "success",
+      );
+      const endpointUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
       const requestBody = {
         query: userMessageText,
         userMessage: userMessageText,
@@ -205,11 +206,7 @@ export function useChatManager({
         context7GetLibraryDocsEnabled: context7GetLibraryDocsEnabled,
       };
 
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
+      const response = await streamChatResponse(requestBody, endpointUrl);
 
       if (!response.ok || !response.body) {
         const errorDetail = response.body
@@ -238,25 +235,22 @@ export function useChatManager({
         },
         onSources: (sources: DocumentData[]) => {
           updateBotMessageSources(botMessagePlaceholderId, sources);
-
         },
         onToolInvocation: (toolInvocation: ToolInvocation) => {
           addToolInvocationToBotMessage(
             botMessagePlaceholderId,
-            toolInvocation
+            toolInvocation,
           );
-
         },
         onMultipleToolInvocations: (toolInvocations: ToolInvocation[]) => {
           addMultipleToolInvocationsToBotMessage(
             botMessagePlaceholderId,
-            toolInvocations
+            toolInvocations,
           );
-
         },
         onFinalResponse: (
           finalData: ParsedJsonData,
-          serverSessionId?: string
+          serverSessionId?: string,
         ) => {
           if (serverSessionId && !currentSessionId) {
             setCurrentSessionId(serverSessionId);
@@ -269,33 +263,45 @@ export function useChatManager({
           // Mark this message ID as finalized
           finalizedMessageIds.current.add(botMessagePlaceholderId);
         },
-        onStreamError: (error: string | Error | { toString: () => string }) => {
+        onStreamError: (
+          error: string | Error | { toString: () => string },
+        ) => {
           // Enhanced defensive coding - handle both string error messages and error objects
           const originalError = error;
-          let errorMessage = '';
-          
+          let errorMessage = "";
+
           // Convert errors to strings with special handling for common issues
-          if (typeof error !== 'string') {
+          if (typeof error !== "string") {
             if (error instanceof Error) {
               // Standard Error object
               errorMessage = error.message;
-            } else if (error && typeof error === 'object') {
+            } else if (error && typeof error === "object") {
               // Handle the specific 'Cannot read properties of undefined (reading 'name')' error
-              if (error.toString().includes("Cannot read properties of undefined (reading 'name')")) {
-                console.error('[useChatManager] Caught tool name access error, using defensive handler');
-                errorMessage = 'Error processing tool invocation: missing tool information';
+              if (
+                error
+                  .toString()
+                  .includes("Cannot read properties of undefined (reading 'name')")
+              ) {
+                console.error(
+                  "[useChatManager] Caught tool name access error, using defensive handler",
+                );
+                errorMessage =
+                  "Error processing tool invocation: missing tool information";
               } else {
                 // Generic object error
                 errorMessage = String(error);
               }
             } else {
               // Fallback for any other type
-              errorMessage = String(error || 'Unknown error');
+              errorMessage = String(error || "Unknown error");
             }
-            console.error('[useChatManager] Converted error object to string:', {
-              originalError,
-              stringMessage: errorMessage
-            });
+            console.error(
+              "[useChatManager] Converted error object to string:",
+              {
+                originalError,
+                stringMessage: errorMessage,
+              },
+            );
           } else {
             errorMessage = error;
           }
@@ -308,7 +314,10 @@ export function useChatManager({
           let shouldAttemptRecovery = false;
 
           // Handle JSON parsing errors more specifically
-          if (errorMessage.includes("JSON") || errorMessage.includes("parse")) {
+          if (
+            errorMessage.includes("JSON") ||
+            errorMessage.includes("parse")
+          ) {
             detailedLog = {
               ...detailedLog,
               errorType: "json_parsing_error",
@@ -364,7 +373,7 @@ export function useChatManager({
             // Update the message with the error
             injectErrorIntoBotMessage(
               botMessagePlaceholderId,
-              `Error: ${userFriendlyMessage}\n\nPlease try again or refresh the page if the issue persists.`
+              `Error: ${userFriendlyMessage}\n\nPlease try again or refresh the page if the issue persists.`,
             );
           } else if (shouldAttemptRecovery) {
             // Add a note at the bottom of the message but preserve content
@@ -372,7 +381,7 @@ export function useChatManager({
 
             // Get current messages to find existing text
             const currentMessage = messages.find(
-              (m) => m.id === botMessagePlaceholderId
+              (m) => m.id === botMessagePlaceholderId,
             );
             if (currentMessage) {
               const currentText = normalizeText(currentMessage.text);
@@ -380,17 +389,14 @@ export function useChatManager({
               if (!currentText.includes(recoveryNote)) {
                 updateBotMessageText(
                   botMessagePlaceholderId,
-                  currentText + recoveryNote
+                  currentText + recoveryNote,
                 );
               }
             }
           }
         },
-        onStreamEnd: () => {
-        },
-        onReaderDone: () => {
-
-        },
+        onStreamEnd: () => {},
+        onReaderDone: () => {},
       };
 
       await processStream(reader, streamEventCallbacks);
@@ -422,9 +428,11 @@ export function useChatManager({
 
         // Get the current message content before attempting recovery
         const currentMessage = messages.find(
-          (m) => m.id === botMessagePlaceholderId
+          (m) => m.id === botMessagePlaceholderId,
         );
-        const existingText = currentMessage ? normalizeText(currentMessage.text) : "";
+        const existingText = currentMessage
+          ? normalizeText(currentMessage.text)
+          : "";
 
         // Always attempt to preserve content for JSON errors
         suppressErrorDisplay = true;
@@ -443,10 +451,13 @@ export function useChatManager({
                 "\n\n_Note: The response was truncated due to a technical issue._";
 
               // Only add the note if it's not already there
-              if (typeof existingText === 'string' && !existingText.includes(noteText)) {
+              if (
+                typeof existingText === "string" &&
+                !existingText.includes(noteText)
+              ) {
                 updateBotMessageText(
                   botMessagePlaceholderId,
-                  existingText + noteText
+                  existingText + noteText,
                 );
               }
             }
@@ -462,7 +473,10 @@ export function useChatManager({
 
           // For backslash errors, try to fix the content
           try {
-            if (botMessagePlaceholderId && typeof existingText === 'string') {
+            if (
+              botMessagePlaceholderId &&
+              typeof existingText === "string"
+            ) {
               // Fix common backslash issues in the existing text
               const fixedText = existingText
                 .replace(/\\+$/, "") // Remove trailing backslashes
@@ -518,7 +532,7 @@ export function useChatManager({
       ) {
         injectErrorIntoBotMessage(
           botMessagePlaceholderId,
-          `Error: ${userFriendlyMessage}\n\nTry again or refresh the page.`
+          `Error: ${userFriendlyMessage}\n\nTry again or refresh the page.`,
         );
       }
 
@@ -537,7 +551,8 @@ export function useChatManager({
         if (shouldShowToast) {
           toast({
             title: "Content Issue",
-            description: "Some formatting issues were automatically corrected.",
+            description:
+              "Some formatting issues were automatically corrected.",
             variant: "default",
           });
         }
@@ -616,7 +631,7 @@ export function useChatManager({
 
       return false;
     },
-    [messages, fixTruncatedBotMessage]
+    [messages, fixTruncatedBotMessage],
   );
 
   return {

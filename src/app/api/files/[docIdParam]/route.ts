@@ -2,6 +2,18 @@ import fs, { stat } from 'fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 
+// Build-time detection to prevent file system operations during Next.js build analysis
+const isBuildTime = process.env.NEXT_BUILD === "true" ||
+                   process.env.NODE_ENV === "production" && process.env.NEXT_PHASE === "phase-production-build" ||
+                   typeof process.cwd !== 'function' ||
+                   process.env.TURBOPACK === "1";
+
+const isServerRuntime = typeof window === "undefined" &&
+                       typeof process !== "undefined" &&
+                       process.env.NODE_ENV !== undefined &&
+                       !isBuildTime &&
+                       typeof require !== "undefined";
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ docIdParam: string }> }
@@ -72,11 +84,29 @@ export async function GET(
 
   // Construct the file path - IMPORTANT: Adjust this path according to your actual file storage structure.
   // This example assumes an 'uploads' directory at the project root.
-  const UPLOADS_DIR = path.join(process.cwd(), 'uploads'); // Define your uploads directory base
+  let UPLOADS_DIR = "./uploads"; // Default relative path for build analysis
+  
+  if (isServerRuntime && typeof process.cwd === 'function') {
+    try {
+      UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+      console.log(`[Files API] Uploads directory resolved to: ${UPLOADS_DIR}`);
+    } catch (error) {
+      console.warn(`[Files API] Failed to resolve uploads directory, using relative path:`, error);
+      UPLOADS_DIR = "./uploads"; // Fallback to relative path
+    }
+  } else {
+    console.log(`[Files API] Skipping file system operations during build analysis - using relative path`);
+  }
+  
   const sessionDir = path.join(UPLOADS_DIR, sessionId);
   const filePath = path.join(sessionDir, safeFileName);
   
-  console.log('📍 Process CWD:', process.cwd());
+  // Only log process.cwd() during runtime
+  if (isServerRuntime && typeof process.cwd === 'function') {
+    console.log('📍 Process CWD:', process.cwd());
+  } else {
+    console.log('📍 Process CWD: [skipped during build analysis]');
+  }
   console.log('📍 Uploads directory:', UPLOADS_DIR);
   console.log('📍 Session directory:', sessionDir);
   console.log('📍 Full file path:', filePath);

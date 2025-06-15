@@ -4,6 +4,12 @@
 import fs from 'fs';
 import path from 'path';
 
+// Build-time detection to prevent file system operations during Next.js build analysis
+const isBuildTime = process.env.NEXT_BUILD === "true" ||
+                   process.env.NODE_ENV === "production" && process.env.NEXT_PHASE === "phase-production-build" ||
+                   typeof process.cwd !== 'function' ||
+                   process.env.TURBOPACK === "1";
+
 interface PromptValidationResult {
   success: boolean;
   errors: string[];
@@ -16,6 +22,18 @@ interface PromptValidationResult {
  * Validates that all prompt files and their partials can be found and loaded
  */
 export function validatePromptDirectory(promptDir: string): PromptValidationResult {
+  // During build, skip validation and return success to avoid file system errors
+  if (isBuildTime) {
+    console.log(`[Prompt Validation] Skipping validation during build analysis.`);
+    return {
+      success: true,
+      errors: [],
+      warnings: [],
+      promptsFound: [],
+      partialsFound: [],
+    };
+  }
+
   const result: PromptValidationResult = {
     success: true,
     errors: [],
@@ -108,6 +126,12 @@ export function validatePromptDirectory(promptDir: string): PromptValidationResu
  * Test function specifically for the _assistant_intro partial issue
  */
 export function validateAssistantIntroPartial(promptDir: string): boolean {
+  // During build, skip validation and return true
+  if (isBuildTime) {
+    console.log(`[Prompt Validation] Skipping _assistant_intro partial validation during build.`);
+    return true;
+  }
+
   console.log(`🔍 Specifically validating _assistant_intro partial...`);
   
   const assistantIntroPath = path.join(promptDir, '_assistant_intro.prompt');

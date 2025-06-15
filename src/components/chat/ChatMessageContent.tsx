@@ -11,8 +11,8 @@ interface ChatMessageContentProps {
   components?: ReactMarkdownOptions["components"];
 }
 
-// Regex to find citations like [Source: annual_report.pdf, Chunk: 0]
-const citationRegex = /\[Source: (.*?), Chunk: (\d+)]/g;
+// Regex to find citations like [Source: annual_report.pdf, Chunk: 0] or [Source: ..., Chunks: 0-4]
+const citationRegex = /\[Source: (.*?), (?:Chunk|Chunks): (\d+)(?:-\d+)?]/g;
 
 // custom code renderer to neutralise ```mermaid fences
 const CodeBlock: React.FC<ComponentProps<'code'>> = ({ className = '', children, ...props }) => {

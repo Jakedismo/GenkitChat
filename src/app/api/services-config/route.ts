@@ -1,6 +1,6 @@
+import { getRagEndpoints } from '@/config/rag-endpoints';
 import { NextResponse } from 'next/server';
-import { getRagEndpoints } from '@/services/rag';
-import '@/lib/genkit-instance'; // Ensure Genkit is initialized
+// Remove heavy genkit imports from API route - they're not needed for static config
 
 export async function GET() {
   try {

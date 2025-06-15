@@ -9,7 +9,32 @@ import {
 import fs from "fs/promises"; // Add fs/promises
 import path from "path"; // Add path
 
-const UPLOADS_DIR = path.join(process.cwd(), "uploads"); // Define base uploads dir
+// Build-time detection to prevent file system operations during Next.js build analysis
+const isBuildTime = process.env.NEXT_BUILD === "true" ||
+                   process.env.NODE_ENV === "production" && process.env.NEXT_PHASE === "phase-production-build" ||
+                   typeof process.cwd !== 'function' ||
+                   process.env.TURBOPACK === "1";
+
+const isServerRuntime = typeof window === "undefined" &&
+                       typeof process !== "undefined" &&
+                       process.env.NODE_ENV !== undefined &&
+                       !isBuildTime &&
+                       typeof require !== "undefined";
+
+// Only perform file system operations in true server runtime
+let UPLOADS_DIR = "./uploads"; // Default relative path for build analysis
+
+if (isServerRuntime && typeof process.cwd === 'function') {
+  try {
+    UPLOADS_DIR = path.join(process.cwd(), "uploads");
+    console.log(`[RAG Route] Uploads directory resolved to: ${UPLOADS_DIR}`);
+  } catch (error) {
+    console.warn(`[RAG Route] Failed to resolve uploads directory, using relative path:`, error);
+    UPLOADS_DIR = "./uploads"; // Fallback to relative path
+  }
+} else {
+  console.log(`[RAG Route] Skipping file system operations during build analysis - using relative path`);
+}
 
 // Define type for the final_response event payload
 interface FinalResponseData {
