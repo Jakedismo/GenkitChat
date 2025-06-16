@@ -228,11 +228,12 @@ export async function POST(req: Request) {
         // Add other tools based on their flags here...
 
         // Create a ReadableStream for Server-Sent Events response
+        let streamClosed = false;
+        let abortController: AbortController | null = new AbortController();
+
         const responseStream = new ReadableStream({
           async start(controller) {
             const encoder = new TextEncoder();
-            let streamClosed = false;
-            const abortController = new AbortController();
 
             try {
               // Execute the RAG flow to generate the response
@@ -327,7 +328,9 @@ export async function POST(req: Request) {
           cancel() {
             // Handle stream cancellation
             console.log("[RAG API] Stream cancelled by client");
-            abortController.abort();
+            if (abortController) {
+              abortController.abort();
+            }
             streamClosed = true;
           },
         });
