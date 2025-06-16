@@ -77,8 +77,8 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   onCitationClick,
   components: pageComponents = {}, // Renamed to avoid conflict with internal components variable
 }) => {
-  // Normalize the text into a string format
-  const normalizedText = normalizeText(text);
+  // Normalize the text into a string format and remove truncation markers
+  const normalizedText = normalizeText(text).replace(/\n?<!-- __TRUNCATION_FIXED__ -->/g, '');
 
   // Helper function to process a string and replace citations with buttons
   // Uses a local regex instance to avoid global state issues (lastIndex race condition)

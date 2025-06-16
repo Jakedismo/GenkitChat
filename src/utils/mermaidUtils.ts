@@ -177,11 +177,13 @@ export async function copyAsImage(
                 downloadImage(blob, toast);
               }
             } catch (clipboardError) {
+              console.warn("Failed to copy to clipboard:", clipboardError);
               downloadImage(blob, toast);
             }
           }
         }, "image/png");
       } catch (canvasError) {
+        console.error("Canvas processing error:", canvasError);
         throw new Error("Failed to process image");
       } finally {
         URL.revokeObjectURL(url);
@@ -195,6 +197,7 @@ export async function copyAsImage(
 
     img.src = url;
   } catch (err) {
+    console.error("Copy diagram error:", err);
     toast({
       title: "Copy Failed",
       description:
@@ -238,6 +241,7 @@ export async function copyAsText(
       description: "Diagram source code copied to clipboard",
     });
   } catch (err) {
+    console.error("Copy text error:", err);
     toast({
       title: "Copy Failed",
       description: "Failed to copy diagram source",

@@ -272,16 +272,16 @@ export function useChatMessages(): UseChatMessagesReturn {
             
             // Handle different message text formats
             if (typeof msg.text === 'string') {
-              return { ...msg, text: msg.text + errorMsg };
+              return { ...msg, text: msg.text + errorMsg, hasError: true };
             } else if (Array.isArray(msg.text)) {
               const textString = msg.text
                 .map(chunk => typeof chunk === 'string' ? chunk : JSON.stringify(chunk))
                 .join('');
-              return { ...msg, text: textString + errorMsg };
+              return { ...msg, text: textString + errorMsg, hasError: true };
             } else if (msg.text && typeof msg.text === 'object') {
-              return { ...msg, text: JSON.stringify(msg.text) + errorMsg };
+              return { ...msg, text: JSON.stringify(msg.text) + errorMsg, hasError: true };
             } else {
-              return { ...msg, text: String(msg.text || '') + errorMsg };
+              return { ...msg, text: String(msg.text || '') + errorMsg, hasError: true };
             }
           }
           return msg;
@@ -293,10 +293,34 @@ export function useChatMessages(): UseChatMessagesReturn {
   
   const fixTruncatedBotMessage = useCallback((botMessageId: string): boolean => {
     let wasFixed = false;
-    
+
     setMessages((prevMessages) => {
       return prevMessages.map((msg) => {
         if (msg.id !== botMessageId || msg.sender !== 'bot') {
+          return msg;
+        }
+
+        // Prevent infinite recursion by checking if message was already processed
+        // Check for marker in all text formats (string, array, object)
+        const hasMarker = (text: unknown): boolean => {
+          if (typeof text === 'string') {
+            return text.includes('<!-- __TRUNCATION_FIXED__ -->');
+          } else if (Array.isArray(text)) {
+            return text.some(item =>
+              typeof item === 'string' ? item.includes('<!-- __TRUNCATION_FIXED__ -->') :
+              (item && typeof item === 'object' && 'text' in item) ?
+                hasMarker((item as Record<string, unknown>).text) : false
+            );
+          } else if (text && typeof text === 'object' && 'text' in text) {
+            return hasMarker((text as Record<string, unknown>).text);
+          } else if (text && typeof text === 'object') {
+            const stringified = JSON.stringify(text);
+            return stringified.includes('<!-- __TRUNCATION_FIXED__ -->');
+          }
+          return false;
+        };
+
+        if (msg.text && hasMarker(msg.text)) {
           return msg;
         }
         
@@ -309,7 +333,7 @@ export function useChatMessages(): UseChatMessagesReturn {
           // Join array items
           textToFix = msg.text.map(item =>
             typeof item === 'string' ? item :
-            (item && typeof item === 'object' && 'text' in item && typeof (item as any).text === 'string') ? (item as any).text :
+            (item && typeof item === 'object' && 'text' in item && typeof (item as Record<string, unknown>).text === 'string') ? (item as Record<string, unknown>).text :
             JSON.stringify(item)
           ).join('');
           wasFixed = true;
@@ -370,13 +394,19 @@ export function useChatMessages(): UseChatMessagesReturn {
             fixedText = fixedText.replace(/\\+$/, '');
             wasFixed = true;
           }
-          
+
+          // Add marker to prevent reprocessing (will be filtered out during display)
+          if (wasFixed) {
+            fixedText += '\n<!-- __TRUNCATION_FIXED__ -->';
+          }
+
           return { ...msg, text: fixedText };
         }
-        
+
         // If we've detected and fixed a complex structure but no truncation
         if (wasFixed) {
-          return { ...msg, text: textToFix };
+          const markedText = textToFix + '\n<!-- __TRUNCATION_FIXED__ -->';
+          return { ...msg, text: markedText };
         }
         
         return msg;

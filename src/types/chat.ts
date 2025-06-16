@@ -64,6 +64,7 @@ export interface ChatMessage {
   text: string | string[] | { text?: string; [key: string]: unknown }; // Support various response formats
   toolInvocations?: ToolInvocation[]; // Use the specific type
   sources?: CitationMeta[]; // For RAG: stores the source documents used for this bot message
+  hasError?: boolean; // Indicates if this message contains an error
 }
 
 // Represents the data needed for the citation preview sidebar

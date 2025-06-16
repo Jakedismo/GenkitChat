@@ -228,10 +228,12 @@ export async function POST(req: Request) {
         // Add other tools based on their flags here...
 
         // Create a ReadableStream for Server-Sent Events response
+        let streamClosed = false;
+        const abortController = new AbortController();
+
         const responseStream = new ReadableStream({
           async start(controller) {
             const encoder = new TextEncoder();
-            let streamClosed = false;
 
             try {
               // Execute the RAG flow to generate the response
@@ -278,13 +280,24 @@ export async function POST(req: Request) {
               // Execute the flow and get the stream and output promise.
               const flowResult = documentQaStreamFlow.stream(flowInput);
 
-              // Process the stream of events.
+              // Process the stream of events with cancellation support
               for await (const chunk of flowResult.stream) {
+                // Check if stream was cancelled
+                if (streamClosed || abortController.signal.aborted) {
+                  console.log("[RAG API] Stream processing cancelled, breaking from chunk loop");
+                  break;
+                }
                 streamHandler(chunk);
               }
 
-              // After the stream is finished, get the final output.
-              const finalOutput = await flowResult.output;
+              // Only get final output if stream wasn't cancelled
+              let finalOutput;
+              if (!streamClosed && !abortController.signal.aborted) {
+                finalOutput = await flowResult.output;
+              } else {
+                console.log("[RAG API] Skipping final output due to cancellation");
+                return; // Exit early if cancelled
+              }
 
               if (!streamClosed) {
                 const finalResponseData: FinalResponseData = {
@@ -322,6 +335,12 @@ export async function POST(req: Request) {
                 }
               }
             }
+          },
+          cancel() {
+            // Handle stream cancellation
+            console.log("[RAG API] Stream cancelled by client");
+            abortController.abort();
+            streamClosed = true;
           },
         });
 

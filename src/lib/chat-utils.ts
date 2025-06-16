@@ -63,20 +63,25 @@ async function* adaptGenkitStream(
   genkitStream: AsyncIterable<GenerateResponseChunk<unknown>>
 ): AsyncIterable<{ text: string }> {
   for await (const chunk of genkitStream) {
-    const c = chunk as Record<string, any>;
+    const c = chunk as unknown as Record<string, unknown>;
 
     // 1. GoogleAI / Gemini style
-    if (c.message && Array.isArray(c.message.content)) {
-      for (const part of c.message.content) {
-        if (part?.text) yield { text: part.text };
+    if (c.message && Array.isArray((c.message as Record<string, unknown>).content)) {
+      for (const part of (c.message as Record<string, unknown>).content as unknown[]) {
+        if (part && typeof part === 'object' && 'text' in (part as Record<string, unknown>)) {
+          yield { text: String((part as Record<string, unknown>).text) };
+        }
       }
       continue;
     }
 
     // 2. OpenAI delta style
-    if (c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content) {
-      const delta = c.choices[0].delta.content;
-      if (delta) {
+    if (c.choices && Array.isArray(c.choices) && c.choices[0] &&
+        typeof c.choices[0] === 'object' && 'delta' in (c.choices[0] as Record<string, unknown>) &&
+        typeof (c.choices[0] as Record<string, unknown>).delta === 'object' &&
+        'content' in ((c.choices[0] as Record<string, unknown>).delta as Record<string, unknown>)) {
+      const delta = ((c.choices[0] as Record<string, unknown>).delta as Record<string, unknown>).content;
+      if (delta && typeof delta === 'string') {
         yield { text: delta };
         continue;
       }

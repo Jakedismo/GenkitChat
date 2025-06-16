@@ -95,6 +95,7 @@ export function recoverJson(payload: string): string {
       JSON.parse(result);
       return result;
     } catch (e) {
+      console.debug("JSON recovery strategy failed:", e);
       lastResult = strategy(lastResult);
     }
   }
@@ -111,7 +112,8 @@ export function recoverJson(payload: string): string {
   });
 }
 
-export function sanitizeJsonPayload(payload: string, eventType: string): string {
+export function sanitizeJsonPayload(payload: string, _eventType: string): string {
+  // eventType parameter is kept for API compatibility but not currently used
   return recoverJson(payload);
 }
 

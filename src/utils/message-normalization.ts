@@ -1,4 +1,4 @@
-export function normalizeMessageContent(content: any): string {
+export function normalizeMessageContent(content: unknown): string {
   if (typeof content === "string") {
     return content;
   }
@@ -9,14 +9,14 @@ export function normalizeMessageContent(content: any): string {
           return item;
         }
         if (item && typeof item === "object" && "text" in item) {
-          return item.text;
+          return String((item as Record<string, unknown>).text);
         }
         return JSON.stringify(item);
       })
       .join("");
   }
   if (content && typeof content === "object" && "text" in content) {
-    return content.text;
+    return String((content as Record<string, unknown>).text);
   }
   return JSON.stringify(content);
 }

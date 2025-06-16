@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggleButton } from "@/components/theme-toggle-button"; // Import the new component
 import PdfWorkerSetup from "@/components/PdfWorkerSetup"; // Import PdfWorkerSetup
+import ErrorBoundary from "@/components/ErrorBoundary"; // Import ErrorBoundary
 
 const roboto = Roboto({
   weight: ["400", "500", "700"],
@@ -31,14 +32,16 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <PdfWorkerSetup /> {/* Initialize PDF.js worker for client-side */}
-          <div className="flex flex-col min-h-screen">
-            <header className="flex items-center justify-between py-4 px-6">
-              <div>GenkitChat</div>
-              <ThemeToggleButton /> {/* Use the new component */}
-            </header>
-            <main className="flex-1">{children}</main>
-          </div>
+          <ErrorBoundary>
+            <PdfWorkerSetup /> {/* Initialize PDF.js worker for client-side */}
+            <div className="flex flex-col min-h-screen">
+              <header className="flex items-center justify-between py-4 px-6">
+                <div>GenkitChat</div>
+                <ThemeToggleButton /> {/* Use the new component */}
+              </header>
+              <main className="flex-1">{children}</main>
+            </div>
+          </ErrorBoundary>
         </ThemeProvider>
       </body>
     </html>
