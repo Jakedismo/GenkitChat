@@ -123,7 +123,8 @@ describe('useChatMessages', () => {
       botMessageId = result.current.addBotPlaceholder();
       const message = result.current.messages.find(msg => msg.id === botMessageId);
       if (message) {
-        message.text = [
+        // Use any to bypass type checking for test purposes
+        (message as any).text = [
           { text: 'Complex object' },
           'Mixed with string',
           { text: 'Another object' }
@@ -170,9 +171,10 @@ describe('useChatMessages', () => {
     });
 
     const toolInvocation = {
+      toolName: 'test_tool',
       name: 'test_tool',
       input: { query: 'test' },
-      output: 'Tool result'
+      output: { result: 'Tool result' }
     };
 
     act(() => {
@@ -194,8 +196,20 @@ describe('useChatMessages', () => {
     });
 
     const sources = [
-      { filename: 'doc1.pdf', chunkIndex: 0, content: 'Source content 1' },
-      { filename: 'doc2.pdf', chunkIndex: 1, content: 'Source content 2' }
+      {
+        documentId: 'doc1',
+        chunkId: 1,
+        fileName: 'doc1.pdf',
+        originalFileName: 'doc1.pdf',
+        content: 'Source content 1'
+      },
+      {
+        documentId: 'doc2',
+        chunkId: 2,
+        fileName: 'doc2.pdf',
+        originalFileName: 'doc2.pdf',
+        content: 'Source content 2'
+      }
     ];
 
     act(() => {
