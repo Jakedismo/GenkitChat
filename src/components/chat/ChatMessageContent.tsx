@@ -129,9 +129,8 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         .replace(/\\t/g, '\t')
         .replace(/\\\\/g, '\\')
         .replace(/\\+$/, '')
-        // Make sure markdown links are properly spaced
-        .replace(/\]\(/g, '] (')
-        .replace(/\] \((?!http)/g, '](') // Only add space between markdown links if they're not already URLs
+        // Remove truncation fix markers that shouldn't be displayed
+        .replace(/\n?<!-- __TRUNCATION_FIXED__ -->/g, '')
         .replace(/\n\*(.*?)\*/g, '\n* $1') // Fix bullet points
         .replace(/\n\*\*(.*?)\*\*/g, '\n* **$1**');
         
