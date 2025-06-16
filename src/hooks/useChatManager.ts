@@ -127,6 +127,20 @@ export function useChatManager({
     }
   }, [messages]);
 
+  // Use a ref to always have access to the latest messages without affecting dependencies
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  // Create a stable function to get fresh conversation history
+  const getConversationHistory = useCallback(() => {
+    const modelId =
+      chatMode === ChatMode.DIRECT_GEMINI
+        ? selectedGeminiModelId
+        : selectedOpenAIModelId;
+    if (!modelId) return [];
+    return convertChatMessagesToHistory(messagesRef.current, modelId);
+  }, [chatMode, selectedGeminiModelId, selectedOpenAIModelId]); // Re-create only when model selection changes
+
   const handleSendMessage = useCallback(async () => {
     if (!userInput.trim() || isLoading) return;
 
@@ -173,11 +187,8 @@ export function useChatManager({
       sessionIdToUse = await startNewSession();
     }
 
-    // Capture conversation history before adding the current message
-    const conversationHistory = convertChatMessagesToHistory(
-      messages,
-      modelIdToUse,
-    );
+    // Get fresh conversation history at execution time
+    const currentConversationHistory = getConversationHistory();
 
     addUserMessage(userMessageText);
     const botMessagePlaceholderId = addBotPlaceholder();
@@ -197,7 +208,7 @@ export function useChatManager({
         temperaturePreset: temperaturePreset,
         maxTokens: maxTokens,
         sessionId: sessionIdToUse,
-        history: conversationHistory,
+        history: currentConversationHistory, // Use fresh history
         tavilySearchEnabled: tavilySearchEnabled,
         tavilyExtractEnabled: tavilyExtractEnabled,
         perplexitySearchEnabled: perplexitySearchEnabled,
@@ -596,7 +607,7 @@ export function useChatManager({
     updateBotMessageFromFinalResponse,
     injectErrorIntoBotMessage,
     toast,
-    messages,
+    getConversationHistory, // Stable function reference
     context7GetLibraryDocsEnabled,
     context7ResolveLibraryIdEnabled,
   ]);
