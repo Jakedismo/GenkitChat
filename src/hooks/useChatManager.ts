@@ -119,18 +119,17 @@ export function useChatManager({
     count: uploadedFiles.length,
   }), [uploadedFiles]);
 
-  // Create a stable hash of messages content for dependency tracking
-  const messagesHash = useMemo(() => {
-    return messages.map(msg => `${msg.id}:${msg.sender}:${String(msg.text).slice(0, 50)}`).join('|');
-  }, [messages]);
+  // Use a ref to always have access to the latest messages without affecting dependencies
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
-  // Memoize conversation history to prevent unnecessary recalculations
-  const conversationHistory = useMemo(() => {
-    return messages.map((msg) => ({
+  // Create a stable function to get fresh conversation history
+  const getConversationHistory = useCallback(() => {
+    return messagesRef.current.map((msg) => ({
       role: msg.sender === "user" ? "user" : "model",
       parts: [{ text: normalizeText(msg.text) }],
     }));
-  }, [messages]);
+  }, []); // No dependencies - this function is stable
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -215,8 +214,10 @@ export function useChatManager({
       sessionIdToUse = await startNewSession();
     }
 
-    // Use memoized conversation history (captured before adding current message)
-    const currentConversationHistory = conversationHistory;
+    // Get fresh conversation history at execution time (before adding current message)
+    // This ensures we have the most up-to-date message content, especially important
+    // during streaming where message content can change without array reference changes
+    const currentConversationHistory = getConversationHistory();
 
     addUserMessage(userMessageText);
     const botMessagePlaceholderId = addBotPlaceholder();
@@ -622,8 +623,8 @@ export function useChatManager({
     // File status (memoized object with hasSuccessfulFiles)
     uploadedFilesStatus,
 
-    // Messages hash (detects content changes without deep comparison)
-    messagesHash,
+    // Function to get fresh conversation history (stable reference)
+    getConversationHistory,
 
     // Stable function references (these should be memoized in parent)
     startNewSession,
