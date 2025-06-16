@@ -203,6 +203,32 @@ return parsed.pathname.startsWith('/') && !parsed.host;
 
 **Fix Required:** Handle relative URLs before URL constructor to prevent errors.
 
+---
+
+### 🔴 BUG-029: Recursion Protection Fails for Non-String Messages
+**File:** `src/hooks/chat/useChatMessages.ts:302-391`
+**Severity:** Critical
+**Impact:** Infinite recursion, duplicate markers, performance degradation
+
+**Description:**
+The recursion protection mechanism in `fixTruncatedBotMessage` is flawed. It only checks for the `<!-- __TRUNCATION_FIXED__ -->` marker when `msg.text` is a string. If `msg.text` is an array or object, this check is bypassed, leading to re-processing of messages and the addition of duplicate markers, rendering the protection ineffective for non-string message formats.
+
+**Evidence:**
+```typescript
+// Line 304: Only checks string messages for marker
+if (msg.text && typeof msg.text === 'string' && msg.text.includes('<!-- __TRUNCATION_FIXED__ -->')) {
+  return msg;
+}
+// Lines 332-351: Array and object processing bypasses marker check
+else if (Array.isArray(msg.text)) {
+  // No marker check for arrays
+  textToFix = msg.text.map(item => ...).join('');
+  wasFixed = true;
+}
+```
+
+**Fix Required:** Extend recursion protection to handle all message text formats.
+
 ## Medium Priority Issues (Priority 3)
 
 ### 🟡 BUG-007: Type Safety Issues with 'any' Types
@@ -293,6 +319,7 @@ Several unused variables and parameters detected by ESLint.
 - **BUG-026**: Bot marker visibility & recursion protection failure - Fixed marker check logic
 - **BUG-027**: Stream cancellation fails to abort RAG flow - Added proper cancellation checks
 - **BUG-028**: SSR URL validation fails relative paths - Fixed relative URL handling in SSR
+- **BUG-029**: Recursion protection fails for non-string messages - Extended protection to all formats
 
 ### ✅ **FIXED - High/Medium Priority Issues:**
 - **BUG-007**: Type safety issues - Replaced multiple `any` types with proper types
@@ -303,9 +330,9 @@ Several unused variables and parameters detected by ESLint.
 
 ### 📊 **Impact Metrics:**
 - **ESLint warnings reduced**: From 50+ to 28 warnings (44% improvement)
-- **Critical bugs fixed**: 11/11 (100%) - including SSR URL validation
+- **Critical bugs fixed**: 12/12 (100%) - including recursion protection for all message formats
 - **Type safety improved**: 8 `any` types replaced with proper types
-- **Test coverage added**: 9 new comprehensive test suites (84 total tests)
+- **Test coverage added**: 9 new comprehensive test suites (86 total tests)
 - **Security enhancements**: SSR-compatible input sanitization, XSS prevention, URL validation
 
 ## Recommendations
@@ -359,4 +386,4 @@ Several unused variables and parameters detected by ESLint.
 - `src/app/api/rag-chat/route.test.ts` - **NEW** Stream cancellation and RAG flow tests
 
 ---
-*This comprehensive bug hunt successfully identified and fixed 28 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
+*This comprehensive bug hunt successfully identified and fixed 29 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
