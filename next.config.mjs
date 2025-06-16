@@ -210,7 +210,6 @@ export default {
     config.resolve.alias = {
       ...config.resolve.alias,
       // Use lighter alternatives where possible
-      'react-markdown$': 'react-markdown/lib/react-markdown.js',
     };
 
     return config;

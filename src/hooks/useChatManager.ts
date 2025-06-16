@@ -1,4 +1,3 @@
-import { normalizeText } from "@/utils/message-normalization";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChatMessage,
@@ -9,8 +8,8 @@ import {
   ToolInvocation,
   UploadedFile,
 } from "@/types/chat";
-import { convertChatMessagesToHistory } from "@/utils/messageHistory";
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { normalizeText } from "@/utils/message-normalization";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Corrected imports for custom hooks
 import { useChatInputControls } from "@/hooks/chat/useChatInputControls";
 import { useChatMessages } from "@/hooks/chat/useChatMessages";
@@ -48,8 +47,8 @@ export interface UseChatManagerReturn {
   handleSendMessage: () => Promise<void>;
   clearChat: () => void;
   fixTruncatedMessage: (messageId?: string) => boolean; // Add method to fix truncated messages
-  messagesEndRef: React.RefObject<HTMLDivElement>;
-  scrollAreaRef: React.RefObject<HTMLDivElement>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  scrollAreaRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export function useChatManager({

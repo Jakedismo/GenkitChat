@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid'; // For generating unique file IDs
 interface UseFileUploadsReturn {
   uploadedFiles: UploadedFile[];
   isUploading: boolean;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleFileChange: (files: FileList | null) => void; // Handler for the file input's onChange event
   removeFile: (id: string) => void; // Function to remove a specific file
   triggerFileUpload: () => void; // Function to programmatically click the hidden file input

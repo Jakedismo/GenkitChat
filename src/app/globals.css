@@ -80,7 +80,8 @@ body {
   }
 
   body {
-    @apply bg-background text-foreground;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     /* Add a very subtle gradient */
     background-image: linear-gradient(to bottom right, hsl(var(--background)), hsl(var(--muted) / 0.3));
     min-height: 100vh;
@@ -94,70 +95,114 @@ body {
 @layer components {
   /* Improved markdown styling for better readability */
   .markdown-content {
-    /* Typography */
-    @apply text-base leading-7;
+    font-size: 1rem;
+    line-height: 1.75rem;
     
-    /* Headings */
     & h1 {
-      @apply text-2xl font-bold mt-6 mb-4;
+      font-size: 1.5rem;
+      line-height: 2rem;
+      font-weight: 700;
+      margin-top: 1.5rem;
+      margin-bottom: 1rem;
     }
     & h2 {
-      @apply text-xl font-bold mt-5 mb-3;
+      font-size: 1.25rem;
+      line-height: 1.75rem;
+      font-weight: 700;
+      margin-top: 1.25rem;
+      margin-bottom: 0.75rem;
     }
     & h3 {
-      @apply text-lg font-semibold mt-4 mb-2;
+      font-size: 1.125rem;
+      line-height: 1.75rem;
+      font-weight: 600;
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
     }
     & h4, & h5, & h6 {
-      @apply font-semibold mt-3 mb-2;
+      font-weight: 600;
+      margin-top: 0.75rem;
+      margin-bottom: 0.5rem;
     }
     
-    /* Lists */
     & ul, & ol {
-      @apply pl-6 my-3 space-y-1;
+      padding-left: 1.5rem;
+      margin-top: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    & ul > li + li, & ol > li + li {
+      margin-top: 0.25rem;
     }
     & ul {
-      @apply list-disc;
+      list-style-type: disc;
     }
     & ol {
-      @apply list-decimal;
+      list-style-type: decimal;
     }
     
-    /* Code blocks */
     & pre {
-      @apply bg-muted text-foreground p-3 rounded-md my-4 overflow-x-auto;
+      background-color: hsl(var(--muted));
+      color: hsl(var(--foreground));
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+      overflow-x: auto;
     }
     & code {
-      @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+      background-color: hsl(var(--muted));
+      padding: 0.125rem 0.375rem;
+      border-radius: 0.25rem;
+      font-size: 0.875rem;
+      line-height: 1.25rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
     & pre code {
-      @apply bg-transparent p-0 text-sm;
+      background-color: transparent;
+      padding: 0;
+      font-size: 0.875rem;
+      line-height: 1.25rem;
     }
     
-    /* Tables */
     & table {
-      @apply w-full my-4 border-collapse;
+      width: 100%;
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+      border-collapse: collapse;
     }
     & th, & td {
-      @apply border border p-2;
+      border: 1px solid hsl(var(--border));
+      padding: 0.5rem;
     }
     & th {
-      @apply bg-muted font-semibold;
+      background-color: hsl(var(--muted));
+      font-weight: 600;
     }
     
-    /* Block elements */
     & p {
-      @apply my-3;
+      margin-top: 0.75rem;
+      margin-bottom: 0.75rem;
     }
     & blockquote {
-      @apply border-l-4 border-muted-foreground pl-4 py-1 my-3 italic;
+      border-left-width: 4px;
+      border-color: hsl(var(--muted-foreground));
+      padding-left: 1rem;
+      padding-top: 0.25rem;
+      padding-bottom: 0.25rem;
+      margin-top: 0.75rem;
+      margin-bottom: 0.75rem;
+      font-style: italic;
     }
     & hr {
-      @apply my-6 border;
+      margin-top: 1.5rem;
+      margin-bottom: 1.5rem;
+      border-top-width: 1px;
+      border-color: hsl(var(--border));
+      border-bottom-width: 0px;
     }
     
-    /* Spacing between sections */
     & > * + :is(h1, h2, h3, h4, h5, h6) {
-      @apply mt-6;
+      margin-top: 1.5rem;
     }
   }
 

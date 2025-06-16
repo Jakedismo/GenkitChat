@@ -1,9 +1,9 @@
 "use client";
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { logger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { logger } from '@/lib/logger';
+import { AlertTriangle, Home, RefreshCw } from 'lucide-react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -159,7 +159,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 Something went wrong
               </h1>
               <p className="text-muted-foreground">
-                We encountered an unexpected error. This has been logged and we'll look into it.
+                We encountered an unexpected error. This has been logged and we&amp;apos;ll look into it.
               </p>
             </div>
 

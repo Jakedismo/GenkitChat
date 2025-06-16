@@ -21,7 +21,7 @@ interface ChatInputContainerProps {
   uploadedFiles: UploadedFile[];
   onRemoveFile: (id: string) => void;
   onClearAll: () => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleFileChange: (files: FileList | null) => void;
 }
 

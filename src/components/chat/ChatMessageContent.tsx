@@ -1,6 +1,7 @@
 import React, { ComponentProps, useEffect, useMemo, useState } from "react";
 // Import Options type for component prop typing
-import ReactMarkdown, { Options as ReactMarkdownOptions } from "react-markdown";
+import * as ReactMarkdown from "react-markdown";
+import { Options as ReactMarkdownOptions } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
@@ -33,7 +34,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
   components, // Receive components prop
 }) => {
   const [error, setError] = useState<Error | null>(null);
-  const [renderedParts, setRenderedParts] = useState<JSX.Element[]>([]);
+  const [renderedParts, setRenderedParts] = useState<React.JSX.Element[]>([]);
   
   const enhancedComponents: ReactMarkdownOptions['components'] = useMemo(() => ({
     ...components,
@@ -137,7 +138,7 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         
       
         
-      const parts: JSX.Element[] = [];
+      const parts: React.JSX.Element[] = [];
       let lastIndex = 0;
       let match;
       let partKey = 0; // For generating unique keys
@@ -152,14 +153,14 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
         if (match.index > lastIndex) {
           const textSegment = processedText.substring(lastIndex, match.index);
           parts.push(
-            <ReactMarkdown
+            <ReactMarkdown.default
               key={`text-${partKey++}`}
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}
               components={enhancedComponents} // Use enhanced components for better link handling
             >
               {textSegment}
-            </ReactMarkdown>,
+            </ReactMarkdown.default>,
           );
         }
 
@@ -182,14 +183,14 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({
       if (lastIndex < processedText.length) {
         const remainingText = processedText.substring(lastIndex);
         parts.push(
-          <ReactMarkdown
+          <ReactMarkdown.default
             key={`text-${partKey++}`}
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeHighlight]}
             components={enhancedComponents} // Use enhanced components for better link handling
           >
             {remainingText}
-          </ReactMarkdown>,
+          </ReactMarkdown.default>,
         );
       }
       

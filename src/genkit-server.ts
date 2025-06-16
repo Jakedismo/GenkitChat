@@ -10,6 +10,7 @@ import { startFlowServer } from "@genkit-ai/express"; // For serving flows
 import { googleAI } from "@genkit-ai/googleai";
 import { vertexAI } from "@genkit-ai/vertexai"; // Import Vertex AI for reranking
 import { vertexAIRerankers } from "@genkit-ai/vertexai/rerankers"; // Added for Vertex AI Reranker
+// import { context7Client } from "@upstash/context7/genkit";
 import fs from 'fs'; // Add fs import for file system operations
 import { Flow, genkit } from "genkit"; // Use stable import for genkit
 import { logger } from "genkit/logging"; // Added for log level
@@ -83,9 +84,9 @@ function getPlugins() {
     console.warn("Failed to initialize Vertex AI plugin:", e);
   }
  
-   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-     plugins.push(context7Client());
-   }
+   // if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+   //   plugins.push(context7Client());
+   // }
  
    // Only run vector store in a non-production environment to avoid build errors
   if (process.env.NODE_ENV !== "production") {
@@ -179,17 +180,17 @@ export const aiInstance = (function () {
     const instance = genkit({
       promptDir: promptDirPath,
       plugins: isServerRuntime ? getPlugins() : [], // Only load plugins at runtime
-      telemetry: process.env.ENABLE_TELEMETRY === 'true' ? {
-        instrumentation: { plugins: true },
-        exporter: {
-          type: 'openTelemetry',
-          endpoint: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-        }
-      } : undefined,
-      environments: {
-        dev: { telemetry: { exporter: { endpoint: 'http://localhost:4318/v1/traces' } } },
-        prod: {}
-      },
+      // telemetry: process.env.ENABLE_TELEMETRY === 'true' ? {
+      //   instrumentation: { plugins: true },
+      //   exporter: {
+      //     type: 'openTelemetry',
+      //     endpoint: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+      //   }
+      // } : undefined,
+      // environments: {
+      //   dev: { telemetry: { exporter: { endpoint: 'http://localhost:4318/v1/traces' } } },
+      //   prod: {}
+      // },
     });
 
     // Register custom helper using the correct syntax

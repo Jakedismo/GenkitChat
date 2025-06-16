@@ -14,7 +14,7 @@ export function useMermaidRenderer(chart: string, id?: string) {
   const [zoom, setZoom] = useState(1);
   const [rendered, setRendered] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const renderTimeoutRef = useRef<NodeJS.Timeout>();
+  const renderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { theme, resolvedTheme } = useTheme();
 
   const diagramId = useMemo(

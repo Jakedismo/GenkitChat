@@ -2,8 +2,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ChatMessage, CitationPreviewData } from "@/types/chat";
-import React, { useEffect, useRef, useMemo, useCallback } from "react";
-import ReactMarkdown from "react-markdown";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import * as ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import {
@@ -15,8 +15,8 @@ import ChatMessageContent from "./ChatMessageContent";
 interface ChatHistoryProps {
   messages: ChatMessage[];
   isLoading: boolean;
-  messagesEndRef: React.RefObject<HTMLDivElement>;
-  scrollAreaRef: React.RefObject<HTMLDivElement>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  scrollAreaRef: React.RefObject<HTMLDivElement | null>;
   setCitationPreview: React.Dispatch<
     React.SetStateAction<CitationPreviewData | null>
   >;
@@ -180,7 +180,7 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
               >
                 <div className="relative">
                   {message.sender === "user" ? (
-                    <ReactMarkdown
+                    <ReactMarkdown.default
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[rehypeHighlight]}
                       components={userMarkdownComponents}
@@ -188,7 +188,7 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
                       {typeof message.text === "string"
                         ? message.text
                         : String(message.text || "")}
-                    </ReactMarkdown>
+                    </ReactMarkdown.default>
                   ) : message.text ? (
                     <ChatMessageContent
                       text={message.text}

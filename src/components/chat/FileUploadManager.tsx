@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { FileText, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, Trash2, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
 // This type would ideally live in a shared types file (e.g., src/types/chat.ts)
 // and be imported by both page.tsx and this component.
