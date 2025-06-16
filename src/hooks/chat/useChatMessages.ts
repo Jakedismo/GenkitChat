@@ -272,16 +272,16 @@ export function useChatMessages(): UseChatMessagesReturn {
             
             // Handle different message text formats
             if (typeof msg.text === 'string') {
-              return { ...msg, text: msg.text + errorMsg };
+              return { ...msg, text: msg.text + errorMsg, hasError: true };
             } else if (Array.isArray(msg.text)) {
               const textString = msg.text
                 .map(chunk => typeof chunk === 'string' ? chunk : JSON.stringify(chunk))
                 .join('');
-              return { ...msg, text: textString + errorMsg };
+              return { ...msg, text: textString + errorMsg, hasError: true };
             } else if (msg.text && typeof msg.text === 'object') {
-              return { ...msg, text: JSON.stringify(msg.text) + errorMsg };
+              return { ...msg, text: JSON.stringify(msg.text) + errorMsg, hasError: true };
             } else {
-              return { ...msg, text: String(msg.text || '') + errorMsg };
+              return { ...msg, text: String(msg.text || '') + errorMsg, hasError: true };
             }
           }
           return msg;
@@ -301,7 +301,7 @@ export function useChatMessages(): UseChatMessagesReturn {
         }
 
         // Prevent infinite recursion by checking if message was already processed
-        if (msg.text && typeof msg.text === 'string' && msg.text.includes('__TRUNCATION_FIXED__')) {
+        if (msg.text && typeof msg.text === 'string' && msg.text.includes('<!-- __TRUNCATION_FIXED__ -->')) {
           return msg;
         }
         
