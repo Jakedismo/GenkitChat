@@ -67,19 +67,32 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid session ID or file name derived from document ID.' }, { status: 400 });
   }
 
-  // Basic sanitization for fileName to prevent path traversal.
-  // path.basename will return only the last portion of a path, which should be the filename.
+  // Enhanced security: Comprehensive file name validation
   const safeFileName = path.basename(fileName);
-  console.log('🔒 Original fileName:', fileName);
-  console.log('🔒 Sanitized fileName:', safeFileName);
-  console.log('🔒 FileName is safe:', safeFileName === fileName);
-  
+
+  // Whitelist-based validation for allowed characters
+  const allowedFileNamePattern = /^[a-zA-Z0-9._-]+$/;
+  const maxFileNameLength = 255;
+
+  // Security checks
   if (safeFileName !== fileName) {
-    // This indicates an attempt at path traversal or an unexpected fileName format.
-    console.error('❌ Potentially unsafe fileName detected');
-    console.error('❌ Original fileName:', fileName);
-    console.error('❌ Sanitized fileName:', safeFileName);
-    return NextResponse.json({ error: 'Invalid file name.' }, { status: 400 });
+    console.error('❌ Path traversal attempt detected:', { original: fileName, sanitized: safeFileName });
+    return NextResponse.json({ error: 'Invalid file name: path traversal detected.' }, { status: 400 });
+  }
+
+  if (!allowedFileNamePattern.test(safeFileName)) {
+    console.error('❌ Invalid characters in fileName:', safeFileName);
+    return NextResponse.json({ error: 'Invalid file name: contains forbidden characters.' }, { status: 400 });
+  }
+
+  if (safeFileName.length > maxFileNameLength) {
+    console.error('❌ File name too long:', safeFileName.length);
+    return NextResponse.json({ error: 'Invalid file name: too long.' }, { status: 400 });
+  }
+
+  if (safeFileName.startsWith('.') || safeFileName.includes('..')) {
+    console.error('❌ Suspicious file name pattern:', safeFileName);
+    return NextResponse.json({ error: 'Invalid file name: suspicious pattern.' }, { status: 400 });
   }
 
   // Construct the file path - IMPORTANT: Adjust this path according to your actual file storage structure.

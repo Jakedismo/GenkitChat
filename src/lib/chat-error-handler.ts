@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { formatSSE } from "./sse-utils";
 
-export function handleGenkitError(genkitError: any) {
+export function handleGenkitError(genkitError: Error | unknown) {
   console.error("SERVER_ERROR_CALLING_GENKIT_FLOW:", genkitError);
   const errorMessage =
     genkitError instanceof Error
@@ -83,8 +83,8 @@ export function handleGenkitError(genkitError: any) {
 }
 
 export function handleStreamError(
-  controller: ReadableStreamDefaultController<any>,
-  streamError: any
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  streamError: Error | unknown
 ) {
   console.error("Error during stream processing:", streamError);
 

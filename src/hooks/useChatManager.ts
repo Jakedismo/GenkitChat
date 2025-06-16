@@ -1,4 +1,4 @@
-import { normalizeText } from "@/components/ChatMessageContent";
+import { normalizeText } from "@/utils/message-normalization";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChatMessage,
@@ -10,7 +10,7 @@ import {
   UploadedFile,
 } from "@/types/chat";
 import { convertChatMessagesToHistory } from "@/utils/messageHistory";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 // Corrected imports for custom hooks
 import { useChatInputControls } from "@/hooks/chat/useChatInputControls";
 import { useChatMessages } from "@/hooks/chat/useChatMessages";
@@ -90,6 +90,47 @@ export function useChatManager({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
+  // Memoize stable values to prevent unnecessary re-renders
+  const modelConfig = useMemo(() => ({
+    selectedGeminiModelId,
+    selectedOpenAIModelId,
+    temperaturePreset,
+    maxTokens,
+  }), [selectedGeminiModelId, selectedOpenAIModelId, temperaturePreset, maxTokens]);
+
+  const toolConfig = useMemo(() => ({
+    tavilySearchEnabled,
+    tavilyExtractEnabled,
+    perplexitySearchEnabled,
+    perplexityDeepResearchEnabled,
+    context7ResolveLibraryIdEnabled,
+    context7GetLibraryDocsEnabled,
+  }), [
+    tavilySearchEnabled,
+    tavilyExtractEnabled,
+    perplexitySearchEnabled,
+    perplexityDeepResearchEnabled,
+    context7ResolveLibraryIdEnabled,
+    context7GetLibraryDocsEnabled,
+  ]);
+
+  const uploadedFilesStatus = useMemo(() => ({
+    hasSuccessfulFiles: uploadedFiles.some(f => f.status === "success"),
+    count: uploadedFiles.length,
+  }), [uploadedFiles]);
+
+  // Use a ref to always have access to the latest messages without affecting dependencies
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  // Create a stable function to get fresh conversation history
+  const getConversationHistory = useCallback(() => {
+    return messagesRef.current.map((msg) => ({
+      role: msg.sender === "user" ? "user" : "model",
+      parts: [{ text: normalizeText(msg.text) }],
+    }));
+  }, []); // No dependencies - this function is stable
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -134,16 +175,16 @@ export function useChatManager({
     let errorDescription: string | null = null;
 
     if (chatMode === ChatMode.DIRECT_GEMINI) {
-      if (!selectedGeminiModelId) {
+      if (!modelConfig.selectedGeminiModelId) {
         errorDescription = "Please select a Gemini model.";
       } else {
-        modelIdToUse = selectedGeminiModelId;
+        modelIdToUse = modelConfig.selectedGeminiModelId;
       }
     } else if (chatMode === ChatMode.DIRECT_OPENAI) {
-      if (!selectedOpenAIModelId) {
+      if (!modelConfig.selectedOpenAIModelId) {
         errorDescription = "Please select an OpenAI model.";
       } else {
-        modelIdToUse = selectedOpenAIModelId;
+        modelIdToUse = modelConfig.selectedOpenAIModelId;
       }
     }
 
@@ -173,11 +214,10 @@ export function useChatManager({
       sessionIdToUse = await startNewSession();
     }
 
-    // Capture conversation history before adding the current message
-    const conversationHistory = convertChatMessagesToHistory(
-      messages,
-      modelIdToUse,
-    );
+    // Get fresh conversation history at execution time (before adding current message)
+    // This ensures we have the most up-to-date message content, especially important
+    // during streaming where message content can change without array reference changes
+    const currentConversationHistory = getConversationHistory();
 
     addUserMessage(userMessageText);
     const botMessagePlaceholderId = addBotPlaceholder();
@@ -186,24 +226,22 @@ export function useChatManager({
     setIsLoading(true);
 
     try {
-      const useRag = uploadedFiles.some(
-        (f: UploadedFile) => f.status === "success",
-      );
+      const useRag = uploadedFilesStatus.hasSuccessfulFiles;
       const endpointUrl = useRag ? "/api/rag-chat" : "/api/basic-chat";
       const requestBody = {
         query: userMessageText,
         userMessage: userMessageText,
         modelId: modelIdToUse,
-        temperaturePreset: temperaturePreset,
-        maxTokens: maxTokens,
+        temperaturePreset: modelConfig.temperaturePreset,
+        maxTokens: modelConfig.maxTokens,
         sessionId: sessionIdToUse,
-        history: conversationHistory,
-        tavilySearchEnabled: tavilySearchEnabled,
-        tavilyExtractEnabled: tavilyExtractEnabled,
-        perplexitySearchEnabled: perplexitySearchEnabled,
-        perplexityDeepResearchEnabled: perplexityDeepResearchEnabled,
-        context7ResolveLibraryIdEnabled: context7ResolveLibraryIdEnabled,
-        context7GetLibraryDocsEnabled: context7GetLibraryDocsEnabled,
+        history: currentConversationHistory,
+        tavilySearchEnabled: toolConfig.tavilySearchEnabled,
+        tavilyExtractEnabled: toolConfig.tavilyExtractEnabled,
+        perplexitySearchEnabled: toolConfig.perplexitySearchEnabled,
+        perplexityDeepResearchEnabled: toolConfig.perplexityDeepResearchEnabled,
+        context7ResolveLibraryIdEnabled: toolConfig.context7ResolveLibraryIdEnabled,
+        context7GetLibraryDocsEnabled: toolConfig.context7GetLibraryDocsEnabled,
       };
 
       const response = await streamChatResponse(requestBody, endpointUrl);
@@ -570,21 +608,27 @@ export function useChatManager({
       setIsLoading(false);
     }
   }, [
+    // Core state dependencies
     userInput,
     isLoading,
     chatMode,
-    selectedGeminiModelId,
-    selectedOpenAIModelId,
-    temperaturePreset,
-    maxTokens,
     currentSessionId,
+
+    // Model configuration (memoized object)
+    modelConfig,
+
+    // Tool configuration (memoized object)
+    toolConfig,
+
+    // File status (memoized object with hasSuccessfulFiles)
+    uploadedFilesStatus,
+
+    // Function to get fresh conversation history (stable reference)
+    getConversationHistory,
+
+    // Stable function references (these should be memoized in parent)
     startNewSession,
     setCurrentSessionId,
-    uploadedFiles,
-    tavilySearchEnabled,
-    tavilyExtractEnabled,
-    perplexitySearchEnabled,
-    perplexityDeepResearchEnabled,
     clearUserInput,
     setIsLoading,
     addUserMessage,
@@ -596,9 +640,6 @@ export function useChatManager({
     updateBotMessageFromFinalResponse,
     injectErrorIntoBotMessage,
     toast,
-    messages,
-    context7GetLibraryDocsEnabled,
-    context7ResolveLibraryIdEnabled,
   ]);
 
   const clearChat = useCallback(() => {

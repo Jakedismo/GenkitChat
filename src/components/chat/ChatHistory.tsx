@@ -2,7 +2,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ChatMessage, CitationPreviewData } from "@/types/chat";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -40,9 +40,10 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
     if (messages.length === 0) {
       animatedMessageIds.current.clear();
     }
-  }, [messages]);
+  }, [messages.length]); // Only depend on length, not the entire messages array
 
-  const handleCitationClick = (
+  // Memoize the citation click handler to prevent unnecessary re-renders
+  const handleCitationClick = useCallback((
     messageId: string,
     chunkIndexInSources: number,
   ) => {
@@ -130,7 +131,21 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
         variant: "destructive",
       });
     }
-  };
+  }, [messages, setCitationPreview, setIsCitationSidebarOpen, toast]);
+
+  // Memoize animation state calculations
+  const messageAnimationStates = useMemo(() => {
+    const states = new Map<string, boolean>();
+    messages.forEach(message => {
+      if (!animatedMessageIds.current.has(message.id)) {
+        states.set(message.id, true);
+        animatedMessageIds.current.add(message.id);
+      } else {
+        states.set(message.id, false);
+      }
+    });
+    return states;
+  }, [messages.map(m => m.id).join(',')]); // Only recalculate when message IDs change
 
   return (
     <ScrollArea
@@ -142,11 +157,7 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({
         data-messages-container="true"
       >
         {messages.map((message) => {
-          let M_SHOULD_ANIMATE = false;
-          if (!animatedMessageIds.current.has(message.id)) {
-            M_SHOULD_ANIMATE = true;
-            animatedMessageIds.current.add(message.id);
-          }
+          const M_SHOULD_ANIMATE = messageAnimationStates.get(message.id) || false;
           return (
             <div
               key={message.id}
