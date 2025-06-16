@@ -179,6 +179,30 @@ for await (const chunk of flowResult.stream) {
 
 **Fix Required:** Add proper cancellation checks in stream processing and flow execution.
 
+---
+
+### 🔴 BUG-028: SSR URL Validation Fails Relative Paths
+**File:** `src/utils/security.ts:239-263`
+**Severity:** Critical
+**Impact:** Security bypass, broken relative URL validation in SSR
+
+**Description:**
+The `validateRedirectUrl` function fails to correctly validate relative URLs in SSR environments. The `new URL(url)` constructor throws an error for relative paths (e.g., "/path") without a base, causing the function to return `false` via the catch block. This makes the intended relative URL validation logic unreachable, contradicting the stated goal of allowing relative URLs when no allowed origins are specified.
+
+**Evidence:**
+```typescript
+// Line 242: URL constructor throws for relative paths
+const parsed = new URL(url); // Throws for "/path"
+// Line 248-249: Unreachable code for relative URL validation
+return parsed.pathname.startsWith('/') && !parsed.host;
+// Line 261-263: Catch block always returns false for relative URLs
+} catch {
+  return false;
+}
+```
+
+**Fix Required:** Handle relative URLs before URL constructor to prevent errors.
+
 ## Medium Priority Issues (Priority 3)
 
 ### 🟡 BUG-007: Type Safety Issues with 'any' Types
@@ -268,6 +292,7 @@ Several unused variables and parameters detected by ESLint.
 - **BUG-025**: SSR Error with undefined `window` - Fixed validateRedirectUrl and escapeHtml for SSR
 - **BUG-026**: Bot marker visibility & recursion protection failure - Fixed marker check logic
 - **BUG-027**: Stream cancellation fails to abort RAG flow - Added proper cancellation checks
+- **BUG-028**: SSR URL validation fails relative paths - Fixed relative URL handling in SSR
 
 ### ✅ **FIXED - High/Medium Priority Issues:**
 - **BUG-007**: Type safety issues - Replaced multiple `any` types with proper types
@@ -278,10 +303,10 @@ Several unused variables and parameters detected by ESLint.
 
 ### 📊 **Impact Metrics:**
 - **ESLint warnings reduced**: From 50+ to 28 warnings (44% improvement)
-- **Critical bugs fixed**: 10/10 (100%) - including stream cancellation
+- **Critical bugs fixed**: 11/11 (100%) - including SSR URL validation
 - **Type safety improved**: 8 `any` types replaced with proper types
-- **Test coverage added**: 9 new comprehensive test suites (82 total tests)
-- **Security enhancements**: SSR-compatible input sanitization, XSS prevention, validation
+- **Test coverage added**: 9 new comprehensive test suites (84 total tests)
+- **Security enhancements**: SSR-compatible input sanitization, XSS prevention, URL validation
 
 ## Recommendations
 
@@ -334,4 +359,4 @@ Several unused variables and parameters detected by ESLint.
 - `src/app/api/rag-chat/route.test.ts` - **NEW** Stream cancellation and RAG flow tests
 
 ---
-*This comprehensive bug hunt successfully identified and fixed 27 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
+*This comprehensive bug hunt successfully identified and fixed 28 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
