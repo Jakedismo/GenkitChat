@@ -229,7 +229,7 @@ export async function POST(req: Request) {
 
         // Create a ReadableStream for Server-Sent Events response
         let streamClosed = false;
-        let abortController: AbortController | null = new AbortController();
+        const abortController = new AbortController();
 
         const responseStream = new ReadableStream({
           async start(controller) {
@@ -328,9 +328,7 @@ export async function POST(req: Request) {
           cancel() {
             // Handle stream cancellation
             console.log("[RAG API] Stream cancelled by client");
-            if (abortController) {
-              abortController.abort();
-            }
+            abortController.abort();
             streamClosed = true;
           },
         });
