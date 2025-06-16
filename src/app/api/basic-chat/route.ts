@@ -1,4 +1,5 @@
 import { handleGenkitError } from "@/lib/chat-error-handler";
+import { createErrorResponse, createValidationErrorResponse } from "@/lib/api-error-handler";
 import { processChatStream } from "@/lib/chat-stream-processor";
 import {
   ChatInput,
@@ -40,14 +41,15 @@ export async function POST(request: Request) {
       const validatedInput = InputSchema.safeParse(json);
 
       if (!validatedInput.success) {
-        console.error(
-          "SERVER_ZOD_VALIDATION_ERROR:",
-          validatedInput.error.errors
-        ); // Log Zod's specific errors
-        return NextResponse.json(
-          { error: "Invalid input", details: validatedInput.error.errors },
-          { status: 400 }
-        );
+        const validationErrors = validatedInput.error.errors.map(err => ({
+          field: err.path.join('.'),
+          message: err.message,
+        }));
+
+        return createValidationErrorResponse(validationErrors, {
+          path: '/api/basic-chat',
+          method: 'POST',
+        });
       }
 
       // Pass the full validated data (including sessionId) to the stream function
@@ -75,18 +77,10 @@ export async function POST(request: Request) {
         return handleGenkitError(genkitError);
       }
     } catch (error) {
-      // This top-level catch handles errors outside the Genkit flow call,
-      // e.g., issues with request.json() or initial Zod parsing if not caught more specifically.
-      console.error(
-        "Error in basic-chat API route (initial setup or other unexpected error):",
-        error
-      );
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      return NextResponse.json(
-        { error: "Failed to process chat request", details: errorMessage },
-        { status: 500 }
-      );
+      return createErrorResponse(error, 500, {
+        path: '/api/basic-chat',
+        method: 'POST',
+      });
     }
   });
 }

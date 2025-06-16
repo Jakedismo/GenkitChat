@@ -158,12 +158,62 @@ export default {
     },
   },
 
-  // Ignore ESLint errors and type checking during build
+  // Enable ESLint and TypeScript checking during build for better code quality
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
+  },
+
+  // Webpack optimizations for better bundle size and performance
+  webpack: (config, { isServer }) => {
+    // Optimize bundle splitting
+    if (!isServer) {
+      config.optimization.splitChunks = {
+        ...config.optimization.splitChunks,
+        cacheGroups: {
+          ...config.optimization.splitChunks.cacheGroups,
+          // Separate vendor chunks for better caching
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            chunks: 'all',
+            priority: 10,
+          },
+          // Separate UI components
+          ui: {
+            test: /[\\/]node_modules[\\/](@radix-ui|lucide-react)[\\/]/,
+            name: 'ui',
+            chunks: 'all',
+            priority: 20,
+          },
+          // Separate markdown processing
+          markdown: {
+            test: /[\\/]node_modules[\\/](react-markdown|remark-|rehype-|micromark|mdast-|hast-|unist-)[\\/]/,
+            name: 'markdown',
+            chunks: 'all',
+            priority: 20,
+          },
+          // Separate AI/Genkit packages
+          genkit: {
+            test: /[\\/]node_modules[\\/](@genkit-ai|genkit)[\\/]/,
+            name: 'genkit',
+            chunks: 'all',
+            priority: 20,
+          },
+        },
+      };
+    }
+
+    // Optimize imports
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      // Use lighter alternatives where possible
+      'react-markdown$': 'react-markdown/lib/react-markdown.js',
+    };
+
+    return config;
   },
   experimental: {
     serverActions: {
