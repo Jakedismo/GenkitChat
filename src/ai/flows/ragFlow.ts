@@ -376,13 +376,15 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
  
       const llmStream = aiInstance.generateStream(generateOptions);
  
-      // Consume the stream to trigger the callbacks.
+      // Consume the stream to trigger the callbacks with cancellation support
       for await (const chunk of llmStream.stream) {
         // The streamingCallback handles text chunks.
         // This loop drives the stream and allows for future in-loop processing if needed.
         if (chunk) {
           // Prevent unused variable warning
         }
+        // Note: Individual chunks can't be cancelled mid-stream in Genkit,
+        // but the outer API layer handles cancellation by breaking the iteration
       }
 
       await flushToolBuffer();
@@ -467,7 +469,12 @@ export const documentQaStreamFlow = aiInstance.defineFlow(
           },
         });
 
-        for await (const chunk of llmStreamResultFallback.stream) { if (chunk) { /* consume stream */ } }
+        // Consume fallback stream with cancellation awareness
+        for await (const chunk of llmStreamResultFallback.stream) {
+          if (chunk) {
+            /* consume stream - cancellation handled at API layer */
+          }
+        }
         const finalFallbackResponse = await llmStreamResultFallback.response;
         
         const fallbackResponseText = finalFallbackResponse.text;
