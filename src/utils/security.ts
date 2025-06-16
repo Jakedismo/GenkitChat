@@ -239,19 +239,31 @@ export function escapeHtml(text: string): string {
  */
 export function validateRedirectUrl(url: string, allowedOrigins?: string[]): boolean {
   try {
-    const parsed = new URL(url);
-
     // Check if we're in a browser environment
     if (typeof window === 'undefined') {
-      // In SSR environment, be more restrictive
+      // In SSR environment, handle relative URLs first
+      if (url.startsWith('/') && !url.startsWith('//')) {
+        // Relative path - safe in SSR when no allowed origins specified
+        if (!allowedOrigins || allowedOrigins.length === 0) {
+          return true;
+        }
+        // If allowed origins are specified, relative URLs are not allowed
+        return false;
+      }
+
+      // For absolute URLs in SSR, parse and check against allowed origins
+      const parsed = new URL(url);
       if (allowedOrigins && allowedOrigins.length > 0) {
         return allowedOrigins.includes(parsed.origin);
       }
-      // If no allowed origins specified, only allow relative URLs
-      return parsed.pathname.startsWith('/') && !parsed.host;
+      // No allowed origins specified, reject absolute URLs in SSR
+      return false;
     }
 
-    // In browser environment, only allow same origin or specific trusted domains
+    // In browser environment, parse the URL
+    const parsed = new URL(url);
+
+    // Check against allowed origins or current origin
     if (allowedOrigins && allowedOrigins.length > 0) {
       return allowedOrigins.includes(parsed.origin) || parsed.origin === window.location.origin;
     }

@@ -163,11 +163,47 @@ describe('Security Utilities', () => {
   });
 
   describe('validateRedirectUrl', () => {
-    test('validates URLs with allowed origins', () => {
-      // Test with allowed origins (simulates SSR environment)
-      expect(validateRedirectUrl('https://example.com', ['https://example.com'])).toBe(true);
-      expect(validateRedirectUrl('https://malicious.com', ['https://example.com'])).toBe(false);
-      expect(validateRedirectUrl('https://trusted.com', ['https://example.com', 'https://trusted.com'])).toBe(true);
+    test('BUG-028: validates relative URLs correctly in SSR environment', () => {
+      // Mock SSR environment by temporarily removing window
+      const originalWindow = global.window;
+      delete (global as any).window;
+
+      try {
+        // Relative URLs should be allowed when no allowed origins specified
+        expect(validateRedirectUrl('/relative/path')).toBe(true);
+        expect(validateRedirectUrl('/another/path')).toBe(true);
+        expect(validateRedirectUrl('/')).toBe(true);
+
+        // Protocol-relative URLs should be rejected (security risk)
+        expect(validateRedirectUrl('//malicious.com')).toBe(false);
+
+        // Relative URLs should be rejected when allowed origins are specified
+        expect(validateRedirectUrl('/relative/path', ['https://example.com'])).toBe(false);
+
+        // Absolute URLs should work with allowed origins
+        expect(validateRedirectUrl('https://example.com', ['https://example.com'])).toBe(true);
+        expect(validateRedirectUrl('https://malicious.com', ['https://example.com'])).toBe(false);
+
+        // Absolute URLs should be rejected when no allowed origins specified
+        expect(validateRedirectUrl('https://example.com')).toBe(false);
+      } finally {
+        // Restore window
+        global.window = originalWindow;
+      }
+    });
+
+    test('validates URLs with allowed origins in SSR', () => {
+      // Mock SSR environment
+      const originalWindow = global.window;
+      delete (global as any).window;
+
+      try {
+        expect(validateRedirectUrl('https://example.com', ['https://example.com'])).toBe(true);
+        expect(validateRedirectUrl('https://malicious.com', ['https://example.com'])).toBe(false);
+        expect(validateRedirectUrl('https://trusted.com', ['https://example.com', 'https://trusted.com'])).toBe(true);
+      } finally {
+        global.window = originalWindow;
+      }
     });
 
     test('handles invalid URLs gracefully', () => {
@@ -176,10 +212,41 @@ describe('Security Utilities', () => {
       expect(validateRedirectUrl('javascript:alert(1)')).toBe(false);
     });
 
-    test('validates against current origin when available', () => {
-      // This test will work in the current environment
-      const result = validateRedirectUrl('https://example.com/path');
-      expect(typeof result).toBe('boolean');
+    test('validates against current origin in browser environment', () => {
+      // Mock window.location
+      Object.defineProperty(window, 'location', {
+        value: { origin: 'https://example.com' },
+        writable: true,
+      });
+
+      expect(validateRedirectUrl('https://example.com/path')).toBe(true);
+      expect(validateRedirectUrl('https://malicious.com')).toBe(false);
+
+      // Test with allowed origins in browser
+      expect(validateRedirectUrl('https://trusted.com', ['https://trusted.com'])).toBe(true);
+      expect(validateRedirectUrl('https://malicious.com', ['https://trusted.com'])).toBe(false);
+    });
+
+    test('handles edge cases correctly', () => {
+      const originalWindow = global.window;
+      delete (global as any).window;
+
+      try {
+        // Empty allowed origins array should behave like no allowed origins
+        expect(validateRedirectUrl('/relative/path', [])).toBe(true);
+        expect(validateRedirectUrl('https://example.com', [])).toBe(false);
+
+        // Test various relative path formats
+        expect(validateRedirectUrl('/path/to/resource')).toBe(true);
+        expect(validateRedirectUrl('/path?query=value')).toBe(true);
+        expect(validateRedirectUrl('/path#fragment')).toBe(true);
+
+        // Test malformed URLs
+        expect(validateRedirectUrl('http://')).toBe(false);
+        expect(validateRedirectUrl('https://')).toBe(false);
+      } finally {
+        global.window = originalWindow;
+      }
     });
   });
 
