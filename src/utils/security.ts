@@ -19,10 +19,11 @@ export function sanitizeUserInput(input: string): string {
     .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
     .replace(/<form\b[^<]*(?:(?!<\/form>)<[^<]*)*<\/form>/gi, '')
     // Remove javascript: and data: URLs
-    .replace(/javascript:/gi, '')
-    .replace(/data:/gi, '')
+    .replace(/javascript:[^"'\s]*/gi, '')
+    .replace(/data:[^"'\s]*/gi, '')
     // Remove event handlers
-    .replace(/on\w+\s*=/gi, '')
+    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/on\w+\s*=\s*[^"'\s]+/gi, '')
     // Limit length to prevent DoS
     .slice(0, 10000);
 }
@@ -215,18 +216,46 @@ export function generateCSPHeader(): string {
  * Escape HTML entities
  */
 export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  // Check if we're in a browser environment
+  if (typeof document !== 'undefined') {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Fallback for SSR environments
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
  * Validate URL is safe for redirects
+ * @param url - The URL to validate
+ * @param allowedOrigins - Optional array of allowed origins (for SSR environments)
  */
-export function validateRedirectUrl(url: string): boolean {
+export function validateRedirectUrl(url: string, allowedOrigins?: string[]): boolean {
   try {
     const parsed = new URL(url);
-    // Only allow same origin or specific trusted domains
+
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') {
+      // In SSR environment, be more restrictive
+      if (allowedOrigins && allowedOrigins.length > 0) {
+        return allowedOrigins.includes(parsed.origin);
+      }
+      // If no allowed origins specified, only allow relative URLs
+      return parsed.pathname.startsWith('/') && !parsed.host;
+    }
+
+    // In browser environment, only allow same origin or specific trusted domains
+    if (allowedOrigins && allowedOrigins.length > 0) {
+      return allowedOrigins.includes(parsed.origin) || parsed.origin === window.location.origin;
+    }
+
     return parsed.origin === window.location.origin;
   } catch {
     return false;
