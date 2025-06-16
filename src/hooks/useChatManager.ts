@@ -119,6 +119,19 @@ export function useChatManager({
     count: uploadedFiles.length,
   }), [uploadedFiles]);
 
+  // Create a stable hash of messages content for dependency tracking
+  const messagesHash = useMemo(() => {
+    return messages.map(msg => `${msg.id}:${msg.sender}:${String(msg.text).slice(0, 50)}`).join('|');
+  }, [messages]);
+
+  // Memoize conversation history to prevent unnecessary recalculations
+  const conversationHistory = useMemo(() => {
+    return messages.map((msg) => ({
+      role: msg.sender === "user" ? "user" : "model",
+      parts: [{ text: normalizeText(msg.text) }],
+    }));
+  }, [messages]);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -202,11 +215,8 @@ export function useChatManager({
       sessionIdToUse = await startNewSession();
     }
 
-    // Capture conversation history before adding the current message
-    const conversationHistory = convertChatMessagesToHistory(
-      messages,
-      modelIdToUse,
-    );
+    // Use memoized conversation history (captured before adding current message)
+    const currentConversationHistory = conversationHistory;
 
     addUserMessage(userMessageText);
     const botMessagePlaceholderId = addBotPlaceholder();
@@ -224,7 +234,7 @@ export function useChatManager({
         temperaturePreset: modelConfig.temperaturePreset,
         maxTokens: modelConfig.maxTokens,
         sessionId: sessionIdToUse,
-        history: conversationHistory,
+        history: currentConversationHistory,
         tavilySearchEnabled: toolConfig.tavilySearchEnabled,
         tavilyExtractEnabled: toolConfig.tavilyExtractEnabled,
         perplexitySearchEnabled: toolConfig.perplexitySearchEnabled,
@@ -603,22 +613,17 @@ export function useChatManager({
     chatMode,
     currentSessionId,
 
-    // Model selection (memoized)
-    selectedGeminiModelId,
-    selectedOpenAIModelId,
-    temperaturePreset,
-    maxTokens,
+    // Model configuration (memoized object)
+    modelConfig,
 
-    // Tool settings (memoized)
-    tavilySearchEnabled,
-    tavilyExtractEnabled,
-    perplexitySearchEnabled,
-    perplexityDeepResearchEnabled,
-    context7GetLibraryDocsEnabled,
-    context7ResolveLibraryIdEnabled,
+    // Tool configuration (memoized object)
+    toolConfig,
 
-    // File state (only length to avoid deep comparison)
-    uploadedFiles.length,
+    // File status (memoized object with hasSuccessfulFiles)
+    uploadedFilesStatus,
+
+    // Messages hash (detects content changes without deep comparison)
+    messagesHash,
 
     // Stable function references (these should be memoized in parent)
     startNewSession,
@@ -634,9 +639,6 @@ export function useChatManager({
     updateBotMessageFromFinalResponse,
     injectErrorIntoBotMessage,
     toast,
-
-    // Messages length instead of full array
-    messages.length,
   ]);
 
   const clearChat = useCallback(() => {
