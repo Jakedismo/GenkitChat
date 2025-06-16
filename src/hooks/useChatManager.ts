@@ -610,6 +610,8 @@ export function useChatManager({
     getConversationHistory, // Stable function reference
     context7GetLibraryDocsEnabled,
     context7ResolveLibraryIdEnabled,
+    // Note: 'messages' is intentionally excluded from dependencies to prevent
+    // infinite re-renders. We use messagesRef.current for accessing latest messages.
   ]);
 
   const clearChat = useCallback(() => {

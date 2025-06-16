@@ -293,10 +293,15 @@ export function useChatMessages(): UseChatMessagesReturn {
   
   const fixTruncatedBotMessage = useCallback((botMessageId: string): boolean => {
     let wasFixed = false;
-    
+
     setMessages((prevMessages) => {
       return prevMessages.map((msg) => {
         if (msg.id !== botMessageId || msg.sender !== 'bot') {
+          return msg;
+        }
+
+        // Prevent infinite recursion by checking if message was already processed
+        if (msg.text && typeof msg.text === 'string' && msg.text.includes('__TRUNCATION_FIXED__')) {
           return msg;
         }
         
@@ -370,13 +375,19 @@ export function useChatMessages(): UseChatMessagesReturn {
             fixedText = fixedText.replace(/\\+$/, '');
             wasFixed = true;
           }
-          
+
+          // Add marker to prevent reprocessing (will be filtered out during display)
+          if (wasFixed) {
+            fixedText += '\n<!-- __TRUNCATION_FIXED__ -->';
+          }
+
           return { ...msg, text: fixedText };
         }
-        
+
         // If we've detected and fixed a complex structure but no truncation
         if (wasFixed) {
-          return { ...msg, text: textToFix };
+          const markedText = textToFix + '\n<!-- __TRUNCATION_FIXED__ -->';
+          return { ...msg, text: markedText };
         }
         
         return msg;

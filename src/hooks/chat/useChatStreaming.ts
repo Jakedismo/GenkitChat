@@ -32,11 +32,25 @@ export async function processStream(
   let currentSSEEventType: string | null = null;
   let currentSSEDataLines: string[] = [];
   let done = false;
+  let readerReleased = false;
 
-  while (!done) {
-    try {
-      const { value, done: readerDone } = await reader.read();
-      done = readerDone;
+  // Ensure proper cleanup on exit
+  const cleanup = () => {
+    if (!readerReleased) {
+      try {
+        reader.releaseLock();
+        readerReleased = true;
+      } catch (error) {
+        console.warn("[processStream] Error releasing reader lock:", error);
+      }
+    }
+  };
+
+  try {
+    while (!done) {
+      try {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
 
       if (done) {
 
@@ -103,13 +117,22 @@ export async function processStream(
     // console.debug('[processStream] Ignoring non-SSE line:', line); // Optional: for debugging
   }
       }
-    } catch (error) {
-      console.error("[useChatStreaming] Error reading from stream:", error);
-      callbacks.onStreamError(
-        error instanceof Error ? error.message : "Unknown stream reading error",
-      );
-      done = true; // Terminate loop on error
+      } catch (error) {
+        console.error("[useChatStreaming] Error reading from stream:", error);
+        callbacks.onStreamError(
+          error instanceof Error ? error.message : "Unknown stream reading error",
+        );
+        done = true; // Terminate loop on error
+      }
     }
+  } catch (outerError) {
+    console.error("[useChatStreaming] Fatal error in stream processing:", outerError);
+    callbacks.onStreamError(
+      outerError instanceof Error ? outerError.message : "Fatal stream processing error",
+    );
+  } finally {
+    // Ensure cleanup always happens
+    cleanup();
   }
 
   if (callbacks.onStreamEnd) {

@@ -22,6 +22,13 @@ jest.mock('@/hooks/chat/useChatMessages', () => ({
     messages: [],
     addUserMessage: jest.fn(),
     addBotPlaceholder: jest.fn().mockReturnValue('bot-placeholder-id'),
+    updateBotMessageText: jest.fn(),
+    updateBotMessageSources: jest.fn(),
+    addToolInvocationToBotMessage: jest.fn(),
+    addMultipleToolInvocationsToBotMessage: jest.fn(),
+    updateBotMessageFromFinalResponse: jest.fn(),
+    injectErrorIntoBotMessage: jest.fn(),
+    fixTruncatedBotMessage: jest.fn(),
     clearMessages: jest.fn(),
   }),
 }));
@@ -29,7 +36,19 @@ jest.mock('@/hooks/chat/useChatMessages', () => ({
 jest.mock('@/hooks/chat/useChatSession', () => ({
   useChatSession: () => ({
     currentSessionId: 'test-session-id',
+    setCurrentSessionId: jest.fn(),
     startNewSession: jest.fn().mockResolvedValue('new-session-id'),
+  }),
+}));
+
+const mockSetUserInput = jest.fn();
+const mockClearUserInput = jest.fn();
+
+jest.mock('@/hooks/chat/useChatInputControls', () => ({
+  useChatInputControls: () => ({
+    userInput: 'Hello',
+    setUserInput: mockSetUserInput,
+    clearUserInput: mockClearUserInput,
   }),
 }));
 
@@ -76,10 +95,6 @@ describe('useChatManager', () => {
     } as unknown as Response);
 
     const { result } = renderHook(() => useChatManager(mockProps));
-
-    await act(async () => {
-      result.current.setUserInput('Hello');
-    });
 
     await act(async () => {
       await result.current.handleSendMessage();

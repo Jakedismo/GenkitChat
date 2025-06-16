@@ -232,6 +232,7 @@ export async function POST(req: Request) {
           async start(controller) {
             const encoder = new TextEncoder();
             let streamClosed = false;
+            const abortController = new AbortController();
 
             try {
               // Execute the RAG flow to generate the response
@@ -322,6 +323,14 @@ export async function POST(req: Request) {
                 }
               }
             }
+          },
+          cancel() {
+            // Handle stream cancellation
+            console.log("[RAG API] Stream cancelled by client");
+            if (abortController) {
+              abortController.abort();
+            }
+            streamClosed = true;
           },
         });
 

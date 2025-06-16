@@ -442,6 +442,10 @@ export function processSseEvent(
     case "chunk":
       handleTextEvent(eventTypeToProcess, joinedDataPayload, callbacks);
       break;
+    case "message":
+      // Handle generic message events - treat as text
+      handleTextEvent("text", joinedDataPayload, callbacks);
+      break;
     case "sources":
       handleSourcesEvent(joinedDataPayload, callbacks);
       break;
