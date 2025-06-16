@@ -199,6 +199,7 @@ describe('useChatMessages', () => {
       {
         documentId: 'doc1',
         chunkId: 1,
+        chunkIndex: 0,
         fileName: 'doc1.pdf',
         originalFileName: 'doc1.pdf',
         content: 'Source content 1'
@@ -206,6 +207,7 @@ describe('useChatMessages', () => {
       {
         documentId: 'doc2',
         chunkId: 2,
+        chunkIndex: 1,
         fileName: 'doc2.pdf',
         originalFileName: 'doc2.pdf',
         content: 'Source content 2'
