@@ -135,6 +135,26 @@ return parsed.origin === window.location.origin;
 
 **Fix Required:** Add proper SSR environment detection and fallback logic.
 
+---
+
+### 🔴 BUG-026: Bot Marker Visibility & Recursion Protection Failure
+**File:** `src/hooks/chat/useChatMessages.ts:303-391`
+**Severity:** Critical
+**Impact:** Infinite loops, visible debug markers to users
+
+**Description:**
+The recursion protection mechanism is broken due to a string mismatch. The code checks for `__TRUNCATION_FIXED__` but adds `<!-- __TRUNCATION_FIXED__ -->` (HTML comment), causing the check to never match and allowing infinite recursion. Additionally, the marker is visible to users because it's not filtered out during display.
+
+**Evidence:**
+```typescript
+// Line 304: Checks for plain text marker
+if (msg.text.includes('__TRUNCATION_FIXED__')) {
+// Line 381: But adds HTML comment marker
+fixedText += '\n<!-- __TRUNCATION_FIXED__ -->';
+```
+
+**Fix Required:** Fix marker check to match the actual marker format and ensure proper filtering.
+
 ## Medium Priority Issues (Priority 3)
 
 ### 🟡 BUG-007: Type Safety Issues with 'any' Types
@@ -222,6 +242,7 @@ Several unused variables and parameters detected by ESLint.
 - **BUG-006**: Resource leak in ReadableStream - Added AbortController and cleanup
 - **BUG-024**: Citation rendering regression - Fixed truncation markers interfering with links
 - **BUG-025**: SSR Error with undefined `window` - Fixed validateRedirectUrl and escapeHtml for SSR
+- **BUG-026**: Bot marker visibility & recursion protection failure - Fixed marker check logic
 
 ### ✅ **FIXED - High/Medium Priority Issues:**
 - **BUG-007**: Type safety issues - Replaced multiple `any` types with proper types
@@ -232,9 +253,9 @@ Several unused variables and parameters detected by ESLint.
 
 ### 📊 **Impact Metrics:**
 - **ESLint warnings reduced**: From 50+ to 23 warnings
-- **Critical bugs fixed**: 8/8 (100%) - including SSR compatibility
+- **Critical bugs fixed**: 9/9 (100%) - including recursion protection
 - **Type safety improved**: 8 `any` types replaced with proper types
-- **Test coverage added**: 7 new comprehensive test suites (96 total tests)
+- **Test coverage added**: 8 new comprehensive test suites (89 total tests)
 - **Security enhancements**: SSR-compatible input sanitization, XSS prevention, validation
 
 ## Recommendations
@@ -284,6 +305,7 @@ Several unused variables and parameters detected by ESLint.
 - `src/utils/security.test.ts` - **NEW** Comprehensive security utilities test suite
 - `src/hooks/useChatManager.bugfix.test.ts` - **NEW** Comprehensive bug fix tests
 - `src/components/chat/ChatMessageContent.test.tsx` - **NEW** Citation rendering tests
+- `src/hooks/chat/useChatMessages.test.ts` - **NEW** Message handling and recursion protection tests
 
 ---
-*This comprehensive bug hunt successfully identified and fixed 23 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
+*This comprehensive bug hunt successfully identified and fixed 26 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
