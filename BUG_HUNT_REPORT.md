@@ -229,6 +229,26 @@ else if (Array.isArray(msg.text)) {
 
 **Fix Required:** Extend recursion protection to handle all message text formats.
 
+---
+
+### 🔴 BUG-030: URL Validation Issues in Browser Environments
+**File:** `src/utils/security.ts:261-274`
+**Severity:** Critical
+**Impact:** Security bypass, broken relative URL validation, overly permissive redirects
+
+**Description:**
+The `validateRedirectUrl` function has two critical issues in browser environments: 1) It incorrectly rejects relative URLs because `new URL(url)` throws an error without a base, leading to false rejection via catch block. 2) When `allowedOrigins` are provided, it allows redirects to both current origin AND specified origins, which may be overly permissive if intent is to restrict to explicitly allowed list only.
+
+**Evidence:**
+```typescript
+// Line 264: URL constructor throws for relative paths in browser
+const parsed = new URL(url); // Throws for "/path"
+// Line 267-268: Overly permissive - allows both current AND allowed origins
+return allowedOrigins.includes(parsed.origin) || parsed.origin === window.location.origin;
+```
+
+**Fix Required:** Handle relative URLs before URL constructor and implement strict origin validation.
+
 ## Medium Priority Issues (Priority 3)
 
 ### 🟡 BUG-007: Type Safety Issues with 'any' Types
@@ -320,6 +340,7 @@ Several unused variables and parameters detected by ESLint.
 - **BUG-027**: Stream cancellation fails to abort RAG flow - Added proper cancellation checks
 - **BUG-028**: SSR URL validation fails relative paths - Fixed relative URL handling in SSR
 - **BUG-029**: Recursion protection fails for non-string messages - Extended protection to all formats
+- **BUG-030**: URL validation issues in browser environments - Fixed relative URLs and strict origins
 
 ### ✅ **FIXED - High/Medium Priority Issues:**
 - **BUG-007**: Type safety issues - Replaced multiple `any` types with proper types
@@ -330,10 +351,10 @@ Several unused variables and parameters detected by ESLint.
 
 ### 📊 **Impact Metrics:**
 - **ESLint warnings reduced**: From 50+ to 28 warnings (44% improvement)
-- **Critical bugs fixed**: 12/12 (100%) - including recursion protection for all message formats
+- **Critical bugs fixed**: 13/13 (100%) - including browser URL validation
 - **Type safety improved**: 8 `any` types replaced with proper types
-- **Test coverage added**: 9 new comprehensive test suites (86 total tests)
-- **Security enhancements**: SSR-compatible input sanitization, XSS prevention, URL validation
+- **Test coverage added**: 9 new comprehensive test suites (87 total tests)
+- **Security enhancements**: Cross-environment URL validation, XSS prevention, input sanitization
 
 ## Recommendations
 
@@ -386,4 +407,4 @@ Several unused variables and parameters detected by ESLint.
 - `src/app/api/rag-chat/route.test.ts` - **NEW** Stream cancellation and RAG flow tests
 
 ---
-*This comprehensive bug hunt successfully identified and fixed 29 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
+*This comprehensive bug hunt successfully identified and fixed 30 bugs, significantly improving code quality, security, and reliability. All critical issues have been resolved with proper testing.*
