@@ -327,9 +327,7 @@ export async function POST(req: Request) {
           cancel() {
             // Handle stream cancellation
             console.log("[RAG API] Stream cancelled by client");
-            if (abortController) {
-              abortController.abort();
-            }
+            abortController.abort();
             streamClosed = true;
           },
         });

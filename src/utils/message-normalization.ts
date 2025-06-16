@@ -1,4 +1,4 @@
-export function normalizeMessageContent(content: any): string {
+export function normalizeMessageContent(content: unknown): string {
   if (typeof content === "string") {
     return content;
   }

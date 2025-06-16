@@ -314,7 +314,7 @@ export function useChatMessages(): UseChatMessagesReturn {
           // Join array items
           textToFix = msg.text.map(item =>
             typeof item === 'string' ? item :
-            (item && typeof item === 'object' && 'text' in item && typeof (item as any).text === 'string') ? (item as any).text :
+            (item && typeof item === 'object' && 'text' in item && typeof (item as Record<string, unknown>).text === 'string') ? (item as Record<string, unknown>).text :
             JSON.stringify(item)
           ).join('');
           wasFixed = true;

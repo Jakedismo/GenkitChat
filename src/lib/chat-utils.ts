@@ -63,7 +63,7 @@ async function* adaptGenkitStream(
   genkitStream: AsyncIterable<GenerateResponseChunk<unknown>>
 ): AsyncIterable<{ text: string }> {
   for await (const chunk of genkitStream) {
-    const c = chunk as Record<string, any>;
+    const c = chunk as Record<string, unknown>;
 
     // 1. GoogleAI / Gemini style
     if (c.message && Array.isArray(c.message.content)) {
