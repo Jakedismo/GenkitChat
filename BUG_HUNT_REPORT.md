@@ -117,6 +117,24 @@ The ReadableStream controller is not properly cleaned up when errors occur, and 
 
 **Fix Required:** Implement proper stream cleanup and AbortController usage.
 
+---
+
+### 🔴 BUG-025: SSR Error with Undefined `window`
+**File:** `src/utils/security.ts:225-233`
+**Severity:** Critical
+**Impact:** Application crashes in SSR environments (Next.js)
+
+**Description:**
+The `validateRedirectUrl` function accesses `window.location.origin` without checking for `window`'s existence, causing a ReferenceError in server-side rendering environments where `window` is undefined. Similarly, `escapeHtml` uses `document.createElement` without SSR checks.
+
+**Evidence:**
+```typescript
+// Line 230: Direct window access without SSR check
+return parsed.origin === window.location.origin;
+```
+
+**Fix Required:** Add proper SSR environment detection and fallback logic.
+
 ## Medium Priority Issues (Priority 3)
 
 ### 🟡 BUG-007: Type Safety Issues with 'any' Types
@@ -203,6 +221,7 @@ Several unused variables and parameters detected by ESLint.
 - **BUG-005**: Missing SSE message handler - Added proper "message" event handling
 - **BUG-006**: Resource leak in ReadableStream - Added AbortController and cleanup
 - **BUG-024**: Citation rendering regression - Fixed truncation markers interfering with links
+- **BUG-025**: SSR Error with undefined `window` - Fixed validateRedirectUrl and escapeHtml for SSR
 
 ### ✅ **FIXED - High/Medium Priority Issues:**
 - **BUG-007**: Type safety issues - Replaced multiple `any` types with proper types
@@ -213,10 +232,10 @@ Several unused variables and parameters detected by ESLint.
 
 ### 📊 **Impact Metrics:**
 - **ESLint warnings reduced**: From 50+ to 23 warnings
-- **Critical bugs fixed**: 7/7 (100%) - including citation rendering regression
+- **Critical bugs fixed**: 8/8 (100%) - including SSR compatibility
 - **Type safety improved**: 8 `any` types replaced with proper types
-- **Test coverage added**: 6 new comprehensive test suites (including citation tests)
-- **Security enhancements**: Input sanitization, XSS prevention, validation
+- **Test coverage added**: 7 new comprehensive test suites (96 total tests)
+- **Security enhancements**: SSR-compatible input sanitization, XSS prevention, validation
 
 ## Recommendations
 
@@ -243,9 +262,10 @@ Several unused variables and parameters detected by ESLint.
 - ✅ Unit tests for all critical bug fixes
 - ✅ Integration tests for streaming functionality
 - ✅ Error handling tests for edge cases
-- ✅ Security validation tests
+- ✅ Security validation tests (28 comprehensive tests)
 - ✅ Memory leak prevention tests
 - ✅ Citation rendering and markdown processing tests
+- ✅ SSR compatibility tests for security utilities
 
 ## Files Modified
 - `src/hooks/useChatManager.ts` - Fixed memory leak and dependency issues
@@ -260,7 +280,8 @@ Several unused variables and parameters detected by ESLint.
 - `src/hooks/chat/parsers/jsonRecovery.ts` - Fixed unused parameters
 - `src/app/layout.tsx` - Added ErrorBoundary integration
 - `src/components/ErrorBoundary.tsx` - **NEW** Comprehensive error handling
-- `src/utils/security.ts` - **NEW** Security utilities and validation
+- `src/utils/security.ts` - **NEW** SSR-compatible security utilities and validation
+- `src/utils/security.test.ts` - **NEW** Comprehensive security utilities test suite
 - `src/hooks/useChatManager.bugfix.test.ts` - **NEW** Comprehensive bug fix tests
 - `src/components/chat/ChatMessageContent.test.tsx` - **NEW** Citation rendering tests
 
