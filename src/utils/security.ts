@@ -260,14 +260,27 @@ export function validateRedirectUrl(url: string, allowedOrigins?: string[]): boo
       return false;
     }
 
-    // In browser environment, parse the URL
-    const parsed = new URL(url);
-
-    // Check against allowed origins or current origin
-    if (allowedOrigins && allowedOrigins.length > 0) {
-      return allowedOrigins.includes(parsed.origin) || parsed.origin === window.location.origin;
+    // In browser environment, handle relative URLs first
+    if (url.startsWith('/') && !url.startsWith('//')) {
+      // Relative URLs are generally safe in browser environments
+      // They resolve to the current origin
+      if (allowedOrigins && allowedOrigins.length > 0) {
+        // If allowed origins are specified, check if current origin is allowed
+        return allowedOrigins.includes(window.location.origin);
+      }
+      // No allowed origins specified, relative URLs are safe
+      return true;
     }
 
+    // For absolute URLs in browser environment, parse and validate
+    const parsed = new URL(url);
+
+    // Check against allowed origins (be strict - don't automatically include current origin)
+    if (allowedOrigins && allowedOrigins.length > 0) {
+      return allowedOrigins.includes(parsed.origin);
+    }
+
+    // No allowed origins specified, only allow same origin
     return parsed.origin === window.location.origin;
   } catch {
     return false;

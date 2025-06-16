@@ -212,19 +212,44 @@ describe('Security Utilities', () => {
       expect(validateRedirectUrl('javascript:alert(1)')).toBe(false);
     });
 
-    test('validates against current origin in browser environment', () => {
+    test('BUG-030: validates relative URLs correctly in browser environment', () => {
       // Mock window.location
       Object.defineProperty(window, 'location', {
         value: { origin: 'https://example.com' },
         writable: true,
       });
 
+      // Relative URLs should be allowed when no allowed origins specified
+      expect(validateRedirectUrl('/relative/path')).toBe(true);
+      expect(validateRedirectUrl('/another/path')).toBe(true);
+      expect(validateRedirectUrl('/')).toBe(true);
+
+      // Protocol-relative URLs should be rejected
+      expect(validateRedirectUrl('//malicious.com')).toBe(false);
+
+      // Relative URLs with allowed origins - should check if current origin is in allowed list
+      expect(validateRedirectUrl('/relative/path', ['https://example.com'])).toBe(true);
+      expect(validateRedirectUrl('/relative/path', ['https://other.com'])).toBe(false);
+    });
+
+    test('BUG-030: validates absolute URLs correctly in browser environment', () => {
+      // Mock window.location
+      Object.defineProperty(window, 'location', {
+        value: { origin: 'https://example.com' },
+        writable: true,
+      });
+
+      // Without allowed origins, only same origin should be allowed
       expect(validateRedirectUrl('https://example.com/path')).toBe(true);
       expect(validateRedirectUrl('https://malicious.com')).toBe(false);
 
-      // Test with allowed origins in browser
+      // With allowed origins, should be strict (not automatically include current origin)
       expect(validateRedirectUrl('https://trusted.com', ['https://trusted.com'])).toBe(true);
+      expect(validateRedirectUrl('https://example.com', ['https://trusted.com'])).toBe(false); // Current origin not in allowed list
       expect(validateRedirectUrl('https://malicious.com', ['https://trusted.com'])).toBe(false);
+
+      // Current origin should only be allowed if explicitly in the allowed list
+      expect(validateRedirectUrl('https://example.com', ['https://example.com', 'https://trusted.com'])).toBe(true);
     });
 
     test('handles edge cases correctly', () => {
