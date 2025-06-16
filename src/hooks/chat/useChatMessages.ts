@@ -301,7 +301,26 @@ export function useChatMessages(): UseChatMessagesReturn {
         }
 
         // Prevent infinite recursion by checking if message was already processed
-        if (msg.text && typeof msg.text === 'string' && msg.text.includes('<!-- __TRUNCATION_FIXED__ -->')) {
+        // Check for marker in all text formats (string, array, object)
+        const hasMarker = (text: unknown): boolean => {
+          if (typeof text === 'string') {
+            return text.includes('<!-- __TRUNCATION_FIXED__ -->');
+          } else if (Array.isArray(text)) {
+            return text.some(item =>
+              typeof item === 'string' ? item.includes('<!-- __TRUNCATION_FIXED__ -->') :
+              (item && typeof item === 'object' && 'text' in item) ?
+                hasMarker((item as Record<string, unknown>).text) : false
+            );
+          } else if (text && typeof text === 'object' && 'text' in text) {
+            return hasMarker((text as Record<string, unknown>).text);
+          } else if (text && typeof text === 'object') {
+            const stringified = JSON.stringify(text);
+            return stringified.includes('<!-- __TRUNCATION_FIXED__ -->');
+          }
+          return false;
+        };
+
+        if (msg.text && hasMarker(msg.text)) {
           return msg;
         }
         

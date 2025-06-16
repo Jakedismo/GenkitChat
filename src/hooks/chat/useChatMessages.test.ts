@@ -42,7 +42,7 @@ describe('useChatMessages', () => {
     expect(result.current.messages[0].text).toBe('Bot response');
   });
 
-  test('BUG-026: fixTruncatedBotMessage should prevent infinite recursion', () => {
+  test('BUG-026: fixTruncatedBotMessage should prevent infinite recursion for string messages', () => {
     const { result } = renderHook(() => useChatMessages());
 
     let botMessageId: string;
@@ -63,6 +63,71 @@ describe('useChatMessages', () => {
     const finalMessage = result.current.messages.find(msg => msg.id === botMessageId);
     const markerCount = (finalMessage?.text as string).split('<!-- __TRUNCATION_FIXED__ -->').length - 1;
     expect(markerCount).toBe(1);
+  });
+
+  test('BUG-029: fixTruncatedBotMessage should prevent recursion for array messages', () => {
+    const { result } = renderHook(() => useChatMessages());
+
+    let botMessageId: string;
+
+    // Add a bot message with array format that already has the marker
+    act(() => {
+      botMessageId = result.current.addBotPlaceholder();
+      const message = result.current.messages.find(msg => msg.id === botMessageId);
+      if (message) {
+        // Use any to bypass type checking for test purposes
+        (message as any).text = [
+          'Some text',
+          ' with marker\n<!-- __TRUNCATION_FIXED__ -->'
+        ];
+      }
+    });
+
+    // Store the original message for comparison
+    const originalMessage = result.current.messages.find(msg => msg.id === botMessageId);
+    const originalText = originalMessage?.text;
+
+    // This call should not process the message again (recursion protection)
+    act(() => {
+      const wasFixed = result.current.fixTruncatedBotMessage(botMessageId);
+      expect(wasFixed).toBe(false); // Should not be "fixed" again
+    });
+
+    // Verify the message wasn't changed (recursion protection worked)
+    const finalMessage = result.current.messages.find(msg => msg.id === botMessageId);
+    expect(finalMessage?.text).toEqual(originalText);
+  });
+
+  test('BUG-029: fixTruncatedBotMessage should prevent recursion for object messages', () => {
+    const { result } = renderHook(() => useChatMessages());
+
+    let botMessageId: string;
+
+    // Add a bot message with object format that already has the marker
+    act(() => {
+      botMessageId = result.current.addBotPlaceholder();
+      const message = result.current.messages.find(msg => msg.id === botMessageId);
+      if (message) {
+        // Use any to bypass type checking for test purposes
+        (message as any).text = {
+          text: 'Some text with marker\n<!-- __TRUNCATION_FIXED__ -->'
+        };
+      }
+    });
+
+    // Store the original message for comparison
+    const originalMessage = result.current.messages.find(msg => msg.id === botMessageId);
+    const originalText = originalMessage?.text;
+
+    // This call should not process the message again (recursion protection)
+    act(() => {
+      const wasFixed = result.current.fixTruncatedBotMessage(botMessageId);
+      expect(wasFixed).toBe(false); // Should not be "fixed" again
+    });
+
+    // Verify the message wasn't changed (recursion protection worked)
+    const finalMessage = result.current.messages.find(msg => msg.id === botMessageId);
+    expect(finalMessage?.text).toEqual(originalText);
   });
 
   test('BUG-026: fixTruncatedBotMessage should handle trailing backslash', () => {
